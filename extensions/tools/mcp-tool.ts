@@ -35,7 +35,6 @@ const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>({
   parameters: parametersSchema,
   async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
     const runtime = getMcpRuntime();
-    await runtime.sync();
 
     if (!params.connect && !params.server && !params.tool) {
       const snapshot = runtime.snapshot();

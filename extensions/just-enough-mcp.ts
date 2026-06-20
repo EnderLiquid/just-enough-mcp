@@ -1,6 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getMcpRuntime } from "./clients/runtime.js";
-import { loadPluginConfig } from "./config/plugin-config.js";
 import { createServerOverviewPrompt } from "./prompting/system-prompt.js";
 import { registerMcpTool } from "./tools/mcp-tool.js";
 
@@ -24,20 +23,21 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
   });
 
   pi.on("before_agent_start", async (event) => {
-    try {
-      const config = loadPluginConfig();
-      const injectedPrompt = createServerOverviewPrompt(config);
-      return {
-        systemPrompt: `${event.systemPrompt}\n\n## MCP Servers\n\n${injectedPrompt}`,
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+    const runtime = getMcpRuntime();
+    const config = runtime.config();
+
+    if (!config) {
       return {
         systemPrompt:
           `${event.systemPrompt}\n\n## MCP Servers\n\n` +
-          `just-enough-mcp could not load its configuration: ${message}`,
+          "just-enough-mcp has not loaded its configuration for this session yet. Use /reload if needed.",
       };
     }
+
+    const injectedPrompt = createServerOverviewPrompt(config);
+    return {
+      systemPrompt: `${event.systemPrompt}\n\n## MCP Servers\n\n${injectedPrompt}`,
+    };
   });
 
   pi.on("session_shutdown", async (_event, ctx) => {
