@@ -16,7 +16,7 @@ interface RuntimeConnection {
   close: () => Promise<void>;
 }
 
-export interface ClientRegistrySnapshot {
+export interface ClientRegistryStatus {
   servers: RuntimeServerState[];
   connectedCount: number;
   totalCount: number;
@@ -24,7 +24,7 @@ export interface ClientRegistrySnapshot {
 
 export interface ClientRegistry {
   syncConfig(config: PluginConfigLoadResult): Promise<void>;
-  getSnapshot(): ClientRegistrySnapshot;
+  getStatus(): ClientRegistryStatus;
   getServerState(name: string): RuntimeServerState | undefined;
   connectServer(name: string): Promise<RuntimeServerState>;
   getServerCatalog(name: string): Promise<ServerCatalogResult>;
@@ -175,7 +175,7 @@ export function createClientRegistry(): ClientRegistry {
       }
     },
 
-    getSnapshot() {
+    getStatus() {
       const servers = [...serverStates.values()].sort((left, right) => left.config.name.localeCompare(right.config.name));
       return {
         servers,

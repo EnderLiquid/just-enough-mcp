@@ -2,15 +2,15 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { loadPluginConfig } from "../config/plugin-config.js";
 import type { PluginConfigLoadResult } from "../modeling/types.js";
 import { buildFooterStatus } from "../rendering/footer-status.js";
-import { createClientRegistry, type ClientRegistry, type ClientRegistrySnapshot } from "./registry.js";
+import { createClientRegistry, type ClientRegistry, type ClientRegistryStatus } from "./registry.js";
 
 const STATUS_KEY = "just-enough-mcp";
 
 export interface McpRuntime {
-  sync(): Promise<ClientRegistrySnapshot>;
-  config(): PluginConfigLoadResult | undefined;
-  snapshot(): ClientRegistrySnapshot;
-  registry(): ClientRegistry;
+  sync(): Promise<ClientRegistryStatus>;
+  config: () => PluginConfigLoadResult | undefined;
+  getStatus: () => ClientRegistryStatus;
+  registry: () => ClientRegistry;
   refreshFooter(ctx: Pick<ExtensionContext, "hasUI" | "ui">): void;
   closeAll(): Promise<void>;
 }
@@ -19,13 +19,13 @@ function createRuntime(): McpRuntime {
   const registry = createClientRegistry();
   let loadedConfig: PluginConfigLoadResult | undefined;
 
-  function snapshot(): ClientRegistrySnapshot {
-    return registry.getSnapshot();
+  function getStatus(): ClientRegistryStatus {
+    return registry.getStatus();
   }
 
   function refreshFooter(ctx: Pick<ExtensionContext, "hasUI" | "ui">): void {
     if (!ctx.hasUI) return;
-    const current = snapshot();
+    const current = getStatus();
     ctx.ui.setStatus(STATUS_KEY, buildFooterStatus(current.connectedCount, current.totalCount).text);
   }
 
@@ -33,10 +33,10 @@ function createRuntime(): McpRuntime {
     async sync() {
       loadedConfig = loadPluginConfig();
       await registry.syncConfig(loadedConfig);
-      return snapshot();
+      return getStatus();
     },
     config: () => loadedConfig,
-    snapshot,
+    getStatus,
     registry: () => registry,
     refreshFooter,
     async closeAll() {

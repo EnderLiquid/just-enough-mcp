@@ -37,15 +37,15 @@ const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>({
     const runtime = getMcpRuntime();
 
     if (!params.connect && !params.server && !params.tool) {
-      const snapshot = runtime.snapshot();
+      const status = runtime.getStatus();
       runtime.refreshFooter(ctx);
       return {
         content: [{
           type: "text",
           text: [
             "just-enough-mcp status",
-            `connected servers: ${snapshot.connectedCount}/${snapshot.totalCount}`,
-            ...snapshot.servers.map(server => {
+            `connected servers: ${status.connectedCount}/${status.totalCount}`,
+            ...status.servers.map(server => {
               const suffix = server.error ? ` (${server.error})` : "";
               return `- ${server.config.name}: ${server.status}${suffix}`;
             }),
@@ -53,7 +53,7 @@ const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>({
         }],
         details: {
           stage: "runtime-status",
-          servers: snapshot.servers.map(server => ({
+          servers: status.servers.map(server => ({
             name: server.config.name,
             transport: server.config.transport,
             connectionMode: server.config.connectionMode,
