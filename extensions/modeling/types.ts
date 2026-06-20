@@ -7,7 +7,7 @@ export type RuntimeServerStatus = "disconnected" | "connecting" | "connected" | 
 
 export interface ServerOverview {
   name: string;
-  summary: string;
+  content: string;
   transport: ServerTransportKind;
   source: "config" | "auto" | "none";
   path?: string;

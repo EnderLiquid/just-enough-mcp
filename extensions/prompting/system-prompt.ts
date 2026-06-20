@@ -16,13 +16,17 @@ function formatCapabilityLine(): string {
   return `Current support: ${capabilities.join(", ")}.`;
 }
 
-function formatOverviewLine(overview: ServerOverview): string {
-  const details = [`transport=${overview.transport}`];
+function formatOverviewBlock(overview: ServerOverview): string {
+  const header = [`- ${overview.name}`, `  transport=${overview.transport}`];
   if (overview.source !== "none") {
-    details.push(`overview=${overview.source}`);
+    header.push(`  overview=${overview.source}`);
   }
 
-  return `- ${overview.name}: ${overview.summary} (${details.join(", ")})`;
+  const body = overview.content
+    .split("\n")
+    .map(line => `  ${line}`);
+
+  return [...header, "  content:", ...body].join("\n");
 }
 
 export function createServerOverviewPrompt(config: PluginConfigLoadResult): string {
@@ -38,7 +42,7 @@ export function createServerOverviewPrompt(config: PluginConfigLoadResult): stri
     lines.push("- (none configured)");
   } else {
     for (const server of config.servers) {
-      lines.push(formatOverviewLine(server.overview));
+      lines.push(formatOverviewBlock(server.overview));
     }
   }
 

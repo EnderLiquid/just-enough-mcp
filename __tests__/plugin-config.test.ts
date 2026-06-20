@@ -17,6 +17,7 @@ describe("loadPluginConfigFromPaths", () => {
     const configPath = join(root, "just-enough-mcp.json");
     const overviewDir = join(root, "mcp-overview");
     mkdirSync(overviewDir, { recursive: true });
+    writeFileSync(join(overviewDir, "tavily.md"), "Search and extract web content.\nUse it for latest info.\n", "utf8");
 
     writeFileSync(configPath, JSON.stringify({
       servers: {
@@ -42,6 +43,7 @@ describe("loadPluginConfigFromPaths", () => {
 
     expect(tavily?.transport).toBe("http");
     expect(tavily?.connectionMode).toBe("eager");
+    expect(tavily?.overview.content).toContain("Search and extract web content.");
     expect(localTools?.transport).toBe("stdio");
     expect(localTools?.connectionMode).toBe("lazy");
   });

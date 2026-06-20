@@ -15,18 +15,13 @@ function resolveConfiguredOverviewPath(configPath: string, overviewPath: string)
   return resolve(dirname(configPath), overviewPath);
 }
 
-function readOverviewSummary(markdown: string): string {
-  const normalized = markdown.replace(/\r\n/g, "\n");
-  const lines = normalized
-    .split("\n")
-    .map(line => line.trim())
-    .filter(line => line.length > 0 && !line.startsWith("#"));
-
-  if (lines.length === 0) {
-    return "Overview file exists but does not contain any plain-text summary yet.";
+function normalizeOverviewContent(markdown: string): string {
+  const normalized = markdown.replace(/\r\n/g, "\n").trim();
+  if (normalized.length > 0) {
+    return normalized;
   }
 
-  return lines[0];
+  return "Overview file exists but is empty.";
 }
 
 export function loadServerOverview(
@@ -40,10 +35,10 @@ export function loadServerOverview(
   if (config.overview) {
     const explicitPath = resolveConfiguredOverviewPath(configPath, config.overview);
     if (existsSync(explicitPath)) {
-      const summary = readOverviewSummary(readFileSync(explicitPath, "utf8"));
+      const content = normalizeOverviewContent(readFileSync(explicitPath, "utf8"));
       return {
         name: serverName,
-        summary,
+        content,
         transport,
         source: "config",
         path: explicitPath,
@@ -53,10 +48,10 @@ export function loadServerOverview(
 
   const autoPath = join(overviewDirectoryPath, `${serverName}.md`);
   if (existsSync(autoPath)) {
-    const summary = readOverviewSummary(readFileSync(autoPath, "utf8"));
+    const content = normalizeOverviewContent(readFileSync(autoPath, "utf8"));
     return {
       name: serverName,
-      summary,
+      content,
       transport,
       source: "auto",
       path: autoPath,
@@ -65,7 +60,7 @@ export function loadServerOverview(
 
   return {
     name: serverName,
-    summary: "No overview configured yet.",
+    content: "No overview configured yet.",
     transport,
     source: "none",
   };
