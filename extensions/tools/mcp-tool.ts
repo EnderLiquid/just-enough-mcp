@@ -2,7 +2,7 @@ import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { materializeToolCallResult } from "../artifacts/materializer.js";
 import { getMcpRuntime } from "../clients/runtime.js";
-import type { McpToolResultDetails } from "../modeling/types.js";
+import type { RuntimeServerState, McpToolResultDetails } from "../modeling/types.js";
 import { renderMcpToolCall, renderMcpToolResult } from "../rendering/result-renderer.js";
 
 const parametersSchema = Type.Object({
@@ -25,7 +25,18 @@ function parseArgs(input: string | undefined): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
-const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>({
+function toServerDetail(server: RuntimeServerState) {
+  return {
+    name: server.config.name,
+    transport: server.config.transport,
+    connectionMode: server.config.connectionMode,
+    status: server.status,
+    overviewSource: server.config.overview.source,
+    error: server.error,
+  };
+}
+
+export const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>({
   name: "mcp",
   label: "MCP",
   description: "Minimal MCP runtime entry point for server-level progressive disclosure.",
@@ -53,40 +64,33 @@ const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>({
         }],
         details: {
           stage: "runtime-status",
-          servers: status.servers.map(server => ({
-            name: server.config.name,
-            transport: server.config.transport,
-            connectionMode: server.config.connectionMode,
-            status: server.status,
-            overviewSource: server.config.overview.source,
-            error: server.error,
-          })),
+          servers: status.servers.map(toServerDetail),
         },
       };
     }
 
     if (params.connect) {
-      const server = await runtime.registry().connectServer(params.connect);
-      runtime.refreshFooter(ctx);
+      let server: RuntimeServerState;
+      try {
+        server = await runtime.registry().connectServer(params.connect);
+      } finally {
+        runtime.refreshFooter(ctx);
+      }
+
+      if (server.status !== "connected") {
+        const suffix = server.error ? `\n${server.error}` : "";
+        throw new Error(`Failed to connect MCP server: ${server.config.name}${suffix}`);
+      }
+
       return {
         content: [{
           type: "text",
-          text: server.status === "connected"
-            ? `Connected MCP server: ${server.config.name}`
-            : `Failed to connect MCP server: ${server.config.name}\n${server.error ?? "Unknown error"}`,
+          text: `Connected MCP server: ${server.config.name}`,
         }],
         details: {
           stage: "runtime-connect",
-          servers: [{
-            name: server.config.name,
-            transport: server.config.transport,
-            connectionMode: server.config.connectionMode,
-            status: server.status,
-            overviewSource: server.config.overview.source,
-            error: server.error,
-          }],
+          servers: [toServerDetail(server)],
         },
-        isError: server.status !== "connected",
       };
     }
 
@@ -111,14 +115,7 @@ const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>({
         }],
         details: {
           stage: "runtime-tools-list",
-          servers: [{
-            name: catalog.server.config.name,
-            transport: catalog.server.config.transport,
-            connectionMode: catalog.server.config.connectionMode,
-            status: catalog.server.status,
-            overviewSource: catalog.server.config.overview.source,
-            error: catalog.server.error,
-          }],
+          servers: [toServerDetail(catalog.server)],
         },
       };
     }
@@ -149,30 +146,13 @@ const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>({
           payloadItems: materialized.payloadItems,
           mainFiles: materialized.mainFiles,
           metaFiles: materialized.metaFiles,
-          servers: [{
-            name: execution.server.config.name,
-            transport: execution.server.config.transport,
-            connectionMode: execution.server.config.connectionMode,
-            status: execution.server.status,
-            overviewSource: execution.server.config.overview.source,
-            error: execution.server.error,
-          }],
+          servers: [toServerDetail(execution.server)],
         },
         isError: execution.result.isError === true,
       };
     }
 
-    return {
-      content: [{
-        type: "text",
-        text: "Invalid mcp invocation. Use status, connect, server, or server+tool.",
-      }],
-      details: {
-        stage: "runtime-invalid-input",
-        servers: [],
-      },
-      isError: true,
-    };
+    throw new Error("Invalid mcp invocation. Use status, connect, server, or server+tool.");
   },
 });
 
