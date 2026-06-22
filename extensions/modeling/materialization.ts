@@ -9,20 +9,18 @@ export type MaterializedPayloadKind =
 
 export interface MaterializationSettings {
   artifactRoot: string;
-  summaryMaxLines: number;
-  summaryMaxChars: number;
+  summaryItemCount: number;
   previewLinesPerItem: number;
   previewCharsPerItem: number;
-  previewItemCount: number;
+  hardMaxChars: number;
   prettyPrintJson: boolean;
 }
 
 export interface SummaryBudget {
-  summaryMaxLines: number;
-  summaryMaxChars: number;
+  summaryItemCount: number;
   previewLinesPerItem: number;
   previewCharsPerItem: number;
-  previewItemCount: number;
+  hardMaxChars: number;
 }
 
 export interface PayloadItem {
@@ -30,31 +28,27 @@ export interface PayloadItem {
   kind: MaterializedPayloadKind;
   source: string;
   path: string;
-  relativePath: string;
   fileName: string;
   mimeType?: string;
   uri?: string;
-  preview?: string[];
+  preview: string[];
 }
 
 export interface MaterializedToolCallResult {
   summaryText: string;
   callDir: string;
-  summaryPath: string;
   manifestPath: string;
   payloadItems: PayloadItem[];
   mainFiles: string[];
   metaFiles: string[];
   budget: SummaryBudget;
-  summaryTruncated: boolean;
 }
 
 export const DEFAULT_MATERIALIZATION_SETTINGS: MaterializationSettings = {
   artifactRoot: ".pi/mcp-artifacts",
-  summaryMaxLines: 80,
-  summaryMaxChars: 12000,
+  summaryItemCount: 6,
   previewLinesPerItem: 4,
   previewCharsPerItem: 800,
-  previewItemCount: 6,
+  hardMaxChars: 40000,
   prettyPrintJson: true,
 };

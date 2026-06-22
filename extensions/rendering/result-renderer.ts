@@ -2,7 +2,6 @@ import type { AgentToolResult, ToolRenderResultOptions } from "@earendil-works/p
 import { Text } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { McpToolResultDetails } from "../modeling/types.js";
-import type { PayloadItem } from "../modeling/materialization.js";
 
 type McpToolContentBlock = AgentToolResult<McpToolResultDetails>["content"][number];
 
@@ -63,16 +62,6 @@ function blockToLines(block: McpToolContentBlock): string[] {
   return ["[non-text content]"];
 }
 
-function toPayloadItems(value: unknown): PayloadItem[] {
-  return Array.isArray(value) ? value as PayloadItem[] : [];
-}
-
-function toStringArray(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string")
-    : [];
-}
-
 export function formatMcpToolCallLines(
   args: McpToolInput,
   maxInputChars = DEFAULT_MAX_CALL_INPUT_CHARS,
@@ -97,62 +86,30 @@ export function formatMcpToolCallLines(
   return ["mcp status"];
 }
 
-function formatMaterializedCollapsedLines(
-  details: McpToolResultDetails,
-  maxCollapsedLines: number,
-): McpToolResultDisplay {
-  const payloadItems = toPayloadItems(details.payloadItems);
-  const mainFiles = toStringArray(details.mainFiles);
-  const lines: string[] = [
-    `MCP result materialized: ${payloadItems.length} payload items, ${mainFiles.length} main files`,
-  ];
-
-  for (const item of payloadItems) {
-    if (lines.length >= maxCollapsedLines) {
-      break;
-    }
-
-    lines.push(`[${item.index}] ${item.kind} -> ${item.fileName}`);
-    if (lines.length >= maxCollapsedLines) {
-      break;
-    }
-
-    const firstPreviewLine = item.preview?.[0];
-    if (firstPreviewLine) {
-      lines.push(`  ${firstPreviewLine}`);
-    }
-  }
-
-  const shouldHintExpand = payloadItems.length > 0;
-  if (shouldHintExpand) {
-    if (lines.length >= maxCollapsedLines) {
-      lines[maxCollapsedLines - 1] = "… expand to view full summary";
-      return {
-        lines: lines.slice(0, maxCollapsedLines),
-        truncated: true,
-      };
-    }
-
-    lines.push("… expand to view full summary");
-    return { lines, truncated: true };
-  }
-
-  return { lines, truncated: false };
-}
-
 export function formatMcpToolResultLines(
   result: Pick<AgentToolResult<McpToolResultDetails>, "content" | "details">,
   expanded: boolean,
   maxCollapsedLines = DEFAULT_MAX_COLLAPSED_LINES,
 ): McpToolResultDisplay {
-  if (!expanded && result.details?.materialized === true) {
-    return formatMaterializedCollapsedLines(result.details, maxCollapsedLines);
-  }
-
   const allLines = result.content.flatMap(blockToLines);
   const lines = allLines.length > 0 ? allLines : ["(empty result)"];
 
-  if (expanded || lines.length <= maxCollapsedLines) {
+  if (expanded) {
+    return { lines, truncated: false };
+  }
+
+  if (result.details?.materialized === true) {
+    if (lines.length <= maxCollapsedLines) {
+      return { lines, truncated: false };
+    }
+
+    return {
+      lines: lines.slice(0, maxCollapsedLines),
+      truncated: true,
+    };
+  }
+
+  if (lines.length <= maxCollapsedLines) {
     return { lines, truncated: false };
   }
 
@@ -177,7 +134,7 @@ export function renderMcpToolResult(
 
   const display = formatMcpToolResultLines(result, options.expanded);
   const output = display.lines
-    .map((line) => line === "…" || line === "… expand to view full summary"
+    .map((line) => line === "…"
       ? theme.fg("muted", line)
       : theme.fg("toolOutput", line))
     .join("\n");

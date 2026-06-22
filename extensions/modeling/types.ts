@@ -101,12 +101,10 @@ export interface McpToolResultDetails {
   servers: ToolResultServerDetail[];
   materialized?: boolean;
   callDir?: string;
-  summaryPath?: string;
   manifestPath?: string;
   payloadItems?: PayloadItem[];
   mainFiles?: string[];
   metaFiles?: string[];
-  summaryTruncated?: boolean;
 }
 
 export const DEFAULT_RUNTIME_CAPABILITIES: McpRuntimeCapabilities = {

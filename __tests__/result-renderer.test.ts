@@ -16,38 +16,24 @@ describe("formatMcpToolCallLines", () => {
 });
 
 describe("formatMcpToolResultLines", () => {
-  it("collapses materialized results into a compact preview", () => {
+  it("collapses materialized results by taking the first summary lines", () => {
     const details: McpToolResultDetails = {
       stage: "runtime-call-tool",
       materialized: true,
-      callDir: ".pi/mcp-artifacts/x",
-      summaryPath: ".pi/mcp-artifacts/x/summary.txt",
-      manifestPath: ".pi/mcp-artifacts/x/manifest.json",
-      mainFiles: ["a.txt", "b.json"],
-      metaFiles: ["summary.txt", "manifest.json"],
-      summaryTruncated: false,
-      payloadItems: [
-        {
-          index: 1,
-          kind: "text",
-          source: "content[0]",
-          path: "a.txt",
-          relativePath: "a.txt",
-          fileName: "01-text.txt",
-          preview: ["hello world"],
-        },
-      ],
+      callDir: "C:/repo/.pi/mcp-artifacts/x",
+      manifestPath: "C:/repo/.pi/mcp-artifacts/x/manifest.json",
+      mainFiles: ["C:/repo/.pi/mcp-artifacts/x/01-text.txt"],
+      metaFiles: ["C:/repo/.pi/mcp-artifacts/x/manifest.json"],
+      payloadItems: [],
       servers: [],
     };
 
     const display = formatMcpToolResultLines({
-      content: [{ type: "text", text: "full summary here" }],
+      content: [{ type: "text", text: "line 1\nline 2\nline 3\nline 4\nline 5" }],
       details,
     }, false, 4);
 
-    expect(display.lines[0]).toContain("MCP result materialized");
-    expect(display.lines[1]).toContain("01-text.txt");
-    expect(display.lines.at(-1)).toBe("… expand to view full summary");
+    expect(display.lines).toEqual(["line 1", "line 2", "line 3", "line 4"]);
     expect(display.truncated).toBe(true);
   });
 });

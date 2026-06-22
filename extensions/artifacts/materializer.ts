@@ -21,6 +21,11 @@ interface InternalPayloadItem {
   structuredData?: Record<string, unknown>;
 }
 
+interface TextPreviewResult {
+  lines: string[];
+  truncated: boolean;
+}
+
 function isEmbeddedTextResource(resource: unknown): resource is { uri: string; text: string; mimeType?: string } {
   return typeof resource === "object" && resource !== null && "text" in resource && typeof (resource as { text?: unknown }).text === "string";
 }
@@ -54,15 +59,6 @@ function createCallDirectoryName(server: string, tool: string): string {
 
 function normalizePathSlashes(value: string): string {
   return value.replace(/\\/g, "/");
-}
-
-function toDisplayPath(cwd: string, targetPath: string): string {
-  const normalizedCwd = normalizePathSlashes(resolve(cwd));
-  const normalizedTarget = normalizePathSlashes(resolve(targetPath));
-  if (normalizedTarget.startsWith(`${normalizedCwd}/`)) {
-    return normalizedTarget.slice(normalizedCwd.length + 1);
-  }
-  return normalizedTarget;
 }
 
 function resolveArtifactRoot(cwd: string, artifactRoot: string): string {
@@ -147,16 +143,31 @@ function toStoredText(kind: MaterializedPayloadKind, value: string, prettyPrintJ
   return value.endsWith("\n") ? value : `${value}\n`;
 }
 
-function buildTextPreview(text: string, maxLines: number, maxChars: number): string[] {
+function buildTextPreview(text: string, maxLines: number, maxChars: number): TextPreviewResult {
   const normalized = text.replace(/\r\n/g, "\n").trimEnd();
-  if (!normalized) return ["(empty text)"];
-
-  const clipped = normalized.length > maxChars ? `${normalized.slice(0, Math.max(0, maxChars - 1))}…` : normalized;
-  const lines = clipped.split("\n");
-  if (lines.length <= maxLines) {
-    return lines;
+  if (!normalized) {
+    return { lines: ["(empty text)"], truncated: false };
   }
-  return [...lines.slice(0, maxLines), "…"];
+
+  let truncated = false;
+  let clipped = normalized;
+
+  if (clipped.length > maxChars) {
+    clipped = clipped.slice(0, Math.max(0, maxChars));
+    truncated = true;
+  }
+
+  let lines = clipped.split("\n");
+  if (lines.length > maxLines) {
+    lines = lines.slice(0, maxLines);
+    truncated = true;
+  }
+
+  if (truncated) {
+    lines.push("…");
+  }
+
+  return { lines, truncated };
 }
 
 function isTextualKind(kind: MaterializedPayloadKind): boolean {
@@ -264,88 +275,55 @@ function writePayloadMainFile(filePath: string, item: InternalPayloadItem, setti
   return text;
 }
 
-function buildSummary(
-  server: string,
-  tool: string,
-  payloadItems: PayloadItem[],
-  budget: SummaryBudget,
-): { text: string; truncated: boolean } {
-  const lines: string[] = [
-    "MCP result materialized",
-    `- server: ${server}`,
-    `- tool: ${tool}`,
-    `- payload items: ${payloadItems.length}`,
-    `- main files: ${payloadItems.length}`,
-    "- meta files: 2",
-    "",
-  ];
-
-  let truncated = false;
-  let previewedItems = 0;
-  let lineCount = lines.length;
-  let charCount = lines.join("\n").length;
-
-  const canAppend = (candidateLines: string[]): boolean => {
-    const nextLineCount = lineCount + candidateLines.length;
-    const nextCharCount = charCount + 1 + candidateLines.join("\n").length;
-    return nextLineCount <= budget.summaryMaxLines && nextCharCount <= budget.summaryMaxChars;
-  };
-
-  const appendLines = (candidateLines: string[]): boolean => {
-    if (!canAppend(candidateLines)) return false;
-    lines.push(...candidateLines);
-    lineCount += candidateLines.length;
-    charCount += 1 + candidateLines.join("\n").length;
-    return true;
-  };
-
-  for (const [index, item] of payloadItems.entries()) {
-    const baseLines = [
-      `[${index + 1}] ${item.kind}`,
-      `- source: ${item.source}`,
-      `- path: ${item.relativePath}`,
-    ];
-
-    if (item.mimeType) {
-      baseLines.push(`- mimeType: ${item.mimeType}`);
-    }
-
-    if (item.uri) {
-      baseLines.push(`- uri: ${item.uri}`);
-    }
-
-    if (!appendLines(baseLines)) {
-      truncated = true;
-      break;
-    }
-
-    const canPreview = isTextualKind(item.kind) && Array.isArray(item.preview) && item.preview.length > 0 && previewedItems < budget.previewItemCount;
-    if (!canPreview) {
-      continue;
-    }
-
-    const previewLines = ["- preview:", ...(item.preview ?? []).map((line) => `  ${line}`)];
-    if (!appendLines(previewLines)) {
-      truncated = true;
-      continue;
-    }
-
-    previewedItems += 1;
+function buildItemPreview(item: InternalPayloadItem, absolutePath: string, storedText: string | undefined, settings: MaterializationSettings): string[] {
+  if (!isTextualKind(item.kind) || storedText === undefined) {
+    return [`File: ${absolutePath}`];
   }
 
-  if (truncated) {
-    const tail = "… remaining items omitted from preview; inspect main files or manifest.json";
-    if (canAppend([tail])) {
-      lines.push(tail);
-    } else if (lines.length > 0) {
-      lines[lines.length - 1] = tail;
-    }
+  const preview = buildTextPreview(storedText, settings.previewLinesPerItem, settings.previewCharsPerItem);
+  if (!preview.truncated) {
+    return preview.lines;
   }
 
-  return {
-    text: `${lines.join("\n")}\n`,
-    truncated,
-  };
+  return [...preview.lines, `Full output: ${absolutePath}`];
+}
+
+function joinSections(sections: string[][]): string {
+  return `${sections.map((section) => section.join("\n")).join("\n\n")}\n`;
+}
+
+function buildSummary(payloadItems: PayloadItem[], manifestPath: string, budget: SummaryBudget): string {
+  if (payloadItems.length === 0) {
+    return "(empty result)\n";
+  }
+
+  if (payloadItems.length === 1) {
+    return `${payloadItems[0].preview.join("\n")}\n`;
+  }
+
+  const sections: string[][] = [];
+  const displayedItems = payloadItems.slice(0, budget.summaryItemCount);
+
+  for (const item of displayedItems) {
+    sections.push([`[${item.index}] ${item.kind}`, ...item.preview]);
+  }
+
+  if (payloadItems.length > displayedItems.length) {
+    sections.push([`... and ${payloadItems.length - displayedItems.length} more payload items; inspect manifest.json`]);
+  }
+
+  sections.push([`Read manifest for full index: ${manifestPath}`]);
+  return joinSections(sections);
+}
+
+function applyHardMax(summaryText: string, hardMaxChars: number, manifestPath: string): string {
+  if (summaryText.length <= hardMaxChars) {
+    return summaryText;
+  }
+
+  const tail = `\n\n…\nHard output limit reached; inspect manifest: ${manifestPath}\n`;
+  const budget = Math.max(0, hardMaxChars - tail.length);
+  return `${summaryText.slice(0, budget).trimEnd()}${tail}`;
 }
 
 export function materializeToolCallResult(input: MaterializeCallToolResultInput): MaterializedToolCallResult {
@@ -355,7 +333,7 @@ export function materializeToolCallResult(input: MaterializeCallToolResultInput)
   };
   const cwd = resolve(input.cwd ?? process.cwd());
   const artifactRoot = resolveArtifactRoot(cwd, settings.artifactRoot);
-  const callDir = join(artifactRoot, createCallDirectoryName(input.server, input.tool));
+  const callDir = normalizePathSlashes(join(artifactRoot, createCallDirectoryName(input.server, input.tool)));
   mkdirSync(callDir, { recursive: true });
 
   const payloadItems: PayloadItem[] = [];
@@ -363,49 +341,43 @@ export function materializeToolCallResult(input: MaterializeCallToolResultInput)
 
   for (const [index, item] of internalItems.entries()) {
     const fileName = buildMainFileName(index + 1, item);
-    const filePath = join(callDir, fileName);
+    const filePath = normalizePathSlashes(join(callDir, fileName));
     const storedText = writePayloadMainFile(filePath, item, settings);
     payloadItems.push({
       index: index + 1,
       kind: item.kind,
       source: item.source,
       path: filePath,
-      relativePath: toDisplayPath(cwd, filePath),
       fileName,
       mimeType: item.mimeType,
       uri: item.uri,
-      preview: storedText && isTextualKind(item.kind)
-        ? buildTextPreview(storedText, settings.previewLinesPerItem, settings.previewCharsPerItem)
-        : undefined,
+      preview: buildItemPreview(item, filePath, storedText, settings),
     });
   }
 
-  const summary = buildSummary(input.server, input.tool, payloadItems, {
-    summaryMaxLines: settings.summaryMaxLines,
-    summaryMaxChars: settings.summaryMaxChars,
+  const manifestPath = normalizePathSlashes(join(callDir, "manifest.json"));
+  const summaryText = applyHardMax(buildSummary(payloadItems, manifestPath, {
+    summaryItemCount: settings.summaryItemCount,
     previewLinesPerItem: settings.previewLinesPerItem,
     previewCharsPerItem: settings.previewCharsPerItem,
-    previewItemCount: settings.previewItemCount,
-  });
+    hardMaxChars: settings.hardMaxChars,
+  }), settings.hardMaxChars, manifestPath);
 
-  const summaryPath = join(callDir, "summary.txt");
-  const manifestPath = join(callDir, "manifest.json");
-  writeFileSync(summaryPath, summary.text, "utf8");
   writeFileSync(
     manifestPath,
     `${JSON.stringify({
       server: input.server,
       tool: input.tool,
-      cwd,
+      cwd: normalizePathSlashes(cwd),
       createdAt: new Date().toISOString(),
-      callDir: toDisplayPath(cwd, callDir),
-      summaryPath: toDisplayPath(cwd, summaryPath),
-      manifestPath: toDisplayPath(cwd, manifestPath),
+      callDir,
+      manifestPath,
       payloadItems: payloadItems.map((item) => ({
         index: item.index,
         kind: item.kind,
         source: item.source,
-        path: item.fileName,
+        path: item.path,
+        fileName: item.fileName,
         mimeType: item.mimeType,
         uri: item.uri,
       })),
@@ -414,20 +386,17 @@ export function materializeToolCallResult(input: MaterializeCallToolResultInput)
   );
 
   return {
-    summaryText: summary.text,
+    summaryText,
     callDir,
-    summaryPath,
     manifestPath,
     payloadItems,
     mainFiles: payloadItems.map((item) => item.path),
-    metaFiles: [summaryPath, manifestPath],
+    metaFiles: [manifestPath],
     budget: {
-      summaryMaxLines: settings.summaryMaxLines,
-      summaryMaxChars: settings.summaryMaxChars,
+      summaryItemCount: settings.summaryItemCount,
       previewLinesPerItem: settings.previewLinesPerItem,
       previewCharsPerItem: settings.previewCharsPerItem,
-      previewItemCount: settings.previewItemCount,
+      hardMaxChars: settings.hardMaxChars,
     },
-    summaryTruncated: summary.truncated,
   };
 }

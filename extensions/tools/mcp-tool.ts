@@ -142,12 +142,10 @@ const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>({
           stage: "runtime-call-tool",
           materialized: true,
           callDir: materialized.callDir,
-          summaryPath: materialized.summaryPath,
           manifestPath: materialized.manifestPath,
           payloadItems: materialized.payloadItems,
           mainFiles: materialized.mainFiles,
           metaFiles: materialized.metaFiles,
-          summaryTruncated: materialized.summaryTruncated,
           servers: [{
             name: execution.server.config.name,
             transport: execution.server.config.transport,
