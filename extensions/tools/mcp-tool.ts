@@ -126,11 +126,14 @@ const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>({
     if (params.server && params.tool) {
       const parsedArgs = parseArgs(params.args);
       const execution = await runtime.registry().callTool(params.server, params.tool, parsedArgs);
+      const resultPresentation = runtime.config()?.resultPresentation;
+      const { collapsedPreviewLines: _collapsedPreviewLines, ...materializationSettings } = resultPresentation ?? {};
       const materialized = materializeToolCallResult({
         cwd: ctx.cwd,
         server: execution.server.config.name,
         tool: execution.toolName,
         result: execution.result,
+        settings: materializationSettings,
       });
       runtime.refreshFooter(ctx);
       return {

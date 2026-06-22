@@ -16,6 +16,10 @@ export interface MaterializationSettings {
   prettyPrintJson: boolean;
 }
 
+export interface ResultPresentationSettings extends MaterializationSettings {
+  collapsedPreviewLines: number;
+}
+
 export interface SummaryBudget {
   summaryItemCount: number;
   previewLinesPerItem: number;
@@ -44,11 +48,21 @@ export interface MaterializedToolCallResult {
   budget: SummaryBudget;
 }
 
-export const DEFAULT_MATERIALIZATION_SETTINGS: MaterializationSettings = {
+export const DEFAULT_RESULT_PRESENTATION_SETTINGS: ResultPresentationSettings = {
   artifactRoot: ".pi/mcp-artifacts",
   summaryItemCount: 6,
   previewLinesPerItem: 4,
   previewCharsPerItem: 800,
   hardMaxChars: 40000,
   prettyPrintJson: true,
+  collapsedPreviewLines: 4,
+};
+
+export const DEFAULT_MATERIALIZATION_SETTINGS: MaterializationSettings = {
+  artifactRoot: DEFAULT_RESULT_PRESENTATION_SETTINGS.artifactRoot,
+  summaryItemCount: DEFAULT_RESULT_PRESENTATION_SETTINGS.summaryItemCount,
+  previewLinesPerItem: DEFAULT_RESULT_PRESENTATION_SETTINGS.previewLinesPerItem,
+  previewCharsPerItem: DEFAULT_RESULT_PRESENTATION_SETTINGS.previewCharsPerItem,
+  hardMaxChars: DEFAULT_RESULT_PRESENTATION_SETTINGS.hardMaxChars,
+  prettyPrintJson: DEFAULT_RESULT_PRESENTATION_SETTINGS.prettyPrintJson,
 };

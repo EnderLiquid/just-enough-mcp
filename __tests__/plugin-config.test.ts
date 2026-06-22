@@ -12,7 +12,7 @@ function makeTempDir(): string {
 }
 
 describe("loadPluginConfigFromPaths", () => {
-  it("parses stdio and http servers with connection modes", () => {
+  it("parses stdio and http servers with connection modes and result presentation settings", () => {
     const root = makeTempDir();
     const configPath = join(root, "just-enough-mcp.json");
     const overviewDir = join(root, "mcp-overview");
@@ -20,6 +20,15 @@ describe("loadPluginConfigFromPaths", () => {
     writeFileSync(join(overviewDir, "tavily.md"), "Search and extract web content.\nUse it for latest info.\n", "utf8");
 
     writeFileSync(configPath, JSON.stringify({
+      resultPresentation: {
+        summaryItemCount: 3,
+        previewLinesPerItem: 2,
+        previewCharsPerItem: 120,
+        hardMaxChars: 5000,
+        collapsedPreviewLines: 5,
+        prettyPrintJson: false,
+        artifactRoot: "custom-artifacts"
+      },
       servers: {
         tavily: {
           transport: "http",
@@ -41,6 +50,13 @@ describe("loadPluginConfigFromPaths", () => {
     const tavily = loaded.servers.find(server => server.name === "tavily");
     const localTools = loaded.servers.find(server => server.name === "localTools");
 
+    expect(loaded.resultPresentation.summaryItemCount).toBe(3);
+    expect(loaded.resultPresentation.previewLinesPerItem).toBe(2);
+    expect(loaded.resultPresentation.previewCharsPerItem).toBe(120);
+    expect(loaded.resultPresentation.hardMaxChars).toBe(5000);
+    expect(loaded.resultPresentation.collapsedPreviewLines).toBe(5);
+    expect(loaded.resultPresentation.prettyPrintJson).toBe(false);
+    expect(loaded.resultPresentation.artifactRoot).toBe("custom-artifacts");
     expect(tavily?.transport).toBe("http");
     expect(tavily?.connectionMode).toBe("eager");
     expect(tavily?.overview.content).toContain("Search and extract web content.");
@@ -64,5 +80,21 @@ describe("loadPluginConfigFromPaths", () => {
     }, null, 2), "utf8");
 
     expect(() => loadPluginConfigFromPaths(configPath, overviewDir)).toThrow(/broken/);
+  });
+
+  it("rejects invalid result presentation settings", () => {
+    const root = makeTempDir();
+    const configPath = join(root, "just-enough-mcp.json");
+    const overviewDir = join(root, "mcp-overview");
+    mkdirSync(overviewDir, { recursive: true });
+
+    writeFileSync(configPath, JSON.stringify({
+      resultPresentation: {
+        summaryItemCount: 0,
+      },
+      servers: {},
+    }, null, 2), "utf8");
+
+    expect(() => loadPluginConfigFromPaths(configPath, overviewDir)).toThrow(/resultPresentation.summaryItemCount/);
   });
 });

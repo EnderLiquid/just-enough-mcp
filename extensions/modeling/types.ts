@@ -1,5 +1,5 @@
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
-import type { PayloadItem } from "./materialization.js";
+import type { PayloadItem, ResultPresentationSettings } from "./materialization.js";
 
 export type ServerTransportKind = "stdio" | "http";
 export type ServerConnectionMode = "lazy" | "eager";
@@ -46,6 +46,7 @@ export interface BaseServerConfig {
 export type ServerConfig = BaseServerConfig & ServerTransportConfig;
 
 export interface RawPluginConfig {
+  resultPresentation?: unknown;
   servers?: Record<string, unknown>;
 }
 
@@ -59,6 +60,7 @@ export type ResolvedServerConfig = (Omit<BaseServerConfig, "overview"> & ServerT
 export interface PluginConfigLoadResult {
   configPath: string;
   overviewDir: string;
+  resultPresentation: ResultPresentationSettings;
   servers: ResolvedServerConfig[];
 }
 

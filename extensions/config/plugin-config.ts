@@ -8,6 +8,10 @@ import {
   type ResolvedServerConfig,
   type ServerConfig,
 } from "../modeling/types.js";
+import {
+  DEFAULT_RESULT_PRESENTATION_SETTINGS,
+  type ResultPresentationSettings,
+} from "../modeling/materialization.js";
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -27,6 +31,50 @@ function ensureStringRecord(value: unknown, fieldName: string, serverName: strin
     throw new Error(`Server \"${serverName}\" field \"${fieldName}\" must be an object of string values.`);
   }
   return value as Record<string, string>;
+}
+
+function ensurePositiveInteger(value: unknown, fieldName: string): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+    throw new Error(`just-enough-mcp config field \"resultPresentation.${fieldName}\" must be a positive integer.`);
+  }
+  return value;
+}
+
+function ensureBoolean(value: unknown, fieldName: string): boolean | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "boolean") {
+    throw new Error(`just-enough-mcp config field \"resultPresentation.${fieldName}\" must be a boolean.`);
+  }
+  return value;
+}
+
+function ensureNonEmptyString(value: unknown, fieldName: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`just-enough-mcp config field \"resultPresentation.${fieldName}\" must be a non-empty string.`);
+  }
+  return value;
+}
+
+function parseResultPresentation(raw: unknown): ResultPresentationSettings {
+  if (raw === undefined) {
+    return { ...DEFAULT_RESULT_PRESENTATION_SETTINGS };
+  }
+
+  if (!isObject(raw)) {
+    throw new Error("just-enough-mcp config field \"resultPresentation\" must be an object.");
+  }
+
+  return {
+    artifactRoot: ensureNonEmptyString(raw.artifactRoot, "artifactRoot") ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.artifactRoot,
+    summaryItemCount: ensurePositiveInteger(raw.summaryItemCount, "summaryItemCount") ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.summaryItemCount,
+    previewLinesPerItem: ensurePositiveInteger(raw.previewLinesPerItem, "previewLinesPerItem") ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.previewLinesPerItem,
+    previewCharsPerItem: ensurePositiveInteger(raw.previewCharsPerItem, "previewCharsPerItem") ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.previewCharsPerItem,
+    hardMaxChars: ensurePositiveInteger(raw.hardMaxChars, "hardMaxChars") ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.hardMaxChars,
+    prettyPrintJson: ensureBoolean(raw.prettyPrintJson, "prettyPrintJson") ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.prettyPrintJson,
+    collapsedPreviewLines: ensurePositiveInteger(raw.collapsedPreviewLines, "collapsedPreviewLines") ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.collapsedPreviewLines,
+  };
 }
 
 function parseServerConfig(serverName: string, raw: unknown): ServerConfig {
@@ -126,10 +174,12 @@ function resolveServers(configPath: string, overviewDir: string, raw: RawPluginC
 export function loadPluginConfigFromPaths(configPath: string, overviewDir: string): PluginConfigLoadResult {
   const raw = parseRawConfig(configPath);
   const servers = resolveServers(configPath, overviewDir, raw);
+  const resultPresentation = parseResultPresentation(raw.resultPresentation);
 
   return {
     configPath,
     overviewDir,
+    resultPresentation,
     servers,
   };
 }

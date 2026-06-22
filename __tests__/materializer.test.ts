@@ -54,6 +54,7 @@ describe("materializeToolCallResult", () => {
       result,
       settings: {
         previewCharsPerItem: 20,
+        summaryItemCount: 2,
       },
     });
 
@@ -63,10 +64,11 @@ describe("materializeToolCallResult", () => {
     expect(materialized.summaryText).toContain("[1] text");
     expect(materialized.summaryText).toContain("[2] image");
     expect(materialized.summaryText).toContain("File: ");
-    expect(materialized.summaryText).toContain("Full output: ");
     expect(materialized.summaryText).toContain("Read manifest for full index: ");
+    expect(materialized.summaryText).toContain("... and 1 more payload items; inspect manifest.json");
     expect(materialized.summaryText).not.toContain("source:");
     expect(materialized.summaryText).not.toContain("mimeType:");
+    expect(materialized.payloadItems[2].preview.join("\n")).toContain("Full output: ");
 
     const manifest = readFileSync(materialized.manifestPath, "utf8");
     expect(manifest).toContain('"kind": "structuredContent"');

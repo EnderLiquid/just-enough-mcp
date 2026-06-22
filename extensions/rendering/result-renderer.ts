@@ -1,6 +1,8 @@
 import type { AgentToolResult, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
+import { getMcpRuntime } from "../clients/runtime.js";
+import { DEFAULT_RESULT_PRESENTATION_SETTINGS } from "../modeling/materialization.js";
 import type { McpToolResultDetails } from "../modeling/types.js";
 
 type McpToolContentBlock = AgentToolResult<McpToolResultDetails>["content"][number];
@@ -20,7 +22,6 @@ export interface McpToolResultDisplay {
 }
 
 const DEFAULT_MAX_CALL_INPUT_CHARS = 1500;
-const DEFAULT_MAX_COLLAPSED_LINES = 4;
 
 function truncateText(value: string, maxChars: number): string {
   if (value.length <= maxChars) return value;
@@ -62,6 +63,11 @@ function blockToLines(block: McpToolContentBlock): string[] {
   return ["[non-text content]"];
 }
 
+function getCollapsedPreviewLines(): number {
+  return getMcpRuntime().config()?.resultPresentation.collapsedPreviewLines
+    ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.collapsedPreviewLines;
+}
+
 export function formatMcpToolCallLines(
   args: McpToolInput,
   maxInputChars = DEFAULT_MAX_CALL_INPUT_CHARS,
@@ -89,7 +95,7 @@ export function formatMcpToolCallLines(
 export function formatMcpToolResultLines(
   result: Pick<AgentToolResult<McpToolResultDetails>, "content" | "details">,
   expanded: boolean,
-  maxCollapsedLines = DEFAULT_MAX_COLLAPSED_LINES,
+  maxCollapsedLines = getCollapsedPreviewLines(),
 ): McpToolResultDisplay {
   const allLines = result.content.flatMap(blockToLines);
   const lines = allLines.length > 0 ? allLines : ["(empty result)"];
