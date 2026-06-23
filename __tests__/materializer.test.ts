@@ -101,6 +101,32 @@ describe("materializeToolCallResult", () => {
     expect(manifest).toContain('"manifestPath":');
   });
 
+  it("shortens long resource basenames with a 4-character hash suffix", () => {
+    const cwd = makeTempDir();
+    const result: CallToolResult = {
+      content: [{
+        type: "resource",
+        resource: {
+          uri: "https://example.com/abcdeabcdeabcdeabcdeabcdeabcdeabcdeabcde.txt",
+          mimeType: "text/plain",
+          text: "resource body",
+        },
+      }],
+      isError: false,
+    };
+
+    const materialized = materializeToolCallResult({
+      cwd,
+      server: "tavily",
+      tool: "extract",
+      result,
+    });
+
+    expect(materialized.payloadItems).toHaveLength(1);
+    expect(materialized.payloadItems[0].fileName).toMatch(/^01-abcdeabcdeabcdeabcdeabcdeabcdeab-[a-z0-9]{4}\.txt$/);
+    expect(existsSync(materialized.payloadItems[0].path)).toBe(true);
+  });
+
   it("suppresses duplicate structuredContent when it is semantically equal to a text payload", () => {
     const cwd = makeTempDir();
     const result: CallToolResult = {

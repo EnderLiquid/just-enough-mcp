@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, extname, isAbsolute, join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -138,6 +138,20 @@ function inferBaseNameFromUri(uri?: string): string | undefined {
   } catch {
     return basename(uri) || undefined;
   }
+}
+
+function toShortHash(value: string): string {
+  const digest = createHash("sha1").update(value).digest();
+  const encoded = digest.readUInt32BE(0).toString(36);
+  return encoded.padStart(4, "0").slice(0, 4);
+}
+
+function shortenNormalizedBase(value: string): string {
+  if (value.length <= 32) {
+    return value;
+  }
+
+  return `${value.slice(0, 32)}-${toShortHash(value)}`;
 }
 
 function normalizeJsonText(value: string): string {
@@ -306,7 +320,9 @@ function extractPayloadItems(result: CallToolResult): ExtractedPayloadItemsResul
 function buildMainFileName(index: number, item: InternalPayloadItem): string {
   const prefix = String(index).padStart(2, "0");
   const baseName = inferBaseNameFromUri(item.uri);
-  const normalizedBase = baseName ? sanitizeSegment(baseName.replace(extname(baseName), "")) : undefined;
+  const normalizedBase = baseName
+    ? shortenNormalizedBase(sanitizeSegment(baseName.replace(extname(baseName), "")))
+    : undefined;
   const extFromUri = inferExtensionFromUri(item.uri);
   const extFromMime = inferExtensionFromMimeType(item.mimeType);
 
