@@ -3,9 +3,8 @@ import { Text } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { getMcpRuntime } from "../clients/runtime.js";
 import { DEFAULT_RESULT_PRESENTATION_SETTINGS } from "../modeling/materialization.js";
-import type { McpToolResultDetails } from "../modeling/types.js";
 
-type McpToolContentBlock = AgentToolResult<McpToolResultDetails>["content"][number];
+type McpToolContentBlock = AgentToolResult<undefined>["content"][number];
 
 type RenderTheme = Theme;
 
@@ -93,7 +92,7 @@ export function formatMcpToolCallLines(
 }
 
 export function formatMcpToolResultLines(
-  result: Pick<AgentToolResult<McpToolResultDetails>, "content" | "details">,
+  result: Pick<AgentToolResult<undefined>, "content">,
   expanded: boolean,
   maxCollapsedLines = getCollapsedPreviewLines(),
 ): McpToolResultDisplay {
@@ -102,17 +101,6 @@ export function formatMcpToolResultLines(
 
   if (expanded) {
     return { lines, truncated: false };
-  }
-
-  if (result.details?.manifestPath !== undefined) {
-    if (lines.length <= maxCollapsedLines) {
-      return { lines, truncated: false };
-    }
-
-    return {
-      lines: lines.slice(0, maxCollapsedLines),
-      truncated: true,
-    };
   }
 
   if (lines.length <= maxCollapsedLines) {
@@ -130,7 +118,7 @@ export function renderMcpToolCall(args: McpToolInput, theme: RenderTheme) {
 }
 
 export function renderMcpToolResult(
-  result: AgentToolResult<McpToolResultDetails>,
+  result: AgentToolResult<undefined>,
   options: ToolRenderResultOptions,
   theme: RenderTheme,
 ) {

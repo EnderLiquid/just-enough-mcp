@@ -1,5 +1,5 @@
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
-import type { PayloadItemIndex, ResultPresentationSettings } from "./materialization.js";
+import type { ResultPresentationSettings } from "./materialization.js";
 
 export type ServerTransportKind = "stdio" | "http";
 export type ServerConnectionMode = "lazy" | "eager";
@@ -87,22 +87,6 @@ export interface ToolCallExecutionResult {
   toolName: string;
   args: Record<string, unknown>;
   result: CallToolResult;
-}
-
-export interface ToolResultServerDetail {
-  name: string;
-  transport: ServerTransportKind;
-  connectionMode: ServerConnectionMode;
-  status: RuntimeServerStatus;
-  overviewSource: ServerOverview["source"];
-  error?: string;
-}
-
-export interface McpToolResultDetails {
-  stage: string;
-  servers: ToolResultServerDetail[];
-  manifestPath?: string;
-  payloadItemIndexes?: PayloadItemIndex[];
 }
 
 export const DEFAULT_RUNTIME_CAPABILITIES: McpRuntimeCapabilities = {

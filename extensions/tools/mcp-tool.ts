@@ -2,7 +2,7 @@ import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { materializeToolCallResult } from "../artifacts/materializer.js";
 import { getMcpRuntime } from "../clients/runtime.js";
-import type { RuntimeServerState, McpToolResultDetails } from "../modeling/types.js";
+import type { RuntimeServerState } from "../modeling/types.js";
 import { renderMcpToolCall, renderMcpToolResult } from "../rendering/result-renderer.js";
 
 const parametersSchema = Type.Object({
@@ -25,18 +25,7 @@ function parseArgs(input: string | undefined): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
-function toServerDetail(server: RuntimeServerState) {
-  return {
-    name: server.config.name,
-    transport: server.config.transport,
-    connectionMode: server.config.connectionMode,
-    status: server.status,
-    overviewSource: server.config.overview.source,
-    error: server.error,
-  };
-}
-
-export const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>({
+export const mcpTool = defineTool<typeof parametersSchema, undefined>({
   name: "mcp",
   label: "MCP",
   description: "Minimal MCP runtime entry point for server-level progressive disclosure.",
@@ -62,10 +51,7 @@ export const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>
             }),
           ].join("\n"),
         }],
-        details: {
-          stage: "runtime-status",
-          servers: status.servers.map(toServerDetail),
-        },
+        details: undefined,
       };
     }
 
@@ -87,10 +73,7 @@ export const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>
           type: "text",
           text: `Connected MCP server: ${server.config.name}`,
         }],
-        details: {
-          stage: "runtime-connect",
-          servers: [toServerDetail(server)],
-        },
+        details: undefined,
       };
     }
 
@@ -113,10 +96,7 @@ export const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>
             })),
           ].join("\n\n"),
         }],
-        details: {
-          stage: "runtime-tools-list",
-          servers: [toServerDetail(catalog.server)],
-        },
+        details: undefined,
       };
     }
 
@@ -138,12 +118,7 @@ export const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>
           type: "text",
           text: materialized.summaryText,
         }],
-        details: {
-          stage: "runtime-call-tool",
-          manifestPath: materialized.manifestPath,
-          payloadItemIndexes: materialized.payloadItemIndexes,
-          servers: [toServerDetail(execution.server)],
-        },
+        details: undefined,
         isError: execution.result.isError === true,
       };
     }

@@ -161,7 +161,6 @@ describe("mcpTool.execute", () => {
       type: "text",
       text: "remote tool failed\nFull output: D:/projects/ts/just-enough-mcp/.pi/mcp/20260622-1/01-text.txt",
     });
-    expect(result.details?.manifestPath).toBe("D:/projects/ts/just-enough-mcp/.pi/mcp/20260622-1/manifest.json");
-    expect(result.details?.payloadItemIndexes).toEqual([]);
+    expect(result.details).toBeUndefined();
   });
 });
