@@ -11,6 +11,7 @@ import type {
   ServerCatalogResult,
   ToolCallExecutionResult,
 } from "../modeling/types.js";
+import { notifyInfo } from "../ui/notifier.js";
 
 interface RuntimeConnection {
   client: Client;
@@ -124,6 +125,10 @@ export function createClientRegistry(): ClientRegistry {
     });
   }
 
+  function notifyOverviewCreated(serverName: string): void {
+    notifyInfo(`Created MCP overview stub: ${serverName}`);
+  }
+
   function tryBootstrapOverview(server: RuntimeServerState, connection: RuntimeConnection): void {
     if (!overviewDirectoryPath) {
       return;
@@ -132,11 +137,15 @@ export function createClientRegistry(): ClientRegistry {
     const serverInfo = connection.client.getServerVersion();
 
     try {
-      tryBootstrapOverviewFromDescription(
+      const bootstrapResult = tryBootstrapOverviewFromDescription(
         server.config,
         overviewDirectoryPath,
         serverInfo?.description,
       );
+
+      if (bootstrapResult?.created) {
+        notifyOverviewCreated(server.config.name);
+      }
     } catch {
     }
   }

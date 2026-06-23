@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   close: vi.fn(),
   bootstrap: vi.fn(),
   transportClose: vi.fn(),
+  notifyInfo: vi.fn(),
 }));
 
 vi.mock("@modelcontextprotocol/sdk/client/index.js", () => ({
@@ -35,6 +36,10 @@ vi.mock("@modelcontextprotocol/sdk/client/streamableHttp.js", () => ({
 
 vi.mock("../extensions/config/overview-bootstrap.js", () => ({
   tryBootstrapOverviewFromDescription: mocks.bootstrap,
+}));
+
+vi.mock("../extensions/ui/notifier.js", () => ({
+  notifyInfo: mocks.notifyInfo,
 }));
 
 import { createClientRegistry } from "../extensions/clients/registry.js";
@@ -102,6 +107,7 @@ describe("createClientRegistry overview bootstrap", () => {
       "C:/Users/Admin/.pi/agent/mcp-overviews",
       "Demo MCP server",
     );
+    expect(mocks.notifyInfo).toHaveBeenCalledWith("Created MCP overview stub: demo");
   });
 
   it("does not fail the connection flow when overview bootstrap throws", async () => {
