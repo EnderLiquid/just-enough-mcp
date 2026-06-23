@@ -140,12 +140,8 @@ export const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>
         }],
         details: {
           stage: "runtime-call-tool",
-          materialized: true,
-          callDir: materialized.callDir,
           manifestPath: materialized.manifestPath,
-          payloadItems: materialized.payloadItems,
-          mainFiles: materialized.mainFiles,
-          metaFiles: materialized.metaFiles,
+          payloadItemIndexes: materialized.payloadItemIndexes,
           servers: [toServerDetail(execution.server)],
         },
         isError: execution.result.isError === true,

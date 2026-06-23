@@ -7,8 +7,8 @@ import {
   DEFAULT_MATERIALIZATION_SETTINGS,
   type MaterializedToolCallResult,
   type MaterializationSettings,
-  type PayloadContentType,
   type PayloadItem,
+  type PayloadItemIndex,
   type SummaryBudget,
 } from "../modeling/materialization.js";
 
@@ -487,15 +487,15 @@ function applyHardMax(summaryText: string, hardMaxChars: number, manifestPath: s
   return `${summaryText.slice(0, budget).trimEnd()}${tail}`;
 }
 
-function toManifestPayloadItem(item: PayloadItem) {
+function toPayloadItemIndex(item: PayloadItem): PayloadItemIndex {
   return {
-    index: item.index,
+    index: item.index!,
     source: item.source,
     ...(item.contentType ? { contentType: item.contentType } : {}),
     mimeType: item.mimeType,
     ...(item.rawMimeType ? { rawMimeType: item.rawMimeType } : {}),
-    path: item.path,
-    fileName: item.fileName,
+    path: item.path!,
+    fileName: item.fileName!,
     ...(item.uri ? { uri: item.uri } : {}),
     ...(item.description ? { description: item.description } : {}),
   };
@@ -545,6 +545,8 @@ export function materializeToolCallResult(input: MaterializeCallToolResultInput)
     payloadItems.push(finalizedItem);
   }
 
+  const payloadItemIndexes = payloadItems.map(toPayloadItemIndex);
+
   const manifestPath = normalizePathSlashes(join(callDir, "manifest.json"));
   const summaryText = applyHardMax(buildSummary(payloadItems, manifestPath, {
     summaryItemCount: settings.summaryItemCount,
@@ -562,7 +564,7 @@ export function materializeToolCallResult(input: MaterializeCallToolResultInput)
       createdAt: new Date().toISOString(),
       callDir,
       manifestPath,
-      payloadItems: payloadItems.map(toManifestPayloadItem),
+      payloadItemIndexes,
       ...(extracted.suppressedStructuredContent
         ? { suppressedStructuredContent: extracted.suppressedStructuredContent }
         : {}),
@@ -575,6 +577,7 @@ export function materializeToolCallResult(input: MaterializeCallToolResultInput)
     callDir,
     manifestPath,
     payloadItems,
+    payloadItemIndexes,
     mainFiles: payloadItems.map((item) => item.path!).filter(Boolean),
     metaFiles: [manifestPath],
     budget: {

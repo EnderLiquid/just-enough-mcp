@@ -215,7 +215,7 @@ describe("materializeToolCallResult", () => {
     expect(materialized.summaryText).not.toContain("structuredContent");
 
     const manifest = JSON.parse(readFileSync(materialized.manifestPath, "utf8"));
-    expect(manifest.payloadItems).toHaveLength(1);
+    expect(manifest.payloadItemIndexes).toHaveLength(1);
     expect(manifest.suppressedStructuredContent).toEqual({
       duplicateOf: 1,
       reason: "semantic-json-equal",

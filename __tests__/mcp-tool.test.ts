@@ -139,6 +139,7 @@ describe("mcpTool.execute", () => {
       callDir: "D:/projects/ts/just-enough-mcp/.pi/mcp/20260622-1",
       manifestPath: "D:/projects/ts/just-enough-mcp/.pi/mcp/20260622-1/manifest.json",
       payloadItems: [],
+      payloadItemIndexes: [],
       mainFiles: ["D:/projects/ts/just-enough-mcp/.pi/mcp/20260622-1/01-text.txt"],
       metaFiles: ["D:/projects/ts/just-enough-mcp/.pi/mcp/20260622-1/manifest.json"],
       summaryText: "remote tool failed\nFull output: D:/projects/ts/just-enough-mcp/.pi/mcp/20260622-1/01-text.txt",
@@ -160,6 +161,7 @@ describe("mcpTool.execute", () => {
       type: "text",
       text: "remote tool failed\nFull output: D:/projects/ts/just-enough-mcp/.pi/mcp/20260622-1/01-text.txt",
     });
-    expect(result.details?.materialized).toBe(true);
+    expect(result.details?.manifestPath).toBe("D:/projects/ts/just-enough-mcp/.pi/mcp/20260622-1/manifest.json");
+    expect(result.details?.payloadItemIndexes).toEqual([]);
   });
 });

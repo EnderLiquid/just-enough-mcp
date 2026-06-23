@@ -104,7 +104,7 @@ export function formatMcpToolResultLines(
     return { lines, truncated: false };
   }
 
-  if (result.details?.materialized === true) {
+  if (result.details?.manifestPath !== undefined) {
     if (lines.length <= maxCollapsedLines) {
       return { lines, truncated: false };
     }

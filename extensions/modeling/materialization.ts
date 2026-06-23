@@ -42,11 +42,24 @@ export interface PayloadItem {
   preview?: string[];
 }
 
+export interface PayloadItemIndex {
+  index: number;
+  source: string;
+  contentType?: PayloadContentType;
+  mimeType: string;
+  rawMimeType?: string;
+  path: string;
+  fileName: string;
+  uri?: string;
+  description?: string;
+}
+
 export interface MaterializedToolCallResult {
   summaryText: string;
   callDir: string;
   manifestPath: string;
   payloadItems: PayloadItem[];
+  payloadItemIndexes: PayloadItemIndex[];
   mainFiles: string[];
   metaFiles: string[];
   budget: SummaryBudget;

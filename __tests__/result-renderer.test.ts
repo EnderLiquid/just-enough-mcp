@@ -19,12 +19,8 @@ describe("formatMcpToolResultLines", () => {
   it("collapses materialized results by taking the first summary lines", () => {
     const details: McpToolResultDetails = {
       stage: "runtime-call-tool",
-      materialized: true,
-      callDir: "C:/repo/.pi/mcp/x",
       manifestPath: "C:/repo/.pi/mcp/x/manifest.json",
-      mainFiles: ["C:/repo/.pi/mcp/x/01-text.txt"],
-      metaFiles: ["C:/repo/.pi/mcp/x/manifest.json"],
-      payloadItems: [],
+      payloadItemIndexes: [],
       servers: [],
     };
 
