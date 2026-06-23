@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, extname, isAbsolute, join, resolve } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import {
   DEFAULT_MATERIALIZATION_SETTINGS,
@@ -24,6 +25,16 @@ interface InternalPayloadItem {
 interface TextPreviewResult {
   lines: string[];
   truncated: boolean;
+}
+
+interface SuppressedStructuredContent {
+  duplicateOf: number;
+  reason: "semantic-json-equal" | "exact-text-equal";
+}
+
+interface ExtractedPayloadItemsResult {
+  items: InternalPayloadItem[];
+  suppressedStructuredContent?: SuppressedStructuredContent;
 }
 
 function isEmbeddedTextResource(resource: unknown): resource is { uri: string; text: string; mimeType?: string } {
@@ -174,7 +185,49 @@ function isTextualKind(kind: MaterializedPayloadKind): boolean {
   return kind === "text" || kind === "resource.text" || kind === "structuredContent" || kind === "unknown";
 }
 
-function extractPayloadItems(result: CallToolResult): InternalPayloadItem[] {
+function isStructuredContentDuplicateCandidate(kind: MaterializedPayloadKind): boolean {
+  return kind === "text" || kind === "resource.text";
+}
+
+function tryParseJson(value: string): unknown | undefined {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function findSuppressedStructuredContent(
+  structuredData: Record<string, unknown>,
+  items: InternalPayloadItem[],
+): SuppressedStructuredContent | undefined {
+  const structuredText = `${JSON.stringify(structuredData, null, 2)}\n`;
+
+  for (const [index, item] of items.entries()) {
+    if (!isStructuredContentDuplicateCandidate(item.kind) || typeof item.text !== "string") {
+      continue;
+    }
+
+    const parsedText = tryParseJson(item.text);
+    if (parsedText !== undefined && isDeepStrictEqual(parsedText, structuredData)) {
+      return {
+        duplicateOf: index + 1,
+        reason: "semantic-json-equal",
+      };
+    }
+
+    if (item.text.trimEnd() === structuredText.trimEnd()) {
+      return {
+        duplicateOf: index + 1,
+        reason: "exact-text-equal",
+      };
+    }
+  }
+
+  return undefined;
+}
+
+function extractPayloadItems(result: CallToolResult): ExtractedPayloadItemsResult {
   const items: InternalPayloadItem[] = [];
 
   for (const [index, content] of (result.content ?? []).entries()) {
@@ -222,17 +275,26 @@ function extractPayloadItems(result: CallToolResult): InternalPayloadItem[] {
     items.push({ kind: "unknown", source, text: JSON.stringify(content, null, 2) });
   }
 
+  let suppressedStructuredContent: SuppressedStructuredContent | undefined;
+
   if (result.structuredContent && typeof result.structuredContent === "object") {
-    items.push({
-      kind: "structuredContent",
-      source: "structuredContent",
-      structuredData: result.structuredContent,
-      text: JSON.stringify(result.structuredContent, null, 2),
-      mimeType: "application/json",
-    });
+    suppressedStructuredContent = findSuppressedStructuredContent(result.structuredContent, items);
+
+    if (!suppressedStructuredContent) {
+      items.push({
+        kind: "structuredContent",
+        source: "structuredContent",
+        structuredData: result.structuredContent,
+        text: JSON.stringify(result.structuredContent, null, 2),
+        mimeType: "application/json",
+      });
+    }
   }
 
-  return items;
+  return {
+    items,
+    suppressedStructuredContent,
+  };
 }
 
 function buildMainFileName(index: number, item: InternalPayloadItem): string {
@@ -337,9 +399,9 @@ export function materializeToolCallResult(input: MaterializeCallToolResultInput)
   mkdirSync(callDir, { recursive: true });
 
   const payloadItems: PayloadItem[] = [];
-  const internalItems = extractPayloadItems(input.result);
+  const extracted = extractPayloadItems(input.result);
 
-  for (const [index, item] of internalItems.entries()) {
+  for (const [index, item] of extracted.items.entries()) {
     const fileName = buildMainFileName(index + 1, item);
     const filePath = normalizePathSlashes(join(callDir, fileName));
     const storedText = writePayloadMainFile(filePath, item, settings);
@@ -381,6 +443,9 @@ export function materializeToolCallResult(input: MaterializeCallToolResultInput)
         mimeType: item.mimeType,
         uri: item.uri,
       })),
+      ...(extracted.suppressedStructuredContent
+        ? { suppressedStructuredContent: extracted.suppressedStructuredContent }
+        : {}),
     }, null, 2)}\n`,
     "utf8",
   );

@@ -74,4 +74,46 @@ describe("materializeToolCallResult", () => {
     expect(manifest).toContain('"kind": "structuredContent"');
     expect(manifest).toContain('"manifestPath":');
   });
+
+  it("suppresses duplicate structuredContent when it is semantically equal to a text payload", () => {
+    const cwd = makeTempDir();
+    const result: CallToolResult = {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          results: [{ title: "A" }],
+          failed_results: [],
+          response_time: 0.01,
+          request_id: "req-1",
+        }),
+      }],
+      structuredContent: {
+        failed_results: [],
+        request_id: "req-1",
+        response_time: 0.01,
+        results: [{ title: "A" }],
+      },
+      isError: false,
+    };
+
+    const materialized = materializeToolCallResult({
+      cwd,
+      server: "tavily",
+      tool: "extract",
+      result,
+    });
+
+    expect(materialized.payloadItems).toHaveLength(1);
+    expect(materialized.mainFiles).toHaveLength(1);
+    expect(materialized.payloadItems[0].kind).toBe("text");
+    expect(existsSync(`${materialized.callDir}/02-structured.json`)).toBe(false);
+    expect(materialized.summaryText).not.toContain("structuredContent");
+
+    const manifest = JSON.parse(readFileSync(materialized.manifestPath, "utf8"));
+    expect(manifest.payloadItems).toHaveLength(1);
+    expect(manifest.suppressedStructuredContent).toEqual({
+      duplicateOf: 1,
+      reason: "semantic-json-equal",
+    });
+  });
 });
