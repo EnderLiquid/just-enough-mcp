@@ -1,10 +1,9 @@
-export type MaterializedPayloadKind =
+export type PayloadContentType =
   | "text"
   | "image"
   | "audio"
-  | "resource.text"
-  | "resource.blob"
-  | "structuredContent"
+  | "resource"
+  | "resource_link"
   | "unknown";
 
 export interface MaterializationSettings {
@@ -28,14 +27,19 @@ export interface SummaryBudget {
 }
 
 export interface PayloadItem {
-  index: number;
-  kind: MaterializedPayloadKind;
+  index?: number;
   source: string;
-  path: string;
-  fileName: string;
-  mimeType?: string;
+  contentType?: PayloadContentType;
+  mimeType: string;
+  rawMimeType?: string;
   uri?: string;
-  preview: string[];
+  description?: string;
+  text?: string;
+  binaryBase64?: string;
+  parsedJson?: unknown;
+  path?: string;
+  fileName?: string;
+  preview?: string[];
 }
 
 export interface MaterializedToolCallResult {

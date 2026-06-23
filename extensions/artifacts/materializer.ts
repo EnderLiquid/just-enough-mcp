@@ -5,22 +5,12 @@ import { isDeepStrictEqual } from "node:util";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import {
   DEFAULT_MATERIALIZATION_SETTINGS,
-  type MaterializedPayloadKind,
   type MaterializedToolCallResult,
   type MaterializationSettings,
+  type PayloadContentType,
   type PayloadItem,
   type SummaryBudget,
 } from "../modeling/materialization.js";
-
-interface InternalPayloadItem {
-  kind: MaterializedPayloadKind;
-  source: string;
-  mimeType?: string;
-  uri?: string;
-  text?: string;
-  binaryBase64?: string;
-  structuredData?: Record<string, unknown>;
-}
 
 interface TextPreviewResult {
   lines: string[];
@@ -33,7 +23,7 @@ interface SuppressedStructuredContent {
 }
 
 interface ExtractedPayloadItemsResult {
-  items: InternalPayloadItem[];
+  items: PayloadItem[];
   suppressedStructuredContent?: SuppressedStructuredContent;
 }
 
@@ -43,6 +33,15 @@ function isEmbeddedTextResource(resource: unknown): resource is { uri: string; t
 
 function isEmbeddedBlobResource(resource: unknown): resource is { uri: string; blob: string; mimeType?: string } {
   return typeof resource === "object" && resource !== null && "blob" in resource && typeof (resource as { blob?: unknown }).blob === "string";
+}
+
+function isResourceLink(content: unknown): content is { uri: string; mimeType?: string; description?: string; type: "resource_link" } {
+  return typeof content === "object"
+    && content !== null
+    && "type" in content
+    && (content as { type?: unknown }).type === "resource_link"
+    && "uri" in content
+    && typeof (content as { uri?: unknown }).uri === "string";
 }
 
 export interface MaterializeCallToolResultInput {
@@ -82,9 +81,7 @@ function resolveArtifactRoot(cwd: string, artifactRoot: string): string {
   return isAbsolute(artifactRoot) ? artifactRoot : resolve(cwd, artifactRoot);
 }
 
-function inferExtensionFromMimeType(mimeType?: string): string | undefined {
-  if (!mimeType) return undefined;
-
+function inferExtensionFromMimeType(mimeType: string): string {
   const normalized = mimeType.toLowerCase();
   const mapping: Record<string, string> = {
     "image/png": ".png",
@@ -100,6 +97,7 @@ function inferExtensionFromMimeType(mimeType?: string): string | undefined {
     "audio/mp4": ".m4a",
     "application/pdf": ".pdf",
     "application/json": ".json",
+    "application/octet-stream": ".bin",
     "text/plain": ".txt",
     "text/markdown": ".md",
     "text/html": ".html",
@@ -111,22 +109,9 @@ function inferExtensionFromMimeType(mimeType?: string): string | undefined {
   }
 
   const subtype = normalized.split("/")[1]?.split(";")[0]?.trim();
-  if (!subtype) return undefined;
+  if (!subtype) return ".bin";
   if (subtype === "jpeg") return ".jpg";
-  return `.${subtype.replace(/[^A-Za-z0-9]+/g, "")}`;
-}
-
-function inferExtensionFromUri(uri?: string): string | undefined {
-  if (!uri) return undefined;
-
-  try {
-    const parsed = new URL(uri);
-    const ext = extname(parsed.pathname);
-    return ext || undefined;
-  } catch {
-    const ext = extname(uri);
-    return ext || undefined;
-  }
+  return `.${subtype.replace(/[^A-Za-z0-9]+/g, "") || "bin"}`;
 }
 
 function inferBaseNameFromUri(uri?: string): string | undefined {
@@ -154,23 +139,11 @@ function shortenNormalizedBase(value: string): string {
   return `${value.slice(0, 32)}-${toShortHash(value)}`;
 }
 
-function normalizeJsonText(value: string): string {
-  try {
-    return `${JSON.stringify(JSON.parse(value), null, 2)}\n`;
-  } catch {
-    return value.endsWith("\n") ? value : `${value}\n`;
-  }
+function normalizeJsonText(value: unknown): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
 }
 
-function toStoredText(kind: MaterializedPayloadKind, value: string, prettyPrintJson: boolean): string {
-  if (kind === "structuredContent") {
-    return normalizeJsonText(value);
-  }
-
-  if (prettyPrintJson) {
-    return normalizeJsonText(value);
-  }
-
+function ensureTrailingNewline(value: string): string {
   return value.endsWith("\n") ? value : `${value}\n`;
 }
 
@@ -201,14 +174,6 @@ function buildTextPreview(text: string, maxLines: number, maxChars: number): Tex
   return { lines, truncated };
 }
 
-function isTextualKind(kind: MaterializedPayloadKind): boolean {
-  return kind === "text" || kind === "resource.text" || kind === "structuredContent" || kind === "unknown";
-}
-
-function isStructuredContentDuplicateCandidate(kind: MaterializedPayloadKind): boolean {
-  return kind === "text" || kind === "resource.text";
-}
-
 function tryParseJson(value: string): unknown | undefined {
   try {
     return JSON.parse(value);
@@ -217,26 +182,89 @@ function tryParseJson(value: string): unknown | undefined {
   }
 }
 
+function isTextualPayload(item: PayloadItem): boolean {
+  return typeof item.text === "string";
+}
+
+function isJsonTextualPayload(item: PayloadItem): boolean {
+  return isTextualPayload(item) && item.mimeType === "application/json" && item.parsedJson !== undefined;
+}
+
+function withRawMimeType(item: PayloadItem, rawMimeType: string | undefined): PayloadItem {
+  if (!rawMimeType || rawMimeType === item.mimeType) {
+    return item;
+  }
+
+  return {
+    ...item,
+    rawMimeType,
+  };
+}
+
+function normalizeTextPayload(item: PayloadItem, prettyPrintJson: boolean): PayloadItem {
+  const rawText = item.text ?? "";
+  const parsedJson = tryParseJson(rawText);
+  if (parsedJson === undefined) {
+    return {
+      ...item,
+      mimeType: item.mimeType || "text/plain",
+      text: ensureTrailingNewline(rawText),
+    };
+  }
+
+  const text = prettyPrintJson
+    ? normalizeJsonText(parsedJson)
+    : ensureTrailingNewline(rawText);
+
+  return withRawMimeType({
+    ...item,
+    mimeType: "application/json",
+    text,
+    parsedJson,
+  }, item.mimeType);
+}
+
+function buildResourceLinkText(uri: string, description?: string, rawMimeType?: string): string {
+  const lines = [`URI: ${uri}`];
+  if (description) {
+    lines.push(`Description: ${description}`);
+  }
+  if (rawMimeType) {
+    lines.push(`Target MIME type: ${rawMimeType}`);
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function normalizeStructuredContent(value: Record<string, unknown>): PayloadItem {
+  return {
+    source: "structuredContent",
+    mimeType: "application/json",
+    text: normalizeJsonText(value),
+    parsedJson: value,
+  };
+}
+
 function findSuppressedStructuredContent(
-  structuredData: Record<string, unknown>,
-  items: InternalPayloadItem[],
+  structuredItem: PayloadItem,
+  items: PayloadItem[],
 ): SuppressedStructuredContent | undefined {
-  const structuredText = `${JSON.stringify(structuredData, null, 2)}\n`;
+  if (structuredItem.parsedJson === undefined) {
+    return undefined;
+  }
 
   for (const [index, item] of items.entries()) {
-    if (!isStructuredContentDuplicateCandidate(item.kind) || typeof item.text !== "string") {
+    if (!isJsonTextualPayload(item)) {
       continue;
     }
 
-    const parsedText = tryParseJson(item.text);
-    if (parsedText !== undefined && isDeepStrictEqual(parsedText, structuredData)) {
+    if (isDeepStrictEqual(item.parsedJson, structuredItem.parsedJson)) {
       return {
         duplicateOf: index + 1,
         reason: "semantic-json-equal",
       };
     }
 
-    if (item.text.trimEnd() === structuredText.trimEnd()) {
+    if (item.text?.trimEnd() === structuredItem.text?.trimEnd()) {
       return {
         duplicateOf: index + 1,
         reason: "exact-text-equal",
@@ -247,44 +275,72 @@ function findSuppressedStructuredContent(
   return undefined;
 }
 
-function extractPayloadItems(result: CallToolResult): ExtractedPayloadItemsResult {
-  const items: InternalPayloadItem[] = [];
+function extractPayloadItems(result: CallToolResult, settings: MaterializationSettings): ExtractedPayloadItemsResult {
+  const items: PayloadItem[] = [];
 
   for (const [index, content] of (result.content ?? []).entries()) {
     const source = `content[${index}]`;
 
     if (content.type === "text") {
-      items.push({ kind: "text", source, text: content.text ?? "" });
+      items.push(normalizeTextPayload({
+        source,
+        contentType: "text",
+        mimeType: "text/plain",
+        text: content.text ?? "",
+      }, settings.prettyPrintJson));
       continue;
     }
 
     if (content.type === "image") {
-      items.push({ kind: "image", source, mimeType: content.mimeType, binaryBase64: content.data ?? "" });
+      items.push({
+        source,
+        contentType: "image",
+        mimeType: content.mimeType ?? "application/octet-stream",
+        binaryBase64: content.data ?? "",
+      });
       continue;
     }
 
     if (content.type === "audio") {
-      items.push({ kind: "audio", source, mimeType: content.mimeType, binaryBase64: content.data ?? "" });
+      items.push({
+        source,
+        contentType: "audio",
+        mimeType: content.mimeType ?? "application/octet-stream",
+        binaryBase64: content.data ?? "",
+      });
+      continue;
+    }
+
+    if (isResourceLink(content)) {
+      const rawMimeType = content.mimeType;
+      items.push(withRawMimeType({
+        source,
+        contentType: "resource_link",
+        mimeType: "text/plain",
+        uri: content.uri,
+        description: content.description,
+        text: buildResourceLinkText(content.uri, content.description, rawMimeType),
+      }, rawMimeType));
       continue;
     }
 
     if (content.type === "resource") {
       if (isEmbeddedTextResource(content.resource)) {
-        items.push({
-          kind: "resource.text",
+        items.push(normalizeTextPayload({
           source,
-          mimeType: content.resource.mimeType,
+          contentType: "resource",
+          mimeType: content.resource.mimeType ?? "text/plain",
           uri: content.resource.uri,
           text: content.resource.text,
-        });
+        }, settings.prettyPrintJson));
         continue;
       }
 
       if (isEmbeddedBlobResource(content.resource)) {
         items.push({
-          kind: "resource.blob",
           source,
-          mimeType: content.resource.mimeType,
+          contentType: "resource",
+          mimeType: content.resource.mimeType ?? "application/octet-stream",
           uri: content.resource.uri,
           binaryBase64: content.resource.blob,
         });
@@ -292,22 +348,22 @@ function extractPayloadItems(result: CallToolResult): ExtractedPayloadItemsResul
       }
     }
 
-    items.push({ kind: "unknown", source, text: JSON.stringify(content, null, 2) });
+    items.push(normalizeTextPayload({
+      source,
+      contentType: "unknown",
+      mimeType: "text/plain",
+      text: JSON.stringify(content, null, 2),
+    }, settings.prettyPrintJson));
   }
 
   let suppressedStructuredContent: SuppressedStructuredContent | undefined;
 
   if (result.structuredContent && typeof result.structuredContent === "object") {
-    suppressedStructuredContent = findSuppressedStructuredContent(result.structuredContent, items);
+    const structuredItem = normalizeStructuredContent(result.structuredContent as Record<string, unknown>);
+    suppressedStructuredContent = findSuppressedStructuredContent(structuredItem, items);
 
     if (!suppressedStructuredContent) {
-      items.push({
-        kind: "structuredContent",
-        source: "structuredContent",
-        structuredData: result.structuredContent,
-        text: JSON.stringify(result.structuredContent, null, 2),
-        mimeType: "application/json",
-      });
+      items.push(structuredItem);
     }
   }
 
@@ -317,50 +373,63 @@ function extractPayloadItems(result: CallToolResult): ExtractedPayloadItemsResul
   };
 }
 
-function buildMainFileName(index: number, item: InternalPayloadItem): string {
-  const prefix = String(index).padStart(2, "0");
-  const baseName = inferBaseNameFromUri(item.uri);
-  const normalizedBase = baseName
-    ? shortenNormalizedBase(sanitizeSegment(baseName.replace(extname(baseName), "")))
-    : undefined;
-  const extFromUri = inferExtensionFromUri(item.uri);
-  const extFromMime = inferExtensionFromMimeType(item.mimeType);
+function buildDefaultStem(item: PayloadItem): string {
+  if (item.source === "structuredContent") {
+    return "structured";
+  }
 
-  switch (item.kind) {
+  if (item.contentType === "resource_link") {
+    return "link";
+  }
+
+  if (item.mimeType === "application/json") {
+    return "json";
+  }
+
+  switch (item.contentType) {
     case "text":
-      return `${prefix}-text.txt`;
+      return "text";
     case "image":
-      return `${prefix}-image${extFromMime ?? ".bin"}`;
+      return "image";
     case "audio":
-      return `${prefix}-audio${extFromMime ?? ".bin"}`;
-    case "resource.text":
-      return `${prefix}-${normalizedBase ?? "resource"}${extFromUri ?? extFromMime ?? ".txt"}`;
-    case "resource.blob":
-      return `${prefix}-${normalizedBase ?? "resource"}${extFromUri ?? extFromMime ?? ".bin"}`;
-    case "structuredContent":
-      return `${prefix}-structured.json`;
+      return "audio";
+    case "resource":
+      return "resource";
     case "unknown":
     default:
-      return `${prefix}-unknown.txt`;
+      return "unknown";
   }
 }
 
-function writePayloadMainFile(filePath: string, item: InternalPayloadItem, settings: MaterializationSettings): string | undefined {
-  if (item.kind === "image" || item.kind === "audio" || item.kind === "resource.blob") {
-    const binary = Buffer.from(item.binaryBase64 ?? "", "base64");
+function buildMainFileName(index: number, item: PayloadItem): string {
+  const prefix = String(index).padStart(2, "0");
+  let stem = buildDefaultStem(item);
+
+  if (item.source !== "structuredContent" && item.contentType !== "resource_link") {
+    const baseName = inferBaseNameFromUri(item.uri);
+    if (baseName) {
+      stem = shortenNormalizedBase(sanitizeSegment(baseName.replace(extname(baseName), "")));
+    }
+  }
+
+  const ext = inferExtensionFromMimeType(item.mimeType);
+  return `${prefix}-${stem}${ext}`;
+}
+
+function writePayloadMainFile(filePath: string, item: PayloadItem): string | undefined {
+  if (item.binaryBase64 !== undefined) {
+    const binary = Buffer.from(item.binaryBase64, "base64");
     writeFileSync(filePath, binary);
     return undefined;
   }
 
-  const text = item.kind === "structuredContent"
-    ? `${JSON.stringify(item.structuredData ?? {}, null, 2)}\n`
-    : toStoredText(item.kind, item.text ?? "", settings.prettyPrintJson);
+  const text = ensureTrailingNewline(item.text ?? "");
   writeFileSync(filePath, text, "utf8");
   return text;
 }
 
-function buildItemPreview(item: InternalPayloadItem, absolutePath: string, storedText: string | undefined, settings: MaterializationSettings): string[] {
-  if (!isTextualKind(item.kind) || storedText === undefined) {
+function buildItemPreview(item: PayloadItem, absolutePath: string, storedText: string | undefined, settings: MaterializationSettings): string[] {
+  if (storedText === undefined) {
     return [`File: ${absolutePath}`];
   }
 
@@ -370,6 +439,14 @@ function buildItemPreview(item: InternalPayloadItem, absolutePath: string, store
   }
 
   return [...preview.lines, `Full output: ${absolutePath}`];
+}
+
+function toDisplayLabel(item: PayloadItem): string {
+  if (item.source === "structuredContent") {
+    return "structuredContent";
+  }
+
+  return item.contentType ?? "unknown";
 }
 
 function joinSections(sections: string[][]): string {
@@ -382,14 +459,14 @@ function buildSummary(payloadItems: PayloadItem[], manifestPath: string, budget:
   }
 
   if (payloadItems.length === 1) {
-    return `${payloadItems[0].preview.join("\n")}\n`;
+    return `${(payloadItems[0].preview ?? []).join("\n")}\n`;
   }
 
   const sections: string[][] = [];
   const displayedItems = payloadItems.slice(0, budget.summaryItemCount);
 
   for (const item of displayedItems) {
-    sections.push([`[${item.index}] ${item.kind}`, ...item.preview]);
+    sections.push([`[${item.index}] ${toDisplayLabel(item)}`, ...(item.preview ?? [])]);
   }
 
   if (payloadItems.length > displayedItems.length) {
@@ -410,6 +487,37 @@ function applyHardMax(summaryText: string, hardMaxChars: number, manifestPath: s
   return `${summaryText.slice(0, budget).trimEnd()}${tail}`;
 }
 
+function toManifestPayloadItem(item: PayloadItem) {
+  return {
+    index: item.index,
+    source: item.source,
+    ...(item.contentType ? { contentType: item.contentType } : {}),
+    mimeType: item.mimeType,
+    ...(item.rawMimeType ? { rawMimeType: item.rawMimeType } : {}),
+    path: item.path,
+    fileName: item.fileName,
+    ...(item.uri ? { uri: item.uri } : {}),
+    ...(item.description ? { description: item.description } : {}),
+  };
+}
+
+function toResultPayloadItem(item: PayloadItem): PayloadItem {
+  return {
+    index: item.index,
+    source: item.source,
+    ...(item.contentType ? { contentType: item.contentType } : {}),
+    mimeType: item.mimeType,
+    ...(item.rawMimeType ? { rawMimeType: item.rawMimeType } : {}),
+    ...(item.uri ? { uri: item.uri } : {}),
+    ...(item.description ? { description: item.description } : {}),
+    ...(item.text !== undefined ? { text: item.text } : {}),
+    ...(item.binaryBase64 !== undefined ? { binaryBase64: item.binaryBase64 } : {}),
+    ...(item.path ? { path: item.path } : {}),
+    ...(item.fileName ? { fileName: item.fileName } : {}),
+    ...(item.preview ? { preview: item.preview } : {}),
+  };
+}
+
 export function materializeToolCallResult(input: MaterializeCallToolResultInput): MaterializedToolCallResult {
   const settings: MaterializationSettings = {
     ...DEFAULT_MATERIALIZATION_SETTINGS,
@@ -421,22 +529,20 @@ export function materializeToolCallResult(input: MaterializeCallToolResultInput)
   mkdirSync(callDir, { recursive: true });
 
   const payloadItems: PayloadItem[] = [];
-  const extracted = extractPayloadItems(input.result);
+  const extracted = extractPayloadItems(input.result, settings);
 
-  for (const [index, item] of extracted.items.entries()) {
-    const fileName = buildMainFileName(index + 1, item);
+  for (const [index, originalItem] of extracted.items.entries()) {
+    const fileName = buildMainFileName(index + 1, originalItem);
     const filePath = normalizePathSlashes(join(callDir, fileName));
-    const storedText = writePayloadMainFile(filePath, item, settings);
-    payloadItems.push({
+    const storedText = writePayloadMainFile(filePath, originalItem);
+    const finalizedItem: PayloadItem = toResultPayloadItem({
+      ...originalItem,
       index: index + 1,
-      kind: item.kind,
-      source: item.source,
       path: filePath,
       fileName,
-      mimeType: item.mimeType,
-      uri: item.uri,
-      preview: buildItemPreview(item, filePath, storedText, settings),
+      preview: buildItemPreview(originalItem, filePath, storedText, settings),
     });
+    payloadItems.push(finalizedItem);
   }
 
   const manifestPath = normalizePathSlashes(join(callDir, "manifest.json"));
@@ -456,15 +562,7 @@ export function materializeToolCallResult(input: MaterializeCallToolResultInput)
       createdAt: new Date().toISOString(),
       callDir,
       manifestPath,
-      payloadItems: payloadItems.map((item) => ({
-        index: item.index,
-        kind: item.kind,
-        source: item.source,
-        path: item.path,
-        fileName: item.fileName,
-        mimeType: item.mimeType,
-        uri: item.uri,
-      })),
+      payloadItems: payloadItems.map(toManifestPayloadItem),
       ...(extracted.suppressedStructuredContent
         ? { suppressedStructuredContent: extracted.suppressedStructuredContent }
         : {}),
@@ -477,7 +575,7 @@ export function materializeToolCallResult(input: MaterializeCallToolResultInput)
     callDir,
     manifestPath,
     payloadItems,
-    mainFiles: payloadItems.map((item) => item.path),
+    mainFiles: payloadItems.map((item) => item.path!).filter(Boolean),
     metaFiles: [manifestPath],
     budget: {
       summaryItemCount: settings.summaryItemCount,
