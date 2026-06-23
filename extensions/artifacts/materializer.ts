@@ -58,14 +58,20 @@ function sanitizeSegment(value: string): string {
   return normalized || "artifact";
 }
 
-function toUtcTimestamp(date = new Date()): string {
-  return date.toISOString().replace(/\.\d{3}Z$/, "Z").replace(/[:]/g, "-");
+function toCompactUtcTimestamp(date = new Date()): string {
+  const year = String(date.getUTCFullYear()).slice(-2);
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const hours = String(date.getUTCHours()).padStart(2, "0");
+  const minutes = String(date.getUTCMinutes()).padStart(2, "0");
+  const seconds = String(date.getUTCSeconds()).padStart(2, "0");
+  return `${year}${month}${day}-${hours}${minutes}${seconds}`;
 }
 
-function createCallDirectoryName(server: string, tool: string): string {
-  const target = sanitizeSegment(`${server}-${tool}`).slice(0, 64);
+function createCallDirectoryName(server: string): string {
+  const target = sanitizeSegment(server).slice(0, 32);
   const suffix = randomBytes(2).toString("hex");
-  return `${target}-${toUtcTimestamp()}-${suffix}`;
+  return `${target}-${toCompactUtcTimestamp()}-${suffix}`;
 }
 
 function normalizePathSlashes(value: string): string {
@@ -395,7 +401,7 @@ export function materializeToolCallResult(input: MaterializeCallToolResultInput)
   };
   const cwd = resolve(input.cwd ?? process.cwd());
   const artifactRoot = resolveArtifactRoot(cwd, settings.artifactRoot);
-  const callDir = normalizePathSlashes(join(artifactRoot, createCallDirectoryName(input.server, input.tool)));
+  const callDir = normalizePathSlashes(join(artifactRoot, createCallDirectoryName(input.server)));
   mkdirSync(callDir, { recursive: true });
 
   const payloadItems: PayloadItem[] = [];

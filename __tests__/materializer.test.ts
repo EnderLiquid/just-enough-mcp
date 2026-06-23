@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { materializeToolCallResult } from "../extensions/artifacts/materializer.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
@@ -11,6 +11,32 @@ function makeTempDir(): string {
 }
 
 describe("materializeToolCallResult", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("uses a shorter call directory name based on server and compact UTC timestamp", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-23T04:18:22Z"));
+
+    const cwd = makeTempDir();
+    const result: CallToolResult = {
+      content: [{ type: "text", text: "hello world" }],
+      isError: false,
+    };
+
+    const materialized = materializeToolCallResult({
+      cwd,
+      server: "codegraph",
+      tool: "codegraph_explore",
+      result,
+    });
+
+    const callDirName = materialized.callDir.split("/").pop();
+    expect(callDirName).toMatch(/^codegraph-260623-041822-[0-9a-f]{4}$/);
+    expect(callDirName).not.toContain("codegraph_explore");
+  });
+
   it("returns a single text preview without manifest hint while still writing manifest", () => {
     const cwd = makeTempDir();
     const result: CallToolResult = {
