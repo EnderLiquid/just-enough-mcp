@@ -64,6 +64,28 @@ describe("loadPluginConfigFromPaths", () => {
     expect(localTools?.connectionMode).toBe("lazy");
   });
 
+  it("uses the updated default result presentation settings when omitted", () => {
+    const root = makeTempDir();
+    const configPath = join(root, "just-enough-mcp.json");
+    const overviewDir = join(root, "mcp-overview");
+    mkdirSync(overviewDir, { recursive: true });
+
+    writeFileSync(configPath, JSON.stringify({
+      servers: {
+        localTools: {
+          transport: "stdio",
+          command: "npx",
+          args: ["-y", "some-server"]
+        }
+      }
+    }, null, 2), "utf8");
+
+    const loaded = loadPluginConfigFromPaths(configPath, overviewDir);
+
+    expect(loaded.resultPresentation.previewLinesPerItem).toBe(12);
+    expect(loaded.resultPresentation.previewCharsPerItem).toBe(800);
+  });
+
   it("rejects invalid server configuration", () => {
     const root = makeTempDir();
     const configPath = join(root, "just-enough-mcp.json");
