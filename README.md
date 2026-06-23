@@ -46,7 +46,7 @@
 
 可选的 server overview 目录：
 
-- `~/.pi/agent/mcp-overview/`
+- `~/.pi/agent/mcp-overviews/`
 
 配置在 `session_start` 时加载。修改配置或 overview 后，需要在 Pi 中执行：
 

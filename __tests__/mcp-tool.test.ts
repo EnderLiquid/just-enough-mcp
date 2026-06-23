@@ -119,7 +119,7 @@ describe("mcpTool.execute", () => {
       }),
       config: () => ({
         configPath: "C:/Users/Admin/.pi/agent/just-enough-mcp.json",
-        overviewDir: "C:/Users/Admin/.pi/agent/mcp-overview",
+        overviewDir: "C:/Users/Admin/.pi/agent/mcp-overviews",
         servers: [],
         resultPresentation: {
           artifactRoot: ".pi/mcp-artifacts",

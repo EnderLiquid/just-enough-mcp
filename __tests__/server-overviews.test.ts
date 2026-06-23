@@ -17,7 +17,7 @@ describe("loadServerOverview", () => {
     const root = makeTempDir();
     const configPath = join(root, "just-enough-mcp.json");
     const configOverviewPath = join(root, "explicit.md");
-    const overviewDir = join(root, "mcp-overview");
+    const overviewDir = join(root, "mcp-overviews");
     mkdirSync(overviewDir, { recursive: true });
 
     writeFileSync(configOverviewPath, "# Title\nConfigured overview line\nMore details\n", "utf8");
@@ -38,7 +38,7 @@ describe("loadServerOverview", () => {
   it("falls back to auto overview file by server name", () => {
     const root = makeTempDir();
     const configPath = join(root, "just-enough-mcp.json");
-    const overviewDir = join(root, "mcp-overview");
+    const overviewDir = join(root, "mcp-overviews");
     mkdirSync(overviewDir, { recursive: true });
     writeFileSync(join(overviewDir, "tavily.md"), "# Tavily\nSearch and extract web content\nUse it for latest info.\n", "utf8");
 

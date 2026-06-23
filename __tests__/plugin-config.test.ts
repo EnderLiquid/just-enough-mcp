@@ -15,7 +15,7 @@ describe("loadPluginConfigFromPaths", () => {
   it("parses stdio and http servers with connection modes and result presentation settings", () => {
     const root = makeTempDir();
     const configPath = join(root, "just-enough-mcp.json");
-    const overviewDir = join(root, "mcp-overview");
+    const overviewDir = join(root, "mcp-overviews");
     mkdirSync(overviewDir, { recursive: true });
     writeFileSync(join(overviewDir, "tavily.md"), "Search and extract web content.\nUse it for latest info.\n", "utf8");
 
@@ -67,7 +67,7 @@ describe("loadPluginConfigFromPaths", () => {
   it("uses the updated default result presentation settings when omitted", () => {
     const root = makeTempDir();
     const configPath = join(root, "just-enough-mcp.json");
-    const overviewDir = join(root, "mcp-overview");
+    const overviewDir = join(root, "mcp-overviews");
     mkdirSync(overviewDir, { recursive: true });
 
     writeFileSync(configPath, JSON.stringify({
@@ -89,7 +89,7 @@ describe("loadPluginConfigFromPaths", () => {
   it("rejects invalid server configuration", () => {
     const root = makeTempDir();
     const configPath = join(root, "just-enough-mcp.json");
-    const overviewDir = join(root, "mcp-overview");
+    const overviewDir = join(root, "mcp-overviews");
     mkdirSync(overviewDir, { recursive: true });
 
     writeFileSync(configPath, JSON.stringify({
@@ -107,7 +107,7 @@ describe("loadPluginConfigFromPaths", () => {
   it("rejects invalid result presentation settings", () => {
     const root = makeTempDir();
     const configPath = join(root, "just-enough-mcp.json");
-    const overviewDir = join(root, "mcp-overview");
+    const overviewDir = join(root, "mcp-overviews");
     mkdirSync(overviewDir, { recursive: true });
 
     writeFileSync(configPath, JSON.stringify({
