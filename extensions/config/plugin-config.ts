@@ -165,6 +165,7 @@ function resolveServers(configPath: string, overviewDir: string, raw: RawPluginC
       ...transportConfig,
       name: serverName,
       connectionMode: parsed.connectionMode ?? DEFAULT_CONNECTION_MODE,
+      hasExplicitOverviewConfig: typeof parsed.overview === "string",
       overviewPath: overview.path,
       overview,
     };

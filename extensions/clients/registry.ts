@@ -2,6 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Tool, CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { tryBootstrapOverviewFromDescription } from "../config/overview-bootstrap.js";
 import type {
   PluginConfigLoadResult,
   ResolvedServerConfig,
@@ -96,6 +97,7 @@ export function createClientRegistry(): ClientRegistry {
   const serverStates = new Map<string, RuntimeServerState>();
   const connections = new Map<string, RuntimeConnection>();
   const inFlightConnections = new Map<string, Promise<RuntimeServerState>>();
+  let overviewDirectoryPath: string | undefined;
 
   async function disconnectRemovedServers(nextNames: Set<string>): Promise<void> {
     const removedNames = [...serverStates.keys()].filter(name => !nextNames.has(name));
@@ -120,6 +122,23 @@ export function createClientRegistry(): ClientRegistry {
       config,
       status: "disconnected",
     });
+  }
+
+  function tryBootstrapOverview(server: RuntimeServerState, connection: RuntimeConnection): void {
+    if (!overviewDirectoryPath) {
+      return;
+    }
+
+    const serverInfo = connection.client.getServerVersion();
+
+    try {
+      tryBootstrapOverviewFromDescription(
+        server.config,
+        overviewDirectoryPath,
+        serverInfo?.description,
+      );
+    } catch {
+    }
   }
 
   async function ensureConnected(name: string): Promise<RuntimeServerState> {
@@ -147,7 +166,9 @@ export function createClientRegistry(): ClientRegistry {
         }
         connections.set(name, connected.connection);
         existingState.tools = connected.tools;
-        return setStatus(existingState, "connected");
+        const server = setStatus(existingState, "connected");
+        tryBootstrapOverview(server, connected.connection);
+        return server;
       } catch (error) {
         return setStatus(existingState, "error", serializeError(error));
       } finally {
@@ -161,6 +182,7 @@ export function createClientRegistry(): ClientRegistry {
 
   return {
     async syncConfig(config) {
+      overviewDirectoryPath = config.overviewDir;
       const nextNames = new Set(config.servers.map(server => server.name));
       await disconnectRemovedServers(nextNames);
 

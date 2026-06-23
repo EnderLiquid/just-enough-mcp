@@ -23,6 +23,7 @@ function makeServerState(overrides: Partial<RuntimeServerState> = {}): RuntimeSe
       transport: "stdio",
       command: "npx",
       connectionMode: "lazy",
+      hasExplicitOverviewConfig: false,
       overview: {
         name: "demo",
         content: "demo overview",

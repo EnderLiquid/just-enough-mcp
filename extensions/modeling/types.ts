@@ -53,6 +53,7 @@ export interface RawPluginConfig {
 export type ResolvedServerConfig = (Omit<BaseServerConfig, "overview"> & ServerTransportConfig) & {
   name: string;
   connectionMode: ServerConnectionMode;
+  hasExplicitOverviewConfig: boolean;
   overviewPath?: string;
   overview: ServerOverview;
 };
