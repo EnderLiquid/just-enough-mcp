@@ -122,7 +122,7 @@ describe("mcpTool.execute", () => {
         overviewDir: "C:/Users/Admin/.pi/agent/mcp-overviews",
         servers: [],
         resultPresentation: {
-          artifactRoot: ".pi/mcp-artifacts",
+          artifactRoot: ".pi/mcp",
           summaryItemCount: 3,
           previewLinesPerItem: 3,
           previewCharsPerItem: 200,
@@ -136,12 +136,12 @@ describe("mcpTool.execute", () => {
     });
 
     mocks.materializeToolCallResult.mockReturnValue({
-      callDir: "D:/projects/ts/just-enough-mcp/.pi/mcp-artifacts/20260622-1",
-      manifestPath: "D:/projects/ts/just-enough-mcp/.pi/mcp-artifacts/20260622-1/manifest.json",
+      callDir: "D:/projects/ts/just-enough-mcp/.pi/mcp/20260622-1",
+      manifestPath: "D:/projects/ts/just-enough-mcp/.pi/mcp/20260622-1/manifest.json",
       payloadItems: [],
-      mainFiles: ["D:/projects/ts/just-enough-mcp/.pi/mcp-artifacts/20260622-1/01-text.txt"],
-      metaFiles: ["D:/projects/ts/just-enough-mcp/.pi/mcp-artifacts/20260622-1/manifest.json"],
-      summaryText: "remote tool failed\nFull output: D:/projects/ts/just-enough-mcp/.pi/mcp-artifacts/20260622-1/01-text.txt",
+      mainFiles: ["D:/projects/ts/just-enough-mcp/.pi/mcp/20260622-1/01-text.txt"],
+      metaFiles: ["D:/projects/ts/just-enough-mcp/.pi/mcp/20260622-1/manifest.json"],
+      summaryText: "remote tool failed\nFull output: D:/projects/ts/just-enough-mcp/.pi/mcp/20260622-1/01-text.txt",
     });
 
     const ctx = makeContext();
@@ -158,7 +158,7 @@ describe("mcpTool.execute", () => {
     expect((result as { isError?: boolean }).isError).toBe(true);
     expect(result.content[0]).toEqual({
       type: "text",
-      text: "remote tool failed\nFull output: D:/projects/ts/just-enough-mcp/.pi/mcp-artifacts/20260622-1/01-text.txt",
+      text: "remote tool failed\nFull output: D:/projects/ts/just-enough-mcp/.pi/mcp/20260622-1/01-text.txt",
     });
     expect(result.details?.materialized).toBe(true);
   });

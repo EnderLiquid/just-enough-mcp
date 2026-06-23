@@ -49,7 +49,7 @@ export interface MaterializedToolCallResult {
 }
 
 export const DEFAULT_RESULT_PRESENTATION_SETTINGS: ResultPresentationSettings = {
-  artifactRoot: ".pi/mcp-artifacts",
+  artifactRoot: ".pi/mcp",
   summaryItemCount: 6,
   previewLinesPerItem: 12,
   previewCharsPerItem: 800,

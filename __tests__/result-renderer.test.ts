@@ -20,10 +20,10 @@ describe("formatMcpToolResultLines", () => {
     const details: McpToolResultDetails = {
       stage: "runtime-call-tool",
       materialized: true,
-      callDir: "C:/repo/.pi/mcp-artifacts/x",
-      manifestPath: "C:/repo/.pi/mcp-artifacts/x/manifest.json",
-      mainFiles: ["C:/repo/.pi/mcp-artifacts/x/01-text.txt"],
-      metaFiles: ["C:/repo/.pi/mcp-artifacts/x/manifest.json"],
+      callDir: "C:/repo/.pi/mcp/x",
+      manifestPath: "C:/repo/.pi/mcp/x/manifest.json",
+      mainFiles: ["C:/repo/.pi/mcp/x/01-text.txt"],
+      metaFiles: ["C:/repo/.pi/mcp/x/manifest.json"],
       payloadItems: [],
       servers: [],
     };
