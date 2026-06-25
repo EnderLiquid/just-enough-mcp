@@ -83,6 +83,52 @@ describe("materializeToolCallResult", () => {
     expect(materialized.summaryText).toContain('"ok": true');
   });
 
+  it("marks in-line truncation and reports remaining chars and lines", () => {
+    const cwd = makeTempDir();
+    const result: CallToolResult = {
+      content: [{ type: "text", text: "abcdefghijklmnopqrstuvwxyz" }],
+      isError: false,
+    };
+
+    const materialized = materializeToolCallResult({
+      cwd,
+      server: "demo",
+      tool: "preview",
+      result,
+      settings: {
+        previewFullCharsPerItem: 20,
+        previewTruncateToCharsPerItem: 10,
+      },
+    });
+
+    expect(materialized.summaryText).toContain("abcdefghij… (truncated here)");
+    expect(materialized.summaryText).toContain("16 more chars across 1 lines of remaining text");
+    expect(materialized.summaryText).toContain("Full output: ");
+  });
+
+  it("shows truncation summary on a new line when truncation happens at a line boundary", () => {
+    const cwd = makeTempDir();
+    const result: CallToolResult = {
+      content: [{ type: "text", text: "abc\ndef\nghi" }],
+      isError: false,
+    };
+
+    const materialized = materializeToolCallResult({
+      cwd,
+      server: "demo",
+      tool: "preview-lines",
+      result,
+      settings: {
+        previewFullCharsPerItem: 7,
+        previewTruncateToCharsPerItem: 3,
+      },
+    });
+
+    expect(materialized.summaryText).toContain("abc\n… 8 more chars across 2 lines of remaining text");
+    expect(materialized.summaryText).not.toContain("truncated here");
+    expect(materialized.summaryText).toContain("Full output: ");
+  });
+
   it("builds lightweight multi-item summary with file and manifest paths", () => {
     const cwd = makeTempDir();
     const result: CallToolResult = {
@@ -100,7 +146,8 @@ describe("materializeToolCallResult", () => {
       tool: "search",
       result,
       settings: {
-        previewCharsPerItem: 20,
+        previewFullCharsPerItem: 30,
+        previewTruncateToCharsPerItem: 20,
         summaryItemCount: 2,
       },
     });
@@ -115,6 +162,7 @@ describe("materializeToolCallResult", () => {
     expect(materialized.summaryText).toContain("... and 1 more payload items; inspect manifest.json");
     expect(materialized.summaryText).not.toContain("source:");
     expect(materialized.summaryText).not.toContain("mimeType:");
+    expect(materialized.payloadItems[2]?.preview?.join("\n")).toContain("truncated here");
     expect(materialized.payloadItems[2]?.preview?.join("\n")).toContain("Full output: ");
 
     const manifest = readFileSync(materialized.manifestPath, "utf8");

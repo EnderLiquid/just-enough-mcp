@@ -125,8 +125,8 @@ describe("mcpTool.execute", () => {
         resultPresentation: {
           artifactRoot: ".pi/mcp",
           summaryItemCount: 3,
-          previewLinesPerItem: 3,
-          previewCharsPerItem: 200,
+          previewFullCharsPerItem: 400,
+          previewTruncateToCharsPerItem: 200,
           hardMaxChars: 40000,
           collapsedPreviewLines: 4,
           prettyPrintJson: true,

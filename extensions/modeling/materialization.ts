@@ -9,8 +9,8 @@ export type PayloadContentType =
 export interface MaterializationSettings {
   artifactRoot: string;
   summaryItemCount: number;
-  previewLinesPerItem: number;
-  previewCharsPerItem: number;
+  previewFullCharsPerItem: number;
+  previewTruncateToCharsPerItem: number;
   hardMaxChars: number;
   prettyPrintJson: boolean;
 }
@@ -21,8 +21,8 @@ export interface ResultPresentationSettings extends MaterializationSettings {
 
 export interface SummaryBudget {
   summaryItemCount: number;
-  previewLinesPerItem: number;
-  previewCharsPerItem: number;
+  previewFullCharsPerItem: number;
+  previewTruncateToCharsPerItem: number;
   hardMaxChars: number;
 }
 
@@ -68,8 +68,8 @@ export interface MaterializedToolCallResult {
 export const DEFAULT_RESULT_PRESENTATION_SETTINGS: ResultPresentationSettings = {
   artifactRoot: ".pi/mcp",
   summaryItemCount: 6,
-  previewLinesPerItem: 12,
-  previewCharsPerItem: 800,
+  previewFullCharsPerItem: 1500,
+  previewTruncateToCharsPerItem: 600,
   hardMaxChars: 40000,
   prettyPrintJson: true,
   collapsedPreviewLines: 4,
@@ -78,8 +78,8 @@ export const DEFAULT_RESULT_PRESENTATION_SETTINGS: ResultPresentationSettings = 
 export const DEFAULT_MATERIALIZATION_SETTINGS: MaterializationSettings = {
   artifactRoot: DEFAULT_RESULT_PRESENTATION_SETTINGS.artifactRoot,
   summaryItemCount: DEFAULT_RESULT_PRESENTATION_SETTINGS.summaryItemCount,
-  previewLinesPerItem: DEFAULT_RESULT_PRESENTATION_SETTINGS.previewLinesPerItem,
-  previewCharsPerItem: DEFAULT_RESULT_PRESENTATION_SETTINGS.previewCharsPerItem,
+  previewFullCharsPerItem: DEFAULT_RESULT_PRESENTATION_SETTINGS.previewFullCharsPerItem,
+  previewTruncateToCharsPerItem: DEFAULT_RESULT_PRESENTATION_SETTINGS.previewTruncateToCharsPerItem,
   hardMaxChars: DEFAULT_RESULT_PRESENTATION_SETTINGS.hardMaxChars,
   prettyPrintJson: DEFAULT_RESULT_PRESENTATION_SETTINGS.prettyPrintJson,
 };

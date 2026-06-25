@@ -66,11 +66,20 @@ function parseResultPresentation(raw: unknown): ResultPresentationSettings {
     throw new Error("just-enough-mcp config field \"resultPresentation\" must be an object.");
   }
 
+  const previewFullCharsPerItem = ensurePositiveInteger(raw.previewFullCharsPerItem, "previewFullCharsPerItem")
+    ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.previewFullCharsPerItem;
+  const previewTruncateToCharsPerItem = ensurePositiveInteger(raw.previewTruncateToCharsPerItem, "previewTruncateToCharsPerItem")
+    ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.previewTruncateToCharsPerItem;
+
+  if (previewTruncateToCharsPerItem > previewFullCharsPerItem) {
+    throw new Error("just-enough-mcp config field \"resultPresentation.previewTruncateToCharsPerItem\" must be smaller than \"resultPresentation.previewFullCharsPerItem\".");
+  }
+
   return {
     artifactRoot: ensureNonEmptyString(raw.artifactRoot, "artifactRoot") ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.artifactRoot,
     summaryItemCount: ensurePositiveInteger(raw.summaryItemCount, "summaryItemCount") ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.summaryItemCount,
-    previewLinesPerItem: ensurePositiveInteger(raw.previewLinesPerItem, "previewLinesPerItem") ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.previewLinesPerItem,
-    previewCharsPerItem: ensurePositiveInteger(raw.previewCharsPerItem, "previewCharsPerItem") ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.previewCharsPerItem,
+    previewFullCharsPerItem,
+    previewTruncateToCharsPerItem,
     hardMaxChars: ensurePositiveInteger(raw.hardMaxChars, "hardMaxChars") ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.hardMaxChars,
     prettyPrintJson: ensureBoolean(raw.prettyPrintJson, "prettyPrintJson") ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.prettyPrintJson,
     collapsedPreviewLines: ensurePositiveInteger(raw.collapsedPreviewLines, "collapsedPreviewLines") ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.collapsedPreviewLines,

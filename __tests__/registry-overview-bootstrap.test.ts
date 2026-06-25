@@ -68,8 +68,8 @@ function makeConfig(serverOverrides: Partial<ResolvedServerConfig> = {}): Plugin
     resultPresentation: {
       artifactRoot: ".pi/mcp",
       summaryItemCount: 3,
-      previewLinesPerItem: 12,
-      previewCharsPerItem: 800,
+      previewFullCharsPerItem: 1600,
+      previewTruncateToCharsPerItem: 800,
       hardMaxChars: 40000,
       prettyPrintJson: true,
       collapsedPreviewLines: 4,

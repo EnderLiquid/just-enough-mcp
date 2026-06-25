@@ -140,38 +140,53 @@ function shortenNormalizedBase(value: string): string {
 }
 
 function normalizeJsonText(value: unknown): string {
-  return `${JSON.stringify(value, null, 2)}\n`;
+  return `${JSON.stringify(value, null, 2)}`;
 }
 
-function ensureTrailingNewline(value: string): string {
-  return value.endsWith("\n") ? value : `${value}\n`;
-}
+function buildTextPreview(
+  text: string,
+  previewFullChars: number,
+  previewTruncateToChars: number,
+): TextPreviewResult {
+  // `text` is expected to be normalized already (`\r\n` -> `\n`).
 
-function buildTextPreview(text: string, maxLines: number, maxChars: number): TextPreviewResult {
-  const normalized = text.replace(/\r\n/g, "\n").trimEnd();
-  if (!normalized) {
+  if (text.trimEnd() === "") {
     return { lines: ["(empty text)"], truncated: false };
   }
 
-  let truncated = false;
-  let clipped = normalized;
-
-  if (clipped.length > maxChars) {
-    clipped = clipped.slice(0, Math.max(0, maxChars));
-    truncated = true;
+  if (text.length <= previewFullChars) {
+    return {
+      lines: text.split("\n"),
+      truncated: false,
+    };
   }
 
-  let lines = clipped.split("\n");
-  if (lines.length > maxLines) {
-    lines = lines.slice(0, maxLines);
-    truncated = true;
+  let actualPreviewTruncateToChars: number = previewTruncateToChars;
+  while (actualPreviewTruncateToChars > 0 && text[actualPreviewTruncateToChars - 1] === "\n") {
+    actualPreviewTruncateToChars -= 1;
   }
 
-  if (truncated) {
-    lines.push("…");
+  const totalLines = text.split("\n").length;
+  const visibleText = text.slice(0, actualPreviewTruncateToChars);
+  const visibleLines = visibleText.split("\n").length;
+  const truncatedInLine = text[visibleText.length] !== "\n" && text[visibleText.length] !== undefined;
+
+  const remainingChars = text.length - visibleText.length;
+  // Counts how many line fragments the remaining text spans.
+  // When truncation happens in-line, the unfinished tail of the current line counts as one remaining line.
+  const remainingLines = totalLines - visibleLines + (truncatedInLine ? 1 : 0);
+
+  const previewLines = visibleText.split("\n");
+  const remainderSummary = `${remainingChars} more chars across ${remainingLines} lines of remaining text`;
+
+  if (truncatedInLine) {
+    previewLines[previewLines.length - 1] = `${previewLines[previewLines.length - 1]}… (truncated here)`;
+    previewLines.push(remainderSummary);
+    return { lines: previewLines, truncated: true };
   }
 
-  return { lines, truncated };
+  previewLines.push(`… ${remainderSummary}`);
+  return { lines: previewLines, truncated: true };
 }
 
 function tryParseJson(value: string): unknown | undefined {
@@ -201,20 +216,21 @@ function withRawMimeType(item: PayloadItem, rawMimeType: string | undefined): Pa
   };
 }
 
+// return normalized text field unless undefined
 function normalizeTextPayload(item: PayloadItem, prettyPrintJson: boolean): PayloadItem {
-  const rawText = item.text ?? "";
-  const parsedJson = tryParseJson(rawText);
+  if (item.text == undefined) return item;
+  const normalized = item.text.replace(/\r\n/g, "\n");
+  const parsedJson = tryParseJson(normalized);
   if (parsedJson === undefined) {
     return {
       ...item,
       mimeType: item.mimeType || "text/plain",
-      text: ensureTrailingNewline(rawText),
+      text: normalized,
     };
   }
 
   const text = prettyPrintJson
-    ? normalizeJsonText(parsedJson)
-    : ensureTrailingNewline(rawText);
+    ? normalizeJsonText(parsedJson) : normalized;
 
   return withRawMimeType({
     ...item,
@@ -423,7 +439,7 @@ function writePayloadMainFile(filePath: string, item: PayloadItem): string | und
     return undefined;
   }
 
-  const text = ensureTrailingNewline(item.text ?? "");
+  const text = item.text ?? "";
   writeFileSync(filePath, text, "utf8");
   return text;
 }
@@ -433,7 +449,7 @@ function buildItemPreview(item: PayloadItem, absolutePath: string, storedText: s
     return [`File: ${absolutePath}`];
   }
 
-  const preview = buildTextPreview(storedText, settings.previewLinesPerItem, settings.previewCharsPerItem);
+  const preview = buildTextPreview(storedText, settings.previewFullCharsPerItem, settings.previewTruncateToCharsPerItem);
   if (!preview.truncated) {
     return preview.lines;
   }
@@ -550,8 +566,8 @@ export function materializeToolCallResult(input: MaterializeCallToolResultInput)
   const manifestPath = normalizePathSlashes(join(callDir, "manifest.json"));
   const summaryText = applyHardMax(buildSummary(payloadItems, manifestPath, {
     summaryItemCount: settings.summaryItemCount,
-    previewLinesPerItem: settings.previewLinesPerItem,
-    previewCharsPerItem: settings.previewCharsPerItem,
+    previewFullCharsPerItem: settings.previewFullCharsPerItem,
+    previewTruncateToCharsPerItem: settings.previewTruncateToCharsPerItem,
     hardMaxChars: settings.hardMaxChars,
   }), settings.hardMaxChars, manifestPath);
 
@@ -582,8 +598,8 @@ export function materializeToolCallResult(input: MaterializeCallToolResultInput)
     metaFiles: [manifestPath],
     budget: {
       summaryItemCount: settings.summaryItemCount,
-      previewLinesPerItem: settings.previewLinesPerItem,
-      previewCharsPerItem: settings.previewCharsPerItem,
+      previewFullCharsPerItem: settings.previewFullCharsPerItem,
+      previewTruncateToCharsPerItem: settings.previewTruncateToCharsPerItem,
       hardMaxChars: settings.hardMaxChars,
     },
   };

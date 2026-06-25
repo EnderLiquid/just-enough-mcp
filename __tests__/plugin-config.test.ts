@@ -22,8 +22,8 @@ describe("loadPluginConfigFromPaths", () => {
     writeFileSync(configPath, JSON.stringify({
       resultPresentation: {
         summaryItemCount: 3,
-        previewLinesPerItem: 2,
-        previewCharsPerItem: 120,
+        previewFullCharsPerItem: 240,
+        previewTruncateToCharsPerItem: 120,
         hardMaxChars: 5000,
         collapsedPreviewLines: 5,
         prettyPrintJson: false,
@@ -51,8 +51,8 @@ describe("loadPluginConfigFromPaths", () => {
     const localTools = loaded.servers.find(server => server.name === "localTools");
 
     expect(loaded.resultPresentation.summaryItemCount).toBe(3);
-    expect(loaded.resultPresentation.previewLinesPerItem).toBe(2);
-    expect(loaded.resultPresentation.previewCharsPerItem).toBe(120);
+    expect(loaded.resultPresentation.previewFullCharsPerItem).toBe(240);
+    expect(loaded.resultPresentation.previewTruncateToCharsPerItem).toBe(120);
     expect(loaded.resultPresentation.hardMaxChars).toBe(5000);
     expect(loaded.resultPresentation.collapsedPreviewLines).toBe(5);
     expect(loaded.resultPresentation.prettyPrintJson).toBe(false);
@@ -82,8 +82,8 @@ describe("loadPluginConfigFromPaths", () => {
 
     const loaded = loadPluginConfigFromPaths(configPath, overviewDir);
 
-    expect(loaded.resultPresentation.previewLinesPerItem).toBe(12);
-    expect(loaded.resultPresentation.previewCharsPerItem).toBe(800);
+    expect(loaded.resultPresentation.previewFullCharsPerItem).toBe(1500);
+    expect(loaded.resultPresentation.previewTruncateToCharsPerItem).toBe(600);
   });
 
   it("rejects invalid server configuration", () => {
@@ -118,5 +118,25 @@ describe("loadPluginConfigFromPaths", () => {
     }, null, 2), "utf8");
 
     expect(() => loadPluginConfigFromPaths(configPath, overviewDir)).toThrow(/resultPresentation.summaryItemCount/);
+  });
+
+  it("accepts legacy previewCharsPerItem and equal dual-threshold values", () => {
+    const root = makeTempDir();
+    const configPath = join(root, "just-enough-mcp.json");
+    const overviewDir = join(root, "mcp-overviews");
+    mkdirSync(overviewDir, { recursive: true });
+
+    writeFileSync(configPath, JSON.stringify({
+      resultPresentation: {
+        previewCharsPerItem: 120,
+        previewFullCharsPerItem: 120,
+        previewTruncateToCharsPerItem: 120,
+      },
+      servers: {},
+    }, null, 2), "utf8");
+
+    const loaded = loadPluginConfigFromPaths(configPath, overviewDir);
+    expect(loaded.resultPresentation.previewFullCharsPerItem).toBe(120);
+    expect(loaded.resultPresentation.previewTruncateToCharsPerItem).toBe(120);
   });
 });
