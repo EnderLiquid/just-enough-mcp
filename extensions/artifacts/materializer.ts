@@ -180,7 +180,7 @@ function buildTextPreview(
   const remainderSummary = `${remainingChars} more chars across ${remainingLines} lines of remaining text`;
 
   if (truncatedInLine) {
-    previewLines[previewLines.length - 1] = `${previewLines[previewLines.length - 1]}… (truncated here)`;
+    previewLines[previewLines.length - 1] = `${previewLines[previewLines.length - 1]}… ⟦TRUNCATED⟧`;
     previewLines.push(remainderSummary);
     return { lines: previewLines, truncated: true };
   }
@@ -486,7 +486,7 @@ function buildSummary(payloadItems: PayloadItem[], manifestPath: string, budget:
   }
 
   if (payloadItems.length > displayedItems.length) {
-    sections.push([`... and ${payloadItems.length - displayedItems.length} more payload items; inspect manifest.json`]);
+    sections.push([`… and ${payloadItems.length - displayedItems.length} more payload items; inspect manifest.json`]);
   }
 
   sections.push([`Read manifest for full index: ${manifestPath}`]);

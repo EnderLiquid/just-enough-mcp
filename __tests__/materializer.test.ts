@@ -101,7 +101,7 @@ describe("materializeToolCallResult", () => {
       },
     });
 
-    expect(materialized.summaryText).toContain("abcdefghij… (truncated here)");
+    expect(materialized.summaryText).toContain("abcdefghij… ⟦TRUNCATED⟧");
     expect(materialized.summaryText).toContain("16 more chars across 1 lines of remaining text");
     expect(materialized.summaryText).toContain("Full output: ");
   });
@@ -125,7 +125,7 @@ describe("materializeToolCallResult", () => {
     });
 
     expect(materialized.summaryText).toContain("abc\n… 8 more chars across 2 lines of remaining text");
-    expect(materialized.summaryText).not.toContain("truncated here");
+    expect(materialized.summaryText).not.toContain("⟦TRUNCATED⟧");
     expect(materialized.summaryText).toContain("Full output: ");
   });
 
@@ -159,10 +159,10 @@ describe("materializeToolCallResult", () => {
     expect(materialized.summaryText).toContain("[2] image");
     expect(materialized.summaryText).toContain("File: ");
     expect(materialized.summaryText).toContain("Read manifest for full index: ");
-    expect(materialized.summaryText).toContain("... and 1 more payload items; inspect manifest.json");
+    expect(materialized.summaryText).toContain("… and 1 more payload items; inspect manifest.json");
     expect(materialized.summaryText).not.toContain("source:");
     expect(materialized.summaryText).not.toContain("mimeType:");
-    expect(materialized.payloadItems[2]?.preview?.join("\n")).toContain("truncated here");
+    expect(materialized.payloadItems[2]?.preview?.join("\n")).toContain("⟦TRUNCATED⟧");
     expect(materialized.payloadItems[2]?.preview?.join("\n")).toContain("Full output: ");
 
     const manifest = readFileSync(materialized.manifestPath, "utf8");
