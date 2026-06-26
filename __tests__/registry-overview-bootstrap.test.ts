@@ -41,7 +41,7 @@ function makeServer(overrides: Partial<ResolvedServerSpec> = {}): ResolvedServer
     command: "npx",
     connectionMode: "lazy",
     hasExplicitOverviewConfig: false,
-    initialProfileId: "stdio-tools-pragmatic",
+    profile: "stdio-tools-pragmatic",
     overview: {
       name: "demo",
       content: "No overview configured yet.",

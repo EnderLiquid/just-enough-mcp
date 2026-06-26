@@ -24,7 +24,7 @@ function makeServerState(overrides: Partial<RuntimeServerState> = {}): RuntimeSe
       command: "npx",
       connectionMode: "lazy",
       hasExplicitOverviewConfig: false,
-      initialProfileId: "stdio-tools-pragmatic",
+      profile: "stdio-tools-pragmatic",
       overview: {
         name: "demo",
         content: "demo overview",

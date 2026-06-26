@@ -143,7 +143,7 @@ function parseResolvedServerSpec(
       hasExplicitOverviewConfig: typeof parsed.overview === "string",
       overviewPath: resolvedOverview.path,
       overview: resolvedOverview,
-      initialProfileId: "stdio-tools-pragmatic",
+      profile: "stdio-tools-pragmatic",
     };
   }
 
@@ -175,7 +175,7 @@ function parseResolvedServerSpec(
     hasExplicitOverviewConfig: typeof parsed.overview === "string",
     overviewPath: resolvedOverview.path,
     overview: resolvedOverview,
-    initialProfileId: parsed.bearerToken || (parsed.headers && Object.keys(parsed.headers).length > 0)
+    profile: parsed.bearerToken || (parsed.headers && Object.keys(parsed.headers).length > 0)
       ? "http-tools-token"
       : "http-tools-public",
   };

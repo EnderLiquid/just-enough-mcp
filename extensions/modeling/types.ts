@@ -5,7 +5,7 @@ export type ServerTransportKind = "stdio" | "http";
 export type ServerConnectionMode = "lazy" | "eager";
 export type RuntimeServerStatus = "disconnected" | "connecting" | "connected" | "error";
 
-export type CompatibilityProfileId =
+export type CompatibilityProfile =
   | "stdio-tools-pragmatic"
   | "http-tools-public"
   | "http-tools-token";
@@ -61,7 +61,7 @@ export type ResolvedServerSpec = (Omit<BaseServerConfig, "overview"> & ServerTra
   hasExplicitOverviewConfig: boolean;
   overviewPath?: string;
   overview: ServerOverview;
-  initialProfileId: CompatibilityProfileId;
+  profile: CompatibilityProfile;
 };
 
 export interface PluginConfigLoadResult {

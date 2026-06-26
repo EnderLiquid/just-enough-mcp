@@ -19,7 +19,7 @@ function makeServer(overrides: Partial<ResolvedServerSpec> = {}): ResolvedServer
     url: "https://example.com/mcp",
     connectionMode: "lazy",
     hasExplicitOverviewConfig: false,
-    initialProfileId: "http-tools-public",
+    profile: "http-tools-public",
     overview: {
       name: "tavily",
       content: "No overview configured yet.",

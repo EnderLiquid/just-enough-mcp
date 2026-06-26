@@ -9,7 +9,7 @@ function makeServer(overrides: Partial<ResolvedServerSpec> = {}): ResolvedServer
     url: "https://example.com/mcp",
     connectionMode: "lazy",
     hasExplicitOverviewConfig: false,
-    initialProfileId: "http-tools-public",
+    profile: "http-tools-public",
     overviewPath: "C:/Users/Admin/.pi/agent/mcp-overviews/tavily.md",
     overview: {
       name: "tavily",
