@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { loadServerOverview } from "../extensions/config/server-overviews.js";
-import type { ServerConfig } from "../extensions/modeling/types.js";
+import type { ConfiguredServerConfig } from "../extensions/modeling/types.js";
 
 function makeTempDir(): string {
   const dir = join(tmpdir(), `jem-overview-${randomUUID()}`);
@@ -23,7 +23,7 @@ describe("loadServerOverview", () => {
     writeFileSync(configOverviewPath, "# Title\nConfigured overview line\nMore details\n", "utf8");
     writeFileSync(join(overviewDir, "tavily.md"), "Auto overview line\n", "utf8");
 
-    const config: ServerConfig = {
+    const config: ConfiguredServerConfig = {
       transport: "http",
       url: "https://example.com/mcp",
       overview: "explicit.md",
@@ -42,7 +42,7 @@ describe("loadServerOverview", () => {
     mkdirSync(overviewDir, { recursive: true });
     writeFileSync(join(overviewDir, "tavily.md"), "# Tavily\nSearch and extract web content\nUse it for latest info.\n", "utf8");
 
-    const config: ServerConfig = {
+    const config: ConfiguredServerConfig = {
       transport: "stdio",
       command: "npx",
     };

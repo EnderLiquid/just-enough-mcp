@@ -1,27 +1,25 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { Tool, CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { tryBootstrapOverviewFromDescription } from "../config/overview-bootstrap.js";
 import type {
   PluginConfigLoadResult,
-  ResolvedServerConfig,
   RuntimeServerState,
-  RuntimeServerStatus,
   ServerCatalogResult,
   ToolCallExecutionResult,
 } from "../modeling/types.js";
-import { notifyInfo } from "../ui/notifier.js";
-
-interface RuntimeConnection {
-  client: Client;
-  close: () => Promise<void>;
-}
+import { createServerDriver } from "./drivers/factory.js";
+import { clearRuntimeSlotError, createRuntimeSlot, setRuntimeSlotStatus, setRuntimeSlotTools, updateRuntimeSlotConfig, type RuntimeSlot } from "./slot.js";
 
 export interface ClientRegistryStatus {
   servers: RuntimeServerState[];
   connectedCount: number;
   totalCount: number;
+}
+
+export interface RegistryServerReadyEvent {
+  server: RuntimeServerState;
+  description?: string;
+}
+
+export interface ClientRegistryOptions {
+  onServerReady?: (event: RegistryServerReadyEvent) => void | Promise<void>;
 }
 
 export interface ClientRegistry {
@@ -34,130 +32,56 @@ export interface ClientRegistry {
   closeAll(): Promise<void>;
 }
 
-function createBaseClient(serverName: string): Client {
-  return new Client({ name: `just-enough-mcp-${serverName}`, version: "0.1.0" });
-}
-
-function setStatus(target: RuntimeServerState, status: RuntimeServerStatus, error?: string): RuntimeServerState {
-  target.status = status;
-  target.error = error;
-  return target;
-}
-
 function serializeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-async function connectClient(config: ResolvedServerConfig): Promise<{ connection: RuntimeConnection; tools: Tool[] }> {
-  const client = createBaseClient(config.name);
-
-  if (config.transport === "stdio") {
-    const transport = new StdioClientTransport({
-      command: config.command,
-      args: config.args,
-      cwd: config.cwd,
-      env: config.env,
-      stderr: "ignore",
-    });
-    await client.connect(transport);
-    const listed = await client.listTools();
-    return {
-      connection: {
-        client,
-        close: async () => {
-          await client.close().catch(() => {});
-          await transport.close().catch(() => {});
-        },
-      },
-      tools: listed.tools ?? [],
-    };
-  }
-
-  const headers = { ...(config.headers ?? {}) };
-  if (config.bearerToken) {
-    headers.Authorization = `Bearer ${config.bearerToken}`;
-  }
-  const transport = new StreamableHTTPClientTransport(new URL(config.url), {
-    requestInit: Object.keys(headers).length > 0 ? { headers } : undefined,
-  });
-  await client.connect(transport);
-  const listed = await client.listTools();
-  return {
-    connection: {
-      client,
-      close: async () => {
-        await client.close().catch(() => {});
-        await transport.close().catch(() => {});
-      },
-    },
-    tools: listed.tools ?? [],
-  };
-}
-
-export function createClientRegistry(): ClientRegistry {
-  const serverStates = new Map<string, RuntimeServerState>();
-  const connections = new Map<string, RuntimeConnection>();
+export function createClientRegistry(options: ClientRegistryOptions = {}): ClientRegistry {
+  const slots = new Map<string, RuntimeSlot>();
   const inFlightConnections = new Map<string, Promise<RuntimeServerState>>();
-  let overviewDirectoryPath: string | undefined;
-
   async function disconnectRemovedServers(nextNames: Set<string>): Promise<void> {
-    const removedNames = [...serverStates.keys()].filter(name => !nextNames.has(name));
+    const removedNames = [...slots.keys()].filter(name => !nextNames.has(name));
     for (const name of removedNames) {
-      const existing = connections.get(name);
-      if (existing) {
-        await existing.close().catch(() => {});
-        connections.delete(name);
+      const slot = slots.get(name);
+      if (slot?.driver) {
+        await slot.driver.close().catch(() => {});
       }
-      serverStates.delete(name);
+      slots.delete(name);
     }
   }
 
-  function upsertServerState(config: ResolvedServerConfig): void {
-    const existing = serverStates.get(config.name);
+  function upsertServerSlot(config: PluginConfigLoadResult["servers"][number]): void {
+    const existing = slots.get(config.name);
     if (existing) {
-      existing.config = config;
+      updateRuntimeSlotConfig(existing, config);
       return;
     }
 
-    serverStates.set(config.name, {
-      config,
-      status: "disconnected",
-    });
+    slots.set(config.name, createRuntimeSlot(config));
   }
 
-  function notifyOverviewCreated(serverName: string): void {
-    notifyInfo(`Created MCP overview stub: ${serverName}`);
-  }
-
-  function tryBootstrapOverview(server: RuntimeServerState, connection: RuntimeConnection): void {
-    if (!overviewDirectoryPath) {
+  async function emitServerReady(slot: RuntimeSlot): Promise<void> {
+    if (!slot.driver || !options.onServerReady) {
       return;
     }
-
-    const serverInfo = connection.client.getServerVersion();
 
     try {
-      const bootstrapResult = tryBootstrapOverviewFromDescription(
-        server.config,
-        overviewDirectoryPath,
-        serverInfo?.description,
-      );
-
-      if (bootstrapResult?.created) {
-        notifyOverviewCreated(server.config.name);
-      }
+      await options.onServerReady({
+        server: slot.state,
+        description: slot.driver.getServerDescription(),
+      });
     } catch {
     }
   }
 
   async function ensureConnected(name: string): Promise<RuntimeServerState> {
-    const existingState = serverStates.get(name);
-    if (!existingState) {
+    const slot = slots.get(name);
+    if (!slot) {
       throw new Error(`Unknown MCP server: ${name}`);
     }
 
-    if (existingState.status === "connected" && connections.has(name)) {
-      return existingState;
+    if (slot.state.status === "connected" && slot.driver) {
+      return slot.state;
     }
 
     const pending = inFlightConnections.get(name);
@@ -166,20 +90,23 @@ export function createClientRegistry(): ClientRegistry {
     }
 
     const promise = (async () => {
-      setStatus(existingState, "connecting");
+      setRuntimeSlotStatus(slot, "connecting");
+      const nextDriver = createServerDriver(slot.state.config);
       try {
-        const connected = await connectClient(existingState.config);
-        const previous = connections.get(name);
+        await nextDriver.open();
+        const tools = await nextDriver.listTools();
+        const previous = slot.driver;
         if (previous) {
           await previous.close().catch(() => {});
         }
-        connections.set(name, connected.connection);
-        existingState.tools = connected.tools;
-        const server = setStatus(existingState, "connected");
-        tryBootstrapOverview(server, connected.connection);
+        slot.driver = nextDriver;
+        setRuntimeSlotTools(slot, tools);
+        const server = setRuntimeSlotStatus(slot, "connected");
+        await emitServerReady(slot);
         return server;
       } catch (error) {
-        return setStatus(existingState, "error", serializeError(error));
+        await nextDriver.close().catch(() => {});
+        return setRuntimeSlotStatus(slot, "error", serializeError(error));
       } finally {
         inFlightConnections.delete(name);
       }
@@ -191,12 +118,11 @@ export function createClientRegistry(): ClientRegistry {
 
   return {
     async syncConfig(config) {
-      overviewDirectoryPath = config.overviewDir;
       const nextNames = new Set(config.servers.map(server => server.name));
       await disconnectRemovedServers(nextNames);
 
       for (const server of config.servers) {
-        upsertServerState(server);
+        upsertServerSlot(server);
       }
 
       for (const server of config.servers) {
@@ -207,7 +133,9 @@ export function createClientRegistry(): ClientRegistry {
     },
 
     getStatus() {
-      const servers = [...serverStates.values()].sort((left, right) => left.config.name.localeCompare(right.config.name));
+      const servers = [...slots.values()]
+        .map(slot => slot.state)
+        .sort((left, right) => left.config.name.localeCompare(right.config.name));
       return {
         servers,
         connectedCount: servers.filter(server => server.status === "connected").length,
@@ -216,7 +144,7 @@ export function createClientRegistry(): ClientRegistry {
     },
 
     getServerState(name) {
-      return serverStates.get(name);
+      return slots.get(name)?.state;
     },
 
     async connectServer(name) {
@@ -240,15 +168,12 @@ export function createClientRegistry(): ClientRegistry {
         throw new Error(server.error ?? `Failed to connect to MCP server: ${name}`);
       }
 
-      const connection = connections.get(name);
-      if (!connection) {
+      const slot = slots.get(name);
+      if (!slot?.driver) {
         throw new Error(`No active connection for MCP server: ${name}`);
       }
 
-      const result = (await connection.client.callTool({
-        name: toolName,
-        arguments: args,
-      })) as CallToolResult;
+      const result = await slot.driver.callTool(toolName, args);
 
       return {
         server,
@@ -259,12 +184,16 @@ export function createClientRegistry(): ClientRegistry {
     },
 
     async closeAll() {
-      const active = [...connections.values()];
-      connections.clear();
-      await Promise.all(active.map(connection => connection.close().catch(() => {})));
-      for (const server of serverStates.values()) {
-        setStatus(server, "disconnected");
-        server.error = undefined;
+      const active = [...slots.values()]
+        .map(slot => slot.driver)
+        .filter(driver => driver !== undefined);
+      for (const slot of slots.values()) {
+        slot.driver = undefined;
+      }
+      await Promise.all(active.map(driver => driver.close().catch(() => {})));
+      for (const slot of slots.values()) {
+        setRuntimeSlotStatus(slot, "disconnected");
+        clearRuntimeSlotError(slot);
       }
     },
   };

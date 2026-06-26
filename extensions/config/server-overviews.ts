@@ -1,9 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { getOverviewDirectoryPath } from "./paths.js";
-import type { ServerConfig, ServerOverview, ServerTransportKind } from "../modeling/types.js";
+import type { ConfiguredServerConfig, ServerOverview, ServerTransportKind } from "../modeling/types.js";
 
-function inferTransport(config: ServerConfig): ServerTransportKind {
+function inferTransport(config: ConfiguredServerConfig): ServerTransportKind {
   return config.transport;
 }
 
@@ -26,7 +26,7 @@ function normalizeOverviewContent(markdown: string): string {
 
 export function loadServerOverview(
   serverName: string,
-  config: ServerConfig,
+  config: ConfiguredServerConfig,
   configPath: string,
   overviewDirectoryPath = getOverviewDirectoryPath(),
 ): ServerOverview {

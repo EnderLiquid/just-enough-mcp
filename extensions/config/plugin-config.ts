@@ -3,15 +3,16 @@ import { getOverviewDirectoryPath, getPluginConfigPath } from "./paths.js";
 import { loadServerOverview } from "./server-overviews.js";
 import {
   DEFAULT_CONNECTION_MODE,
+  type ConfiguredServerConfig,
   type PluginConfigLoadResult,
   type RawPluginConfig,
-  type ResolvedServerConfig,
-  type ServerConfig,
+  type ResolvedServerSpec,
 } from "../modeling/types.js";
 import {
   DEFAULT_RESULT_PRESENTATION_SETTINGS,
   type ResultPresentationSettings,
 } from "../modeling/materialization.js";
+import { resolveInitialProfileId } from "../clients/profiles/resolver.js";
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -86,7 +87,7 @@ function parseResultPresentation(raw: unknown): ResultPresentationSettings {
   };
 }
 
-function parseServerConfig(serverName: string, raw: unknown): ServerConfig {
+function parseServerConfig(serverName: string, raw: unknown): ConfiguredServerConfig {
   if (!isObject(raw)) {
     throw new Error(`Server \"${serverName}\" config must be an object.`);
   }
@@ -162,21 +163,22 @@ function parseRawConfig(configPath: string): RawPluginConfig {
   return parsed as RawPluginConfig;
 }
 
-function resolveServers(configPath: string, overviewDir: string, raw: RawPluginConfig): ResolvedServerConfig[] {
+function resolveServers(configPath: string, overviewDir: string, raw: RawPluginConfig): ResolvedServerSpec[] {
   const entries = Object.entries(raw.servers ?? {});
 
   return entries.map(([serverName, rawServer]) => {
     const parsed = parseServerConfig(serverName, rawServer);
     const overview = loadServerOverview(serverName, parsed, configPath, overviewDir);
-    const { overview: _configuredOverviewPath, ...transportConfig } = parsed;
+    const { overview: _configuredOverviewPath, ...transportSpec } = parsed;
 
     return {
-      ...transportConfig,
+      ...transportSpec,
       name: serverName,
       connectionMode: parsed.connectionMode ?? DEFAULT_CONNECTION_MODE,
       hasExplicitOverviewConfig: typeof parsed.overview === "string",
       overviewPath: overview.path,
       overview,
+      initialProfileId: resolveInitialProfileId(parsed),
     };
   });
 }

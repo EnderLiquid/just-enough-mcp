@@ -59,9 +59,11 @@ describe("loadPluginConfigFromPaths", () => {
     expect(loaded.resultPresentation.artifactRoot).toBe("custom-artifacts");
     expect(tavily?.transport).toBe("http");
     expect(tavily?.connectionMode).toBe("eager");
+    expect(tavily?.initialProfileId).toBe("http-tools-token");
     expect(tavily?.overview.content).toContain("Search and extract web content.");
     expect(localTools?.transport).toBe("stdio");
     expect(localTools?.connectionMode).toBe("lazy");
+    expect(localTools?.initialProfileId).toBe("stdio-tools-pragmatic");
   });
 
   it("uses the updated default result presentation settings when omitted", () => {
@@ -84,6 +86,7 @@ describe("loadPluginConfigFromPaths", () => {
 
     expect(loaded.resultPresentation.previewFullCharsPerItem).toBe(1500);
     expect(loaded.resultPresentation.previewTruncateToCharsPerItem).toBe(600);
+    expect(loaded.servers[0]?.initialProfileId).toBe("stdio-tools-pragmatic");
   });
 
   it("rejects invalid server configuration", () => {

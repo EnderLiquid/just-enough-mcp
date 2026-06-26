@@ -5,6 +5,11 @@ export type ServerTransportKind = "stdio" | "http";
 export type ServerConnectionMode = "lazy" | "eager";
 export type RuntimeServerStatus = "disconnected" | "connecting" | "connected" | "error";
 
+export type CompatibilityProfileId =
+  | "stdio-tools-pragmatic"
+  | "http-tools-public"
+  | "http-tools-token";
+
 export interface ServerOverview {
   name: string;
   content: string;
@@ -43,26 +48,27 @@ export interface BaseServerConfig {
   overview?: string;
 }
 
-export type ServerConfig = BaseServerConfig & ServerTransportConfig;
+export type ConfiguredServerConfig = BaseServerConfig & ServerTransportConfig;
 
 export interface RawPluginConfig {
   resultPresentation?: unknown;
   servers?: Record<string, unknown>;
 }
 
-export type ResolvedServerConfig = (Omit<BaseServerConfig, "overview"> & ServerTransportConfig) & {
+export type ResolvedServerSpec = (Omit<BaseServerConfig, "overview"> & ServerTransportConfig) & {
   name: string;
   connectionMode: ServerConnectionMode;
   hasExplicitOverviewConfig: boolean;
   overviewPath?: string;
   overview: ServerOverview;
+  initialProfileId: CompatibilityProfileId;
 };
 
 export interface PluginConfigLoadResult {
   configPath: string;
   overviewDir: string;
   resultPresentation: ResultPresentationSettings;
-  servers: ResolvedServerConfig[];
+  servers: ResolvedServerSpec[];
 }
 
 export interface McpFooterStatus {
@@ -72,7 +78,7 @@ export interface McpFooterStatus {
 }
 
 export interface RuntimeServerState {
-  config: ResolvedServerConfig;
+  config: ResolvedServerSpec;
   status: RuntimeServerStatus;
   error?: string;
   tools?: Tool[];

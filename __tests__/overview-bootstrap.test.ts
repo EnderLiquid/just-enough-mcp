@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { tryBootstrapOverviewFromDescription } from "../extensions/config/overview-bootstrap.js";
-import type { ResolvedServerConfig } from "../extensions/modeling/types.js";
+import type { ResolvedServerSpec } from "../extensions/modeling/types.js";
 
 function makeTempDir(): string {
   const dir = join(tmpdir(), `jem-overview-bootstrap-${randomUUID()}`);
@@ -12,13 +12,14 @@ function makeTempDir(): string {
   return dir;
 }
 
-function makeServer(overrides: Partial<ResolvedServerConfig> = {}): ResolvedServerConfig {
+function makeServer(overrides: Partial<ResolvedServerSpec> = {}): ResolvedServerSpec {
   return {
     name: "tavily",
     transport: "http",
     url: "https://example.com/mcp",
     connectionMode: "lazy",
     hasExplicitOverviewConfig: false,
+    initialProfileId: "http-tools-public",
     overview: {
       name: "tavily",
       content: "No overview configured yet.",
@@ -26,7 +27,7 @@ function makeServer(overrides: Partial<ResolvedServerConfig> = {}): ResolvedServ
       source: "none",
     },
     ...overrides,
-  } as ResolvedServerConfig;
+  } as ResolvedServerSpec;
 }
 
 describe("tryBootstrapOverviewFromDescription", () => {

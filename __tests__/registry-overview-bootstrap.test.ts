@@ -1,14 +1,12 @@
 import { describe, expect, it, beforeEach, vi } from "vitest";
-import type { PluginConfigLoadResult, ResolvedServerConfig } from "../extensions/modeling/types.js";
+import type { PluginConfigLoadResult, ResolvedServerSpec } from "../extensions/modeling/types.js";
 
 const mocks = vi.hoisted(() => ({
   listTools: vi.fn(),
   getServerVersion: vi.fn(),
   connect: vi.fn(),
   close: vi.fn(),
-  bootstrap: vi.fn(),
   transportClose: vi.fn(),
-  notifyInfo: vi.fn(),
 }));
 
 vi.mock("@modelcontextprotocol/sdk/client/index.js", () => ({
@@ -34,23 +32,16 @@ vi.mock("@modelcontextprotocol/sdk/client/streamableHttp.js", () => ({
   },
 }));
 
-vi.mock("../extensions/config/overview-bootstrap.js", () => ({
-  tryBootstrapOverviewFromDescription: mocks.bootstrap,
-}));
-
-vi.mock("../extensions/ui/notifier.js", () => ({
-  notifyInfo: mocks.notifyInfo,
-}));
-
 import { createClientRegistry } from "../extensions/clients/registry.js";
 
-function makeServer(overrides: Partial<ResolvedServerConfig> = {}): ResolvedServerConfig {
+function makeServer(overrides: Partial<ResolvedServerSpec> = {}): ResolvedServerSpec {
   return {
     name: "demo",
     transport: "stdio",
     command: "npx",
     connectionMode: "lazy",
     hasExplicitOverviewConfig: false,
+    initialProfileId: "stdio-tools-pragmatic",
     overview: {
       name: "demo",
       content: "No overview configured yet.",
@@ -58,10 +49,10 @@ function makeServer(overrides: Partial<ResolvedServerConfig> = {}): ResolvedServ
       source: "none",
     },
     ...overrides,
-  } as ResolvedServerConfig;
+  } as ResolvedServerSpec;
 }
 
-function makeConfig(serverOverrides: Partial<ResolvedServerConfig> = {}): PluginConfigLoadResult {
+function makeConfig(serverOverrides: Partial<ResolvedServerSpec> = {}): PluginConfigLoadResult {
   return {
     configPath: "C:/Users/Admin/.pi/agent/just-enough-mcp.json",
     overviewDir: "C:/Users/Admin/.pi/agent/mcp-overviews",
@@ -78,7 +69,7 @@ function makeConfig(serverOverrides: Partial<ResolvedServerConfig> = {}): Plugin
   };
 }
 
-describe("createClientRegistry overview bootstrap", () => {
+describe("createClientRegistry onServerReady", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.connect.mockResolvedValue(undefined);
@@ -92,28 +83,28 @@ describe("createClientRegistry overview bootstrap", () => {
     mocks.transportClose.mockResolvedValue(undefined);
   });
 
-  it("creates overview stub on first successful connection", async () => {
-    const registry = createClientRegistry();
-    mocks.bootstrap.mockReturnValue({
-      created: true,
-      path: "C:/Users/Admin/.pi/agent/mcp-overviews/demo.md",
-    });
+  it("emits observed server facts on first successful connection", async () => {
+    const onServerReady = vi.fn();
+    const registry = createClientRegistry({ onServerReady });
 
     await registry.syncConfig(makeConfig());
     await registry.connectServer("demo");
 
-    expect(mocks.bootstrap).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "demo", hasExplicitOverviewConfig: false }),
-      "C:/Users/Admin/.pi/agent/mcp-overviews",
-      "Demo MCP server",
-    );
-    expect(mocks.notifyInfo).toHaveBeenCalledWith("Created MCP overview stub: demo");
+    expect(onServerReady).toHaveBeenCalledWith({
+      server: expect.objectContaining({
+        config: expect.objectContaining({ name: "demo", hasExplicitOverviewConfig: false }),
+        status: "connected",
+        tools: [],
+      }),
+      description: "Demo MCP server",
+    });
   });
 
-  it("does not fail the connection flow when overview bootstrap throws", async () => {
-    const registry = createClientRegistry();
-    mocks.bootstrap.mockImplementation(() => {
-      throw new Error("disk full");
+  it("does not fail the connection flow when onServerReady throws", async () => {
+    const registry = createClientRegistry({
+      onServerReady: vi.fn().mockImplementation(() => {
+        throw new Error("observer failed");
+      }),
     });
 
     await registry.syncConfig(makeConfig());
