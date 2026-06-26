@@ -1,39 +1,45 @@
 ---
 name: mcp-overview-writer
-description: 编写、改写或评审 Just Enough MCP 插件的 MCP server overview。用于新增 MCP server 后补写 overview，或在需要时完善、整理已有 overview。
+description: 维护 Just Enough MCP 插件中的 MCP server overview。用于新增、改写、整理或评审某个 server 的 overview 文件。
 ---
 
 # MCP Overview Writer
 
-## 什么是 overview
+## 何时使用
 
-传统的 MCP 接入方式通常会在一开始就连接所有 MCP server，并向 LLM 全量暴露它们注册的工具，因此从一开始就占用了大量上下文窗口。截至目前，MCP 协议本身并没有针对这个问题提供内建优化。`Just Enough MCP` 插件则注意到：单个 MCP server 通常具有原子性，而同一个 server 内部的工具往往高度耦合。
+当你准备对某个 MCP server 的 overview 做以下工作时，先加载本 skill：
 
-因此，插件要求为每个 MCP server 维护一份简要描述其功能及用法的 overview。会话中，只有这些 overview 本身会被注入系统提示词；对应 MCP server 的完整工具目录、每个工具的描述及 schema 则被排除在外，模型仅在需要时连接特定 MCP server 并获取详情。通过这种方式，插件得以实现 server 粒度的 MCP 上下文渐进式披露。
+- 新增 overview
+- 改写已有 overview
+- 整理或重构 overview 结构
+- 评审 overview 是否足够支撑 server 选择
 
-overview 的职责是：
+本 skill 关注的是 **如何维护 overview**。
+关于 overview 在运行时为什么存在、为什么会被注入系统提示词、以及为什么不直接暴露完整工具目录，这些前提在系统提示词已说明，这里不再重复。
 
-- 帮 agent 在 **server 级选择** 阶段快速建立该 server 的能力边界认知
-- 说明这个 server **适合做什么 / 不适合做什么**
-- 提醒会显著影响选择准确率的限制条件
+## 目标
 
-overview 不是：
+overview 的目标不是全面介绍一个 server，而是帮助 agent 在 **server 级选择** 阶段快速做出更准确的判断。
 
-- 宣传文案
-- 工具目录镜像或 schema 抄录
+一份好的 overview 应优先帮助回答下面这些问题：
+
+- 这个 server **适合做什么**
+- 这个 server **不适合做什么**
+- 使用它前有哪些关键限制、前置条件或环境要求
+- 哪些信息会显著影响“该不该选它”这个判断
 
 ## 推荐工作流
 
-1. 先读该 MCP server 的现有 overview（如果有）
-2. 判断它是不是**自动初始化草稿**
-3. 再看该 server 的完整工具目录
-4. 如有必要，选 1–2 个代表性工具做真实调用验证
-5. 如果有，再参考其他 server overview 的写法和信息密度
+1. 先读该 server 当前的 overview（如果有）
+2. 判断它是否只是自动初始化草稿
+3. 再查看该 server 的完整工具目录
+4. 如有必要，选择 1–2 个代表性工具做真实调用验证
+5. 参考其他 overview 的信息密度与写法
 6. 最后再写或改 overview
 
-### 自动初始化草稿识别
+## 自动初始化草稿识别
 
-当前 `just-enough-mcp` 可能会在 server 首次成功连接后，自动创建一个最小草稿。
+插件在某个 server 首次成功连接后，可能会根据该 server 返回的元信息中的 `description` 自动生成一个最小草稿。
 典型形式如下：
 
 ```md
@@ -42,24 +48,28 @@ overview 不是：
 <description>
 ```
 
-`description` 字段来自连接时返回的 server description，一般能简要概括 server 功能，但信息量不足以让 agent 形成清晰判断。
+这类内容通常只够表达“这个 server 大概是什么”，不足以可靠地支撑任务路由与适用性判断。
 
 因此：
 
 - **文件存在 ≠ overview 已成熟**
-- 如果内容只是对 server description 的轻量展开，应继续补全
+- 如果内容只是对 `description` 的轻量展开，应继续补全
 
 ## 文件路径
 
-名为 `serverName` 的 MCP server，其 overview 默认位于：
+名为 `serverName` 的 server，其 overview 默认位于：
 
 - `~/.pi/agent/mcp-overviews/<serverName>.md`
 
-用户也可能在插件配置文件中手动为各 MCP server 指定 overview 路径：
+用户也可能在插件配置文件中显式指定 overview 路径：
 
 - `~/.pi/agent/just-enough-mcp.json`
 
-若配置里显式指定了 overview 路径，应优先维护显式路径，而不是默认路径。
+维护时遵循以下规则：
+
+- 若配置里显式指定了 overview 路径，优先维护显式路径
+- 若没有显式路径，再维护默认 overview 文件
+- 修改 overview 或配置后，如需让系统提示词看到最新内容，提醒用户运行 `/reload` 或重启会话
 
 ## 写作取舍标准
 
@@ -68,14 +78,15 @@ overview 不是：
 - 适用场景
 - 不适用场景 / 常见误用边界
 - 关键限制、前置条件、环境要求
-- 能明显提升“该不该选这个 server”判断质量的信息
+- 能明显提升 server 选择准确率的信息
 
 避免写这些：
 
 - 大段复制工具清单
 - 工具 schema 的复述
-- 对其他工具或其他 server 的硬依赖假设
-- overview 中原有、但已随 MCP 功能变化而过时的内容
+- 营销文案式描述
+- 与当前能力不符的过时内容
+- 对其他 server 或其他工具的硬依赖假设
 
 ## 原子性原则
 
@@ -84,18 +95,35 @@ overview 必须能**独立成立**。
 这意味着：
 
 - 只描述这个 server 自己是什么、能做什么、有什么限制
-- 不把“环境里还有别的工具”写成前提
+- 不把“环境里还有别的工具”写成默认前提
 - 不把跨工具协作规则塞进单个 server overview
 
-例如，不要在某个 server overview 里写：
+例如，不要写：
 
-- “某情况优先用另一个 server”
-- “建议配合某个工具使用”
+- “某种情况优先用另一个 server”
+- “建议与某个工具配合使用”
 
-这是因为其他工具可能在未来改变功能、更名或被移除。除非：
+除非：
 
-- 相关工具非常基础（如 `read`）
+- 相关工具较为基础（如 `read`）
 - 用户明确要求写组合性文档
+
+## 建议结构
+
+对于大多数 server，推荐从下面这个最小结构开始：
+
+```md
+# <serverName>
+
+<一句话说明它是什么，以及什么时候应该考虑它>
+
+## 注意事项
+
+- <关键限制或适用边界 1>
+- <关键限制或适用边界 2>
+```
+
+如果 server 的边界更复杂，可以扩展；如果 server 很简单，就保持短小，注意事项可以不写。
 
 ## 示例
 
@@ -112,4 +140,12 @@ overview 必须能**独立成立**。
 - 对支持较差的应用，UI 无障碍树可能不完整；这时可改用截图、缩放和坐标点击等视觉 fallback。
 ```
 
-如果 server 边界很复杂，可以适度扩展；如果 server 很简单，就保持短小。
+## 自检清单
+
+提交 overview 前，快速检查：
+
+- 读完后，agent 是否更容易判断“该不该选这个 server”
+- 是否清楚写出了不适用场景或误用边界
+- 是否包含关键限制，而不是只写能力
+- 是否避免把工具目录或 schema 直接抄进去
+- 是否仍然能在脱离其他 server 文档的情况下独立成立
