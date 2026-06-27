@@ -5,7 +5,8 @@ import {
   DEFAULT_CONNECTION_MODE,
   type PluginConfigLoadResult,
   type RawPluginConfig,
-  type ResolvedServerSpec,
+  type ResolvedServerConfig,
+  type ServerConnectionMode,
 } from "../modeling/types.js";
 import {
   DEFAULT_RESULT_PRESENTATION_SETTINGS,
@@ -16,26 +17,10 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function ensureStringArray(value: unknown, fieldName: string, serverName: string): string[] | undefined {
-  if (value === undefined) return undefined;
-  if (!Array.isArray(value) || value.some(item => typeof item !== "string")) {
-    throw new Error(`Server \"${serverName}\" field \"${fieldName}\" must be an array of strings.`);
-  }
-  return value;
-}
-
-function ensureStringRecord(value: unknown, fieldName: string, serverName: string): Record<string, string> | undefined {
-  if (value === undefined) return undefined;
-  if (!isObject(value) || Object.values(value).some(item => typeof item !== "string")) {
-    throw new Error(`Server \"${serverName}\" field \"${fieldName}\" must be an object of string values.`);
-  }
-  return value as Record<string, string>;
-}
-
 function ensurePositiveInteger(value: unknown, fieldName: string): number | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
-    throw new Error(`just-enough-mcp config field \"resultPresentation.${fieldName}\" must be a positive integer.`);
+    throw new Error(`just-enough-mcp config field "resultPresentation.${fieldName}" must be a positive integer.`);
   }
   return value;
 }
@@ -43,7 +28,7 @@ function ensurePositiveInteger(value: unknown, fieldName: string): number | unde
 function ensureBoolean(value: unknown, fieldName: string): boolean | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== "boolean") {
-    throw new Error(`just-enough-mcp config field \"resultPresentation.${fieldName}\" must be a boolean.`);
+    throw new Error(`just-enough-mcp config field "resultPresentation.${fieldName}" must be a boolean.`);
   }
   return value;
 }
@@ -51,7 +36,7 @@ function ensureBoolean(value: unknown, fieldName: string): boolean | undefined {
 function ensureNonEmptyString(value: unknown, fieldName: string): string | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== "string" || value.length === 0) {
-    throw new Error(`just-enough-mcp config field \"resultPresentation.${fieldName}\" must be a non-empty string.`);
+    throw new Error(`just-enough-mcp config field "resultPresentation.${fieldName}" must be a non-empty string.`);
   }
   return value;
 }
@@ -85,99 +70,52 @@ function parseResultPresentation(raw: unknown): ResultPresentationSettings {
   };
 }
 
-function parseResolvedServerSpec(
+function parseConnectionMode(value: unknown, serverName: string): ServerConnectionMode {
+  if (value === undefined) {
+    return DEFAULT_CONNECTION_MODE;
+  }
+
+  if (value !== "lazy" && value !== "eager") {
+    throw new Error(`Server "${serverName}" connectionMode must be "lazy" or "eager".`);
+  }
+
+  return value;
+}
+
+function parseOverviewPath(value: unknown, serverName: string): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "string") {
+    throw new Error(`Server "${serverName}" overview must be a string path.`);
+  }
+
+  return value;
+}
+
+function parseResolvedServerConfig(
   serverName: string,
   raw: unknown,
   configPath: string,
   overviewDir: string,
-): ResolvedServerSpec {
+): ResolvedServerConfig {
   if (!isObject(raw)) {
-    throw new Error(`Server \"${serverName}\" config must be an object.`);
+    throw new Error(`Server "${serverName}" config must be an object.`);
   }
 
-  const rawTransport = raw.transport;
-  if (rawTransport !== "stdio" && rawTransport !== "http") {
-    throw new Error(`Server \"${serverName}\" must set transport to \"stdio\" or \"http\".`);
-  }
-  const transport: "stdio" | "http" = rawTransport;
-
-  const rawConnectionMode = raw.connectionMode;
-  if (
-    rawConnectionMode !== undefined &&
-    rawConnectionMode !== "lazy" &&
-    rawConnectionMode !== "eager"
-  ) {
-    throw new Error(`Server \"${serverName}\" connectionMode must be \"lazy\" or \"eager\".`);
-  }
-  const connectionMode: "lazy" | "eager" | undefined = rawConnectionMode;
-
-  const overview = raw.overview;
-  if (overview !== undefined && typeof overview !== "string") {
-    throw new Error(`Server \"${serverName}\" overview must be a string path.`);
-  }
-
-  if (transport === "stdio") {
-    if (typeof raw.command !== "string" || raw.command.length === 0) {
-      throw new Error(`Server \"${serverName}\" must provide a non-empty command for stdio transport.`);
-    }
-
-    const parsed = {
-      transport,
-      command: raw.command,
-      args: ensureStringArray(raw.args, "args", serverName),
-      cwd: typeof raw.cwd === "string" ? raw.cwd : undefined,
-      env: ensureStringRecord(raw.env, "env", serverName),
-      connectionMode,
-      overview,
-    };
-    const resolvedOverview = loadServerOverview(serverName, parsed, configPath, overviewDir);
-
-    return {
-      transport: parsed.transport,
-      command: parsed.command,
-      args: parsed.args,
-      cwd: parsed.cwd,
-      env: parsed.env,
-      name: serverName,
-      connectionMode: parsed.connectionMode ?? DEFAULT_CONNECTION_MODE,
-      hasExplicitOverviewConfig: typeof parsed.overview === "string",
-      overviewPath: resolvedOverview.path,
-      overview: resolvedOverview,
-      profile: "stdio-tools-pragmatic",
-    };
-  }
-
-  if (typeof raw.url !== "string" || raw.url.length === 0) {
-    throw new Error(`Server \"${serverName}\" must provide a non-empty url for http transport.`);
-  }
-
-  if (raw.bearerToken !== undefined && typeof raw.bearerToken !== "string") {
-    throw new Error(`Server \"${serverName}\" bearerToken must be a string.`);
-  }
-
-  const parsed = {
-    transport,
-    url: raw.url,
-    headers: ensureStringRecord(raw.headers, "headers", serverName),
-    bearerToken: typeof raw.bearerToken === "string" ? raw.bearerToken : undefined,
-    connectionMode,
-    overview,
-  };
-  const resolvedOverview = loadServerOverview(serverName, parsed, configPath, overviewDir);
+  const connectionMode = parseConnectionMode(raw.connectionMode, serverName);
+  const overview = parseOverviewPath(raw.overview, serverName);
+  const definition = { ...raw };
+  const resolvedOverview = loadServerOverview(serverName, { connectionMode, overview }, configPath, overviewDir);
 
   return {
-    transport: parsed.transport,
-    url: parsed.url,
-    headers: parsed.headers,
-    bearerToken: parsed.bearerToken,
     name: serverName,
-    connectionMode: parsed.connectionMode ?? DEFAULT_CONNECTION_MODE,
-    hasExplicitOverviewConfig: typeof parsed.overview === "string",
+    connectionMode,
+    hasExplicitOverviewConfig: typeof overview === "string",
     overviewPath: resolvedOverview.path,
     overview: resolvedOverview,
-    profile: parsed.bearerToken || (parsed.headers && Object.keys(parsed.headers).length > 0)
-      ? "http-tools-token"
-      : "http-tools-public",
+    definition,
   };
 }
 
@@ -199,10 +137,10 @@ function parseRawConfig(configPath: string): RawPluginConfig {
   return parsed as RawPluginConfig;
 }
 
-function resolveServers(configPath: string, overviewDir: string, raw: RawPluginConfig): ResolvedServerSpec[] {
+function resolveServers(configPath: string, overviewDir: string, raw: RawPluginConfig): ResolvedServerConfig[] {
   const entries = Object.entries(raw.servers ?? {});
   return entries.map(([serverName, rawServer]) =>
-    parseResolvedServerSpec(serverName, rawServer, configPath, overviewDir),
+    parseResolvedServerConfig(serverName, rawServer, configPath, overviewDir),
   );
 }
 

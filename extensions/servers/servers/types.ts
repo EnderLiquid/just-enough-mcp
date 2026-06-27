@@ -1,9 +1,9 @@
-import type { CompatibilityProfile, ResolvedServerSpec, ServerCatalogResult, ServerSnapshot, ToolCallExecutionResult } from "../../modeling/types.js";
+import type { CompatibilityProfile, ResolvedServerConfig, ServerCatalogResult, ServerSnapshot, ToolCallExecutionResult } from "../../modeling/types.js";
 
 export interface McpServer {
   readonly name: string;
   readonly profile: CompatibilityProfile;
-  readonly spec: ResolvedServerSpec;
+  readonly config: ResolvedServerConfig;
 
   snapshot(): ServerSnapshot;
   connect(): Promise<ServerSnapshot>;

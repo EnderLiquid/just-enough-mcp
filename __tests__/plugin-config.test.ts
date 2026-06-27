@@ -12,7 +12,7 @@ function makeTempDir(): string {
 }
 
 describe("loadPluginConfigFromPaths", () => {
-  it("parses stdio and http servers with connection modes and result presentation settings", () => {
+  it("parses server definitions with connection modes and result presentation settings", () => {
     const root = makeTempDir();
     const configPath = join(root, "just-enough-mcp.json");
     const overviewDir = join(root, "mcp-overviews");
@@ -57,13 +57,20 @@ describe("loadPluginConfigFromPaths", () => {
     expect(loaded.resultPresentation.collapsedPreviewLines).toBe(5);
     expect(loaded.resultPresentation.prettyPrintJson).toBe(false);
     expect(loaded.resultPresentation.artifactRoot).toBe("custom-artifacts");
-    expect(tavily?.transport).toBe("http");
+    expect(tavily?.definition).toMatchObject({
+      transport: "http",
+      url: "https://example.com/mcp",
+      bearerToken: "token-123",
+      connectionMode: "eager",
+    });
     expect(tavily?.connectionMode).toBe("eager");
-    expect(tavily?.profile).toBe("http-tools-token");
     expect(tavily?.overview.content).toContain("Search and extract web content.");
-    expect(localTools?.transport).toBe("stdio");
+    expect(localTools?.definition).toMatchObject({
+      transport: "stdio",
+      command: "npx",
+      args: ["-y", "some-server"],
+    });
     expect(localTools?.connectionMode).toBe("lazy");
-    expect(localTools?.profile).toBe("stdio-tools-pragmatic");
   });
 
   it("uses the updated default result presentation settings when omitted", () => {
@@ -86,10 +93,13 @@ describe("loadPluginConfigFromPaths", () => {
 
     expect(loaded.resultPresentation.previewFullCharsPerItem).toBe(1500);
     expect(loaded.resultPresentation.previewTruncateToCharsPerItem).toBe(600);
-    expect(loaded.servers[0]?.profile).toBe("stdio-tools-pragmatic");
+    expect(loaded.servers[0]?.definition).toMatchObject({
+      transport: "stdio",
+      command: "npx",
+    });
   });
 
-  it("rejects invalid server configuration", () => {
+  it("rejects non-object server configuration", () => {
     const root = makeTempDir();
     const configPath = join(root, "just-enough-mcp.json");
     const overviewDir = join(root, "mcp-overviews");
@@ -97,10 +107,7 @@ describe("loadPluginConfigFromPaths", () => {
 
     writeFileSync(configPath, JSON.stringify({
       servers: {
-        broken: {
-          transport: "stdio",
-          args: ["missing-command"],
-        },
+        broken: "not-an-object",
       },
     }, null, 2), "utf8");
 

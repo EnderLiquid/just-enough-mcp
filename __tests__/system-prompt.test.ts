@@ -1,25 +1,25 @@
 import { describe, expect, it } from "vitest";
 import { createServerOverviewPrompt } from "../extensions/prompting/system-prompt.js";
-import type { PluginConfigLoadResult, ResolvedServerSpec } from "../extensions/modeling/types.js";
+import type { PluginConfigLoadResult, ResolvedServerConfig } from "../extensions/modeling/types.js";
 
-function makeServer(overrides: Partial<ResolvedServerSpec> = {}): ResolvedServerSpec {
+function makeServer(overrides: Partial<ResolvedServerConfig> = {}): ResolvedServerConfig {
   return {
     name: "tavily",
-    transport: "http",
-    url: "https://example.com/mcp",
     connectionMode: "lazy",
     hasExplicitOverviewConfig: false,
-    profile: "http-tools-public",
     overviewPath: "C:/Users/Admin/.pi/agent/mcp-overviews/tavily.md",
     overview: {
       name: "tavily",
       content: "# tavily\n\nSearch and extract web content.",
-      transport: "http",
       source: "auto",
       path: "C:/Users/Admin/.pi/agent/mcp-overviews/tavily.md",
     },
+    definition: {
+      transport: "http",
+      url: "https://example.com/mcp",
+    },
     ...overrides,
-  } as ResolvedServerSpec;
+  };
 }
 
 function makeConfig(overrides: Partial<PluginConfigLoadResult> = {}): PluginConfigLoadResult {
@@ -62,7 +62,6 @@ describe("createServerOverviewPrompt", () => {
         overview: {
           name: "demo",
           content: "No overview configured yet.",
-          transport: "http",
           source: "none",
         },
       })],

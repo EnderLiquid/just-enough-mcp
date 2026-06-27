@@ -1,7 +1,6 @@
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { ResultPresentationSettings } from "../artifacts/types.js";
 
-export type ServerTransportKind = "stdio" | "http";
 export type ServerConnectionMode = "lazy" | "eager";
 export type ServerConnectState = "disconnected" | "connecting" | "connected";
 
@@ -10,10 +9,11 @@ export type CompatibilityProfile =
   | "http-tools-public"
   | "http-tools-token";
 
+export type ServerDefinition = Record<string, unknown>;
+
 export interface ServerOverview {
   name: string;
   content: string;
-  transport: ServerTransportKind;
   source: "config" | "auto" | "none";
   path?: string;
 }
@@ -26,49 +26,30 @@ export interface McpRuntimeCapabilities {
   supportsElicitation: boolean;
 }
 
-export interface StdioServerConfig {
-  transport: "stdio";
-  command: string;
-  args?: string[];
-  cwd?: string;
-  env?: Record<string, string>;
-}
-
-export interface HttpServerConfig {
-  transport: "http";
-  url: string;
-  headers?: Record<string, string>;
-  bearerToken?: string;
-}
-
-export type ServerTransportConfig = StdioServerConfig | HttpServerConfig;
-
 export interface BaseServerConfig {
   connectionMode?: ServerConnectionMode;
   overview?: string;
 }
-
-export type ConfiguredServerConfig = BaseServerConfig & ServerTransportConfig;
 
 export interface RawPluginConfig {
   resultPresentation?: unknown;
   servers?: Record<string, unknown>;
 }
 
-export type ResolvedServerSpec = (Omit<BaseServerConfig, "overview"> & ServerTransportConfig) & {
+export interface ResolvedServerConfig {
   name: string;
   connectionMode: ServerConnectionMode;
   hasExplicitOverviewConfig: boolean;
   overviewPath?: string;
   overview: ServerOverview;
-  profile: CompatibilityProfile;
-};
+  definition: ServerDefinition;
+}
 
 export interface PluginConfigLoadResult {
   configPath: string;
   overviewDir: string;
   resultPresentation: ResultPresentationSettings;
-  servers: ResolvedServerSpec[];
+  servers: ResolvedServerConfig[];
 }
 
 export interface McpFooterStatus {

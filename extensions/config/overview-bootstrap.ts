@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { ResolvedServerSpec } from "../modeling/types.js";
+import type { ResolvedServerConfig } from "../modeling/types.js";
 
 export interface OverviewBootstrapResult {
   created: boolean;
@@ -16,7 +16,7 @@ function buildOverviewStub(serverName: string, description: string): string {
 }
 
 export function tryBootstrapOverviewFromDescription(
-  server: ResolvedServerSpec,
+  server: ResolvedServerConfig,
   overviewDirectoryPath: string,
   description: string | undefined,
 ): OverviewBootstrapResult | undefined {

@@ -27,13 +27,13 @@ function createRuntime(): McpRuntime {
 
     try {
       const bootstrapResult = tryBootstrapOverviewFromDescription(
-        event.spec,
+        event.config,
         loadedConfig.overviewDir,
         event.description,
       );
 
       if (bootstrapResult?.created) {
-        notifyInfo(`Created MCP overview stub: ${event.spec.name}`);
+        notifyInfo(`Created MCP overview stub: ${event.config.name}`);
       }
     } catch {
     }

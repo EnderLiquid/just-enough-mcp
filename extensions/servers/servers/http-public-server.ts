@@ -1,25 +1,30 @@
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import type { ResolvedServerSpec, ServerSnapshot, ServerTransportConfig } from "../../modeling/types.js";
+import type { ResolvedServerConfig, ServerSnapshot } from "../../modeling/types.js";
 import { ConnectedSdkServer } from "./connected-sdk-server.js";
+import { expectNonEmptyString, expectTransport } from "./config-helpers.js";
 
-type HttpResolvedServerSpec = Extract<ResolvedServerSpec, ServerTransportConfig & { transport: "http" }>;
+const PROFILE = "http-tools-public";
 
 export class HttpPublicServer extends ConnectedSdkServer {
-  constructor(readonly spec: HttpResolvedServerSpec) {
-    super(spec);
+  private readonly url: string;
+
+  constructor(config: ResolvedServerConfig) {
+    super(config, PROFILE);
+    expectTransport(config.definition, config.name, "http", PROFILE);
+    this.url = expectNonEmptyString(config.definition, "url", config.name, PROFILE);
   }
 
   snapshot(): ServerSnapshot {
     return {
       name: this.name,
-      profile: "http-tools-public",
+      profile: PROFILE,
       connectState: this.connectState,
       tools: this.tools,
     };
   }
 
   protected createTransport(): Transport {
-    return new StreamableHTTPClientTransport(new URL(this.spec.url));
+    return new StreamableHTTPClientTransport(new URL(this.url));
   }
 }

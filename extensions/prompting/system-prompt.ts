@@ -1,6 +1,6 @@
 import {
   type PluginConfigLoadResult,
-  type ResolvedServerSpec,
+  type ResolvedServerConfig,
   type ServerOverview,
 } from "../modeling/types.js";
 
@@ -16,7 +16,7 @@ function ensureOverviewHeading(overview: ServerOverview): string {
   return `# ${overview.name}\n\n${overview.content}`;
 }
 
-function formatOverviewBlock(server: ResolvedServerSpec): string {
+function formatOverviewBlock(server: ResolvedServerConfig): string {
   const lines: string[] = [];
 
   if (server.overview.path) {

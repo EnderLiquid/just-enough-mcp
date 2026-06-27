@@ -1,6 +1,6 @@
 import type {
   PluginConfigLoadResult,
-  ResolvedServerSpec,
+  ResolvedServerConfig,
   ServerCatalogResult,
   ServerSnapshot,
   ToolCallExecutionResult,
@@ -15,7 +15,7 @@ export interface ServerRegistryStatus {
 }
 
 export interface ServerReadyEvent {
-  spec: ResolvedServerSpec;
+  config: ResolvedServerConfig;
   description?: string;
 }
 
@@ -49,7 +49,7 @@ function isConnectedSnapshot(snapshot: ServerSnapshot): boolean {
   }
 }
 
-function areSpecsEqual(left: ResolvedServerSpec, right: ResolvedServerSpec): boolean {
+function areConfigsEqual(left: ResolvedServerConfig, right: ResolvedServerConfig): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
@@ -63,7 +63,7 @@ export function createServerRegistry(options: ServerRegistryOptions = {}): Serve
 
     try {
       await options.onServerReady({
-        spec: server.spec,
+        config: server.config,
         description: server.getServerDescription(),
       });
     } catch {
@@ -87,18 +87,18 @@ export function createServerRegistry(options: ServerRegistryOptions = {}): Serve
     }
   }
 
-  async function upsertServer(spec: ResolvedServerSpec): Promise<void> {
-    const existing = servers.get(spec.name);
-    if (existing && areSpecsEqual(existing.spec, spec)) {
+  async function upsertServer(config: ResolvedServerConfig): Promise<void> {
+    const existing = servers.get(config.name);
+    if (existing && areConfigsEqual(existing.config, config)) {
       return;
     }
 
     if (existing) {
-      servers.delete(spec.name);
+      servers.delete(config.name);
       await existing.close().catch(() => {});
     }
 
-    servers.set(spec.name, createMcpServer(spec));
+    servers.set(config.name, createMcpServer(config));
   }
 
   return {
@@ -106,13 +106,13 @@ export function createServerRegistry(options: ServerRegistryOptions = {}): Serve
       const nextNames = new Set(config.servers.map(server => server.name));
       await removeMissingServers(nextNames);
 
-      for (const spec of config.servers) {
-        await upsertServer(spec);
+      for (const serverConfig of config.servers) {
+        await upsertServer(serverConfig);
       }
 
-      for (const spec of config.servers) {
-        if (spec.connectionMode === "eager") {
-          const server = requireServer(spec.name);
+      for (const serverConfig of config.servers) {
+        if (serverConfig.connectionMode === "eager") {
+          const server = requireServer(serverConfig.name);
           await server.connect();
           await emitServerReady(server);
         }

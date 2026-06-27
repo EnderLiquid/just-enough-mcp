@@ -1,11 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { getOverviewDirectoryPath } from "./paths.js";
-import type { ConfiguredServerConfig, ServerOverview, ServerTransportKind } from "../modeling/types.js";
-
-function inferTransport(config: ConfiguredServerConfig): ServerTransportKind {
-  return config.transport;
-}
+import type { BaseServerConfig, ServerOverview } from "../modeling/types.js";
 
 function resolveConfiguredOverviewPath(configPath: string, overviewPath: string): string {
   if (isAbsolute(overviewPath)) {
@@ -26,12 +22,10 @@ function normalizeOverviewContent(markdown: string): string {
 
 export function loadServerOverview(
   serverName: string,
-  config: ConfiguredServerConfig,
+  config: BaseServerConfig,
   configPath: string,
   overviewDirectoryPath = getOverviewDirectoryPath(),
 ): ServerOverview {
-  const transport = inferTransport(config);
-
   if (config.overview) {
     const explicitPath = resolveConfiguredOverviewPath(configPath, config.overview);
     if (existsSync(explicitPath)) {
@@ -39,7 +33,6 @@ export function loadServerOverview(
       return {
         name: serverName,
         content,
-        transport,
         source: "config",
         path: explicitPath,
       };
@@ -52,7 +45,6 @@ export function loadServerOverview(
     return {
       name: serverName,
       content,
-      transport,
       source: "auto",
       path: autoPath,
     };
@@ -61,7 +53,6 @@ export function loadServerOverview(
   return {
     name: serverName,
     content: "No overview configured yet.",
-    transport,
     source: "none",
   };
 }

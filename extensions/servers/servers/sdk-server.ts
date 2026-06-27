@@ -1,7 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
-import type { ResolvedServerSpec, ServerCatalogResult, ServerSnapshot, ToolCallExecutionResult } from "../../modeling/types.js";
+import type { CompatibilityProfile, ResolvedServerConfig, ServerCatalogResult, ServerSnapshot, ToolCallExecutionResult } from "../../modeling/types.js";
 import type { McpServer } from "./types.js";
 
 function createBaseClient(serverName: string): Client {
@@ -10,15 +10,16 @@ function createBaseClient(serverName: string): Client {
 
 export abstract class SdkBackedServer implements McpServer {
   readonly name: string;
-  readonly profile: ResolvedServerSpec["profile"];
 
   protected client: Client | undefined;
   protected transport: Transport | undefined;
   protected tools: Tool[] | undefined;
 
-  constructor(readonly spec: ResolvedServerSpec) {
-    this.name = spec.name;
-    this.profile = spec.profile;
+  constructor(
+    readonly config: ResolvedServerConfig,
+    readonly profile: CompatibilityProfile,
+  ) {
+    this.name = config.name;
   }
 
   abstract snapshot(): ServerSnapshot;

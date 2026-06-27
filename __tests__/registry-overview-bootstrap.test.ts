@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, vi } from "vitest";
-import type { PluginConfigLoadResult, ResolvedServerSpec } from "../extensions/modeling/types.js";
+import type { PluginConfigLoadResult, ResolvedServerConfig } from "../extensions/modeling/types.js";
 
 const mocks = vi.hoisted(() => ({
   listTools: vi.fn(),
@@ -34,25 +34,25 @@ vi.mock("@modelcontextprotocol/sdk/client/streamableHttp.js", () => ({
 
 import { createServerRegistry } from "../extensions/servers/registry.js";
 
-function makeServer(overrides: Partial<ResolvedServerSpec> = {}): ResolvedServerSpec {
+function makeServer(overrides: Partial<ResolvedServerConfig> = {}): ResolvedServerConfig {
   return {
     name: "demo",
-    transport: "stdio",
-    command: "npx",
     connectionMode: "lazy",
     hasExplicitOverviewConfig: false,
-    profile: "stdio-tools-pragmatic",
     overview: {
       name: "demo",
       content: "No overview configured yet.",
-      transport: "stdio",
       source: "none",
     },
+    definition: {
+      transport: "stdio",
+      command: "npx",
+    },
     ...overrides,
-  } as ResolvedServerSpec;
+  };
 }
 
-function makeConfig(serverOverrides: Partial<ResolvedServerSpec> = {}): PluginConfigLoadResult {
+function makeConfig(serverOverrides: Partial<ResolvedServerConfig> = {}): PluginConfigLoadResult {
   return {
     configPath: "C:/Users/Admin/.pi/agent/just-enough-mcp.json",
     overviewDir: "C:/Users/Admin/.pi/agent/mcp-overviews",
@@ -91,7 +91,7 @@ describe("createServerRegistry onServerReady", () => {
     await registry.connectServer("demo");
 
     expect(onServerReady).toHaveBeenCalledWith({
-      spec: expect.objectContaining({ name: "demo", hasExplicitOverviewConfig: false }),
+      config: expect.objectContaining({ name: "demo", hasExplicitOverviewConfig: false }),
       description: "Demo MCP server",
     });
   });
