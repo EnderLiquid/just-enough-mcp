@@ -1,200 +1,159 @@
 import type {
   PluginConfigLoadResult,
-  RuntimeServerState,
+  ResolvedServerSpec,
   ServerCatalogResult,
+  ServerSnapshot,
   ToolCallExecutionResult,
 } from "../modeling/types.js";
-import { createServerDriver } from "./drivers/factory.js";
-import { clearRuntimeSlotError, createRuntimeSlot, setRuntimeSlotStatus, setRuntimeSlotTools, updateRuntimeSlotConfig, type RuntimeSlot } from "./slot.js";
+import { createMcpServer } from "./servers/factory.js";
+import type { McpServer } from "./servers/types.js";
 
-export interface ClientRegistryStatus {
-  servers: RuntimeServerState[];
+export interface ServerRegistryStatus {
+  servers: ServerSnapshot[];
   connectedCount: number;
   totalCount: number;
 }
 
-export interface RegistryServerReadyEvent {
-  server: RuntimeServerState;
+export interface ServerReadyEvent {
+  spec: ResolvedServerSpec;
   description?: string;
 }
 
-export interface ClientRegistryOptions {
-  onServerReady?: (event: RegistryServerReadyEvent) => void | Promise<void>;
+export interface ServerRegistryOptions {
+  onServerReady?: (event: ServerReadyEvent) => void | Promise<void>;
 }
 
-export interface ClientRegistry {
+export interface ServerRegistry {
   syncConfig(config: PluginConfigLoadResult): Promise<void>;
-  getStatus(): ClientRegistryStatus;
-  getServerState(name: string): RuntimeServerState | undefined;
-  connectServer(name: string): Promise<RuntimeServerState>;
+  getStatus(): ServerRegistryStatus;
+  getServerState(name: string): ServerSnapshot | undefined;
+  connectServer(name: string): Promise<ServerSnapshot>;
   getServerCatalog(name: string): Promise<ServerCatalogResult>;
   callTool(name: string, toolName: string, args: Record<string, unknown>): Promise<ToolCallExecutionResult>;
   closeAll(): Promise<void>;
 }
 
-function serializeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+function assertNever(value: never): never {
+  throw new Error(`Unhandled server profile: ${value}`);
 }
 
-export function createClientRegistry(options: ClientRegistryOptions = {}): ClientRegistry {
-  const slots = new Map<string, RuntimeSlot>();
-  const inFlightConnections = new Map<string, Promise<RuntimeServerState>>();
-  async function disconnectRemovedServers(nextNames: Set<string>): Promise<void> {
-    const removedNames = [...slots.keys()].filter(name => !nextNames.has(name));
-    for (const name of removedNames) {
-      const slot = slots.get(name);
-      if (slot?.driver) {
-        await slot.driver.close().catch(() => {});
-      }
-      slots.delete(name);
-    }
+function isConnectedSnapshot(snapshot: ServerSnapshot): boolean {
+  const profile = snapshot.profile;
+  switch (profile) {
+    case "stdio-tools-pragmatic":
+      return snapshot.connectState === "connected";
+    case "http-tools-public":
+    case "http-tools-token":
+      return snapshot.tools !== undefined;
+    default:
+      return assertNever(profile);
   }
+}
 
-  function upsertServerSlot(config: PluginConfigLoadResult["servers"][number]): void {
-    const existing = slots.get(config.name);
-    if (existing) {
-      updateRuntimeSlotConfig(existing, config);
-      return;
-    }
+function areSpecsEqual(left: ResolvedServerSpec, right: ResolvedServerSpec): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
 
-    slots.set(config.name, createRuntimeSlot(config));
-  }
+export function createServerRegistry(options: ServerRegistryOptions = {}): ServerRegistry {
+  const servers = new Map<string, McpServer>();
 
-  async function emitServerReady(slot: RuntimeSlot): Promise<void> {
-    if (!slot.driver || !options.onServerReady) {
+  async function emitServerReady(server: McpServer): Promise<void> {
+    if (!options.onServerReady) {
       return;
     }
 
     try {
       await options.onServerReady({
-        server: slot.state,
-        description: slot.driver.getServerDescription(),
+        spec: server.spec,
+        description: server.getServerDescription(),
       });
     } catch {
     }
   }
 
-  async function ensureConnected(name: string): Promise<RuntimeServerState> {
-    const slot = slots.get(name);
-    if (!slot) {
+  function requireServer(name: string): McpServer {
+    const server = servers.get(name);
+    if (!server) {
       throw new Error(`Unknown MCP server: ${name}`);
     }
+    return server;
+  }
 
-    if (slot.state.status === "connected" && slot.driver) {
-      return slot.state;
+  async function removeMissingServers(nextNames: Set<string>): Promise<void> {
+    const removedNames = [...servers.keys()].filter(name => !nextNames.has(name));
+    for (const name of removedNames) {
+      const server = servers.get(name);
+      servers.delete(name);
+      await server?.close().catch(() => {});
+    }
+  }
+
+  async function upsertServer(spec: ResolvedServerSpec): Promise<void> {
+    const existing = servers.get(spec.name);
+    if (existing && areSpecsEqual(existing.spec, spec)) {
+      return;
     }
 
-    const pending = inFlightConnections.get(name);
-    if (pending) {
-      return pending;
+    if (existing) {
+      servers.delete(spec.name);
+      await existing.close().catch(() => {});
     }
 
-    const promise = (async () => {
-      setRuntimeSlotStatus(slot, "connecting");
-      const nextDriver = createServerDriver(slot.state.config);
-      try {
-        await nextDriver.open();
-        const tools = await nextDriver.listTools();
-        const previous = slot.driver;
-        if (previous) {
-          await previous.close().catch(() => {});
-        }
-        slot.driver = nextDriver;
-        setRuntimeSlotTools(slot, tools);
-        const server = setRuntimeSlotStatus(slot, "connected");
-        await emitServerReady(slot);
-        return server;
-      } catch (error) {
-        await nextDriver.close().catch(() => {});
-        return setRuntimeSlotStatus(slot, "error", serializeError(error));
-      } finally {
-        inFlightConnections.delete(name);
-      }
-    })();
-
-    inFlightConnections.set(name, promise);
-    return promise;
+    servers.set(spec.name, createMcpServer(spec));
   }
 
   return {
     async syncConfig(config) {
       const nextNames = new Set(config.servers.map(server => server.name));
-      await disconnectRemovedServers(nextNames);
+      await removeMissingServers(nextNames);
 
-      for (const server of config.servers) {
-        upsertServerSlot(server);
+      for (const spec of config.servers) {
+        await upsertServer(spec);
       }
 
-      for (const server of config.servers) {
-        if (server.connectionMode === "eager") {
-          await ensureConnected(server.name);
+      for (const spec of config.servers) {
+        if (spec.connectionMode === "eager") {
+          const server = requireServer(spec.name);
+          await server.connect();
+          await emitServerReady(server);
         }
       }
     },
 
     getStatus() {
-      const servers = [...slots.values()]
-        .map(slot => slot.state)
-        .sort((left, right) => left.config.name.localeCompare(right.config.name));
+      const snapshots = [...servers.values()]
+        .map(server => server.snapshot())
+        .sort((left, right) => left.name.localeCompare(right.name));
       return {
-        servers,
-        connectedCount: servers.filter(server => server.status === "connected").length,
-        totalCount: servers.length,
+        servers: snapshots,
+        connectedCount: snapshots.filter(isConnectedSnapshot).length,
+        totalCount: snapshots.length,
       };
     },
 
     getServerState(name) {
-      return slots.get(name)?.state;
+      return servers.get(name)?.snapshot();
     },
 
     async connectServer(name) {
-      return ensureConnected(name);
+      const server = requireServer(name);
+      const snapshot = await server.connect();
+      await emitServerReady(server);
+      return snapshot;
     },
 
     async getServerCatalog(name) {
-      const server = await ensureConnected(name);
-      if (server.status !== "connected") {
-        throw new Error(server.error ?? `Failed to connect to MCP server: ${name}`);
-      }
-      return {
-        server,
-        tools: server.tools ?? [],
-      };
+      return requireServer(name).getCatalog();
     },
 
     async callTool(name, toolName, args) {
-      const server = await ensureConnected(name);
-      if (server.status !== "connected") {
-        throw new Error(server.error ?? `Failed to connect to MCP server: ${name}`);
-      }
-
-      const slot = slots.get(name);
-      if (!slot?.driver) {
-        throw new Error(`No active connection for MCP server: ${name}`);
-      }
-
-      const result = await slot.driver.callTool(toolName, args);
-
-      return {
-        server,
-        toolName,
-        args,
-        result,
-      };
+      return requireServer(name).callTool(toolName, args);
     },
 
     async closeAll() {
-      const active = [...slots.values()]
-        .map(slot => slot.driver)
-        .filter(driver => driver !== undefined);
-      for (const slot of slots.values()) {
-        slot.driver = undefined;
-      }
-      await Promise.all(active.map(driver => driver.close().catch(() => {})));
-      for (const slot of slots.values()) {
-        setRuntimeSlotStatus(slot, "disconnected");
-        clearRuntimeSlotError(slot);
-      }
+      const active = [...servers.values()];
+      servers.clear();
+      await Promise.all(active.map(server => server.close().catch(() => {})));
     },
   };
 }

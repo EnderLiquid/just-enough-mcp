@@ -2,7 +2,7 @@ import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { materializeToolCallResult } from "../artifacts/materializer.js";
 import { getMcpRuntime } from "../clients/runtime.js";
-import type { RuntimeServerState } from "../modeling/types.js";
+import type { ServerSnapshot } from "../modeling/types.js";
 import { renderMcpToolCall, renderMcpToolResult } from "../rendering/result-renderer.js";
 
 const parametersSchema = Type.Object({
@@ -25,6 +25,23 @@ function parseArgs(input: string | undefined): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
+function assertNever(value: never): never {
+  throw new Error(`Unhandled server profile: ${value}`);
+}
+
+function formatServerSnapshot(snapshot: ServerSnapshot): string {
+  const profile = snapshot.profile;
+  switch (profile) {
+    case "stdio-tools-pragmatic":
+      return `${snapshot.name}: ${snapshot.connectState}`;
+    case "http-tools-public":
+    case "http-tools-token":
+      return `${snapshot.name}: ${profile}`;
+    default:
+      return assertNever(profile);
+  }
+}
+
 export const mcpTool = defineTool<typeof parametersSchema, undefined>({
   name: "mcp",
   label: "MCP",
@@ -45,10 +62,7 @@ export const mcpTool = defineTool<typeof parametersSchema, undefined>({
           text: [
             "just-enough-mcp status",
             `connected servers: ${status.connectedCount}/${status.totalCount}`,
-            ...status.servers.map(server => {
-              const suffix = server.error ? ` (${server.error})` : "";
-              return `- ${server.config.name}: ${server.status}${suffix}`;
-            }),
+            ...status.servers.map(server => `- ${formatServerSnapshot(server)}`),
           ].join("\n"),
         }],
         details: undefined,
@@ -56,22 +70,17 @@ export const mcpTool = defineTool<typeof parametersSchema, undefined>({
     }
 
     if (params.connect) {
-      let server: RuntimeServerState;
+      let server: ServerSnapshot;
       try {
         server = await runtime.registry().connectServer(params.connect);
       } finally {
         runtime.refreshFooter(ctx);
       }
 
-      if (server.status !== "connected") {
-        const suffix = server.error ? `\n${server.error}` : "";
-        throw new Error(`Failed to connect MCP server: ${server.config.name}${suffix}`);
-      }
-
       return {
         content: [{
           type: "text",
-          text: `Connected MCP server: ${server.config.name}`,
+          text: `Connected MCP server: ${server.name}`,
         }],
         details: undefined,
       };
@@ -84,7 +93,7 @@ export const mcpTool = defineTool<typeof parametersSchema, undefined>({
         content: [{
           type: "text",
           text: [
-            `MCP tool catalog for ${catalog.server.config.name}`,
+            `MCP tool catalog for ${catalog.server.name}`,
             ...catalog.tools.map(tool => stringifyJson({
               name: tool.name,
               title: tool.title,
@@ -107,7 +116,7 @@ export const mcpTool = defineTool<typeof parametersSchema, undefined>({
       const { collapsedPreviewLines: _collapsedPreviewLines, ...materializationSettings } = resultPresentation ?? {};
       const materialized = materializeToolCallResult({
         cwd: ctx.cwd,
-        server: execution.server.config.name,
+        server: execution.server.name,
         tool: execution.toolName,
         result: execution.result,
         settings: materializationSettings,

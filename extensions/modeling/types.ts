@@ -3,7 +3,7 @@ import type { ResultPresentationSettings } from "./materialization.js";
 
 export type ServerTransportKind = "stdio" | "http";
 export type ServerConnectionMode = "lazy" | "eager";
-export type RuntimeServerStatus = "disconnected" | "connecting" | "connected" | "error";
+export type ServerConnectState = "disconnected" | "connecting" | "connected";
 
 export type CompatibilityProfile =
   | "stdio-tools-pragmatic"
@@ -77,20 +77,31 @@ export interface McpFooterStatus {
   text: string;
 }
 
-export interface RuntimeServerState {
-  config: ResolvedServerSpec;
-  status: RuntimeServerStatus;
-  error?: string;
-  tools?: Tool[];
-}
+export type ServerSnapshot =
+  | {
+      name: string;
+      profile: "stdio-tools-pragmatic";
+      connectState: ServerConnectState;
+      tools?: Tool[];
+    }
+  | {
+      name: string;
+      profile: "http-tools-public";
+      tools?: Tool[];
+    }
+  | {
+      name: string;
+      profile: "http-tools-token";
+      tools?: Tool[];
+    };
 
 export interface ServerCatalogResult {
-  server: RuntimeServerState;
+  server: ServerSnapshot;
   tools: Tool[];
 }
 
 export interface ToolCallExecutionResult {
-  server: RuntimeServerState;
+  server: ServerSnapshot;
   toolName: string;
   args: Record<string, unknown>;
   result: CallToolResult;

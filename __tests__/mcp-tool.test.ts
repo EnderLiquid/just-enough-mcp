@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { RuntimeServerState } from "../extensions/modeling/types.js";
+import type { ServerSnapshot } from "../extensions/modeling/types.js";
 
 const mocks = vi.hoisted(() => ({
   getMcpRuntime: vi.fn(),
@@ -16,25 +16,13 @@ vi.mock("../extensions/artifacts/materializer.js", () => ({
 
 import { mcpTool } from "../extensions/tools/mcp-tool.js";
 
-function makeServerState(overrides: Partial<RuntimeServerState> = {}): RuntimeServerState {
+function makeServerSnapshot(overrides: Partial<ServerSnapshot> = {}): ServerSnapshot {
   return {
-    config: {
-      name: "demo",
-      transport: "stdio",
-      command: "npx",
-      connectionMode: "lazy",
-      hasExplicitOverviewConfig: false,
-      profile: "stdio-tools-pragmatic",
-      overview: {
-        name: "demo",
-        content: "demo overview",
-        transport: "stdio",
-        source: "none",
-      },
-    },
-    status: "connected",
+    name: "demo",
+    profile: "stdio-tools-pragmatic",
+    connectState: "connected",
     ...overrides,
-  };
+  } as ServerSnapshot;
 }
 
 function makeContext() {
@@ -54,10 +42,7 @@ describe("mcpTool.execute", () => {
 
   it("throws on failed connect after refreshing the footer", async () => {
     const refreshFooter = vi.fn();
-    const connectServer = vi.fn().mockResolvedValue(makeServerState({
-      status: "error",
-      error: "dial tcp timeout",
-    }));
+    const connectServer = vi.fn().mockRejectedValue(new Error("dial tcp timeout"));
 
     mocks.getMcpRuntime.mockReturnValue({
       getStatus: vi.fn(),
@@ -73,7 +58,7 @@ describe("mcpTool.execute", () => {
     const ctx = makeContext();
 
     await expect(mcpTool.execute("tool-call-1", { connect: "demo" }, undefined, vi.fn(), ctx as never)).rejects.toThrow(
-      "Failed to connect MCP server: demo\ndial tcp timeout",
+      "dial tcp timeout",
     );
 
     expect(connectServer).toHaveBeenCalledWith("demo");
@@ -104,7 +89,7 @@ describe("mcpTool.execute", () => {
   it("preserves downstream MCP business failures as materialized error results", async () => {
     const refreshFooter = vi.fn();
     const callTool = vi.fn().mockResolvedValue({
-      server: makeServerState(),
+      server: makeServerSnapshot(),
       toolName: "search",
       args: { query: "pi" },
       result: {

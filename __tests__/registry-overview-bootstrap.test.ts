@@ -32,7 +32,7 @@ vi.mock("@modelcontextprotocol/sdk/client/streamableHttp.js", () => ({
   },
 }));
 
-import { createClientRegistry } from "../extensions/clients/registry.js";
+import { createServerRegistry } from "../extensions/clients/registry.js";
 
 function makeServer(overrides: Partial<ResolvedServerSpec> = {}): ResolvedServerSpec {
   return {
@@ -69,7 +69,7 @@ function makeConfig(serverOverrides: Partial<ResolvedServerSpec> = {}): PluginCo
   };
 }
 
-describe("createClientRegistry onServerReady", () => {
+describe("createServerRegistry onServerReady", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.connect.mockResolvedValue(undefined);
@@ -85,23 +85,19 @@ describe("createClientRegistry onServerReady", () => {
 
   it("emits observed server facts on first successful connection", async () => {
     const onServerReady = vi.fn();
-    const registry = createClientRegistry({ onServerReady });
+    const registry = createServerRegistry({ onServerReady });
 
     await registry.syncConfig(makeConfig());
     await registry.connectServer("demo");
 
     expect(onServerReady).toHaveBeenCalledWith({
-      server: expect.objectContaining({
-        config: expect.objectContaining({ name: "demo", hasExplicitOverviewConfig: false }),
-        status: "connected",
-        tools: [],
-      }),
+      spec: expect.objectContaining({ name: "demo", hasExplicitOverviewConfig: false }),
       description: "Demo MCP server",
     });
   });
 
   it("does not fail the connection flow when onServerReady throws", async () => {
-    const registry = createClientRegistry({
+    const registry = createServerRegistry({
       onServerReady: vi.fn().mockImplementation(() => {
         throw new Error("observer failed");
       }),
@@ -111,7 +107,11 @@ describe("createClientRegistry onServerReady", () => {
     await registry.connectServer("demo");
 
     const server = registry.getServerState("demo");
-    expect(server?.status).toBe("connected");
-    expect(server?.tools).toEqual([]);
+    expect(server).toEqual({
+      name: "demo",
+      profile: "stdio-tools-pragmatic",
+      connectState: "connected",
+      tools: [],
+    });
   });
 });
