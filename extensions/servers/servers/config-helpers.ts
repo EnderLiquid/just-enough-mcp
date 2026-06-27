@@ -8,14 +8,19 @@ function formatProfile(profile: string | undefined): string {
   return profile ? ` for ${profile} profile` : "";
 }
 
-export function expectTransport(
+export function expectOptionalTransport(
   definition: ServerDefinition,
   serverName: string,
   expected: "stdio" | "http",
   profile?: string,
 ): void {
-  if (definition.transport !== expected) {
-    throw new Error(`Server "${serverName}" must set transport to "${expected}"${formatProfile(profile)}.`);
+  const transport = definition.transport;
+  if (transport === undefined) {
+    return;
+  }
+
+  if (transport !== expected) {
+    throw new Error(`Server "${serverName}" transport must be "${expected}"${formatProfile(profile)}.`);
   }
 }
 

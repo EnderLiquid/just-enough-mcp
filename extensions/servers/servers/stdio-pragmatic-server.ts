@@ -2,7 +2,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { ResolvedServerConfig, ServerSnapshot } from "../../modeling/types.js";
 import { ConnectedSdkServer } from "./connected-sdk-server.js";
-import { expectNonEmptyString, expectOptionalString, expectOptionalStringArray, expectOptionalStringRecord, expectTransport } from "./config-helpers.js";
+import { expectNonEmptyString, expectOptionalString, expectOptionalStringArray, expectOptionalStringRecord, expectOptionalTransport } from "./config-helpers.js";
 
 const PROFILE = "stdio-tools-pragmatic";
 
@@ -14,7 +14,7 @@ export class StdioPragmaticServer extends ConnectedSdkServer {
 
   constructor(config: ResolvedServerConfig) {
     super(config, PROFILE);
-    expectTransport(config.definition, config.name, "stdio", PROFILE);
+    expectOptionalTransport(config.definition, config.name, "stdio", PROFILE);
     this.command = expectNonEmptyString(config.definition, "command", config.name, PROFILE);
     this.args = expectOptionalStringArray(config.definition, "args", config.name);
     this.cwd = expectOptionalString(config.definition, "cwd", config.name);

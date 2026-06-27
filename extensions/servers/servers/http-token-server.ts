@@ -2,7 +2,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { ResolvedServerConfig, ServerSnapshot } from "../../modeling/types.js";
 import { ConnectedSdkServer } from "./connected-sdk-server.js";
-import { expectNonEmptyString, expectOptionalString, expectOptionalStringRecord, expectTransport } from "./config-helpers.js";
+import { expectNonEmptyString, expectOptionalString, expectOptionalStringRecord, expectOptionalTransport } from "./config-helpers.js";
 
 const PROFILE = "http-tools-token";
 
@@ -13,7 +13,7 @@ export class HttpTokenServer extends ConnectedSdkServer {
 
   constructor(config: ResolvedServerConfig) {
     super(config, PROFILE);
-    expectTransport(config.definition, config.name, "http", PROFILE);
+    expectOptionalTransport(config.definition, config.name, "http", PROFILE);
     this.url = expectNonEmptyString(config.definition, "url", config.name, PROFILE);
     this.headers = expectOptionalStringRecord(config.definition, "headers", config.name);
     this.bearerToken = expectOptionalString(config.definition, "bearerToken", config.name);

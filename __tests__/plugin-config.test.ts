@@ -31,13 +31,11 @@ describe("loadPluginConfigFromPaths", () => {
       },
       servers: {
         tavily: {
-          transport: "http",
           url: "https://example.com/mcp",
           bearerToken: "token-123",
           connectionMode: "eager",
         },
         localTools: {
-          transport: "stdio",
           command: "npx",
           args: ["-y", "some-server"],
         },
@@ -58,7 +56,6 @@ describe("loadPluginConfigFromPaths", () => {
     expect(loaded.resultPresentation.prettyPrintJson).toBe(false);
     expect(loaded.resultPresentation.artifactRoot).toBe("custom-artifacts");
     expect(tavily?.definition).toMatchObject({
-      transport: "http",
       url: "https://example.com/mcp",
       bearerToken: "token-123",
       connectionMode: "eager",
@@ -66,7 +63,6 @@ describe("loadPluginConfigFromPaths", () => {
     expect(tavily?.connectionMode).toBe("eager");
     expect(tavily?.overview.content).toContain("Search and extract web content.");
     expect(localTools?.definition).toMatchObject({
-      transport: "stdio",
       command: "npx",
       args: ["-y", "some-server"],
     });
@@ -82,7 +78,6 @@ describe("loadPluginConfigFromPaths", () => {
     writeFileSync(configPath, JSON.stringify({
       servers: {
         localTools: {
-          transport: "stdio",
           command: "npx",
           args: ["-y", "some-server"]
         }
@@ -94,7 +89,6 @@ describe("loadPluginConfigFromPaths", () => {
     expect(loaded.resultPresentation.previewFullCharsPerItem).toBe(1500);
     expect(loaded.resultPresentation.previewTruncateToCharsPerItem).toBe(600);
     expect(loaded.servers[0]?.definition).toMatchObject({
-      transport: "stdio",
       command: "npx",
     });
   });

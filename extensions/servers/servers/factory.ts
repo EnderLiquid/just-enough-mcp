@@ -8,6 +8,11 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function hasNonEmptyStringField(definition: ServerDefinition, fieldName: string): boolean {
+  const value = definition[fieldName];
+  return typeof value === "string" && value.length > 0;
+}
+
 function hasStaticAuth(definition: ServerDefinition): boolean {
   if (definition.bearerToken !== undefined) {
     return true;
@@ -24,18 +29,42 @@ function hasStaticAuth(definition: ServerDefinition): boolean {
   return Object.keys(definition.headers).length > 0;
 }
 
+function resolveTransportHint(config: ResolvedServerConfig): "stdio" | "http" {
+  const explicitTransport = config.definition.transport;
+  if (explicitTransport === "stdio" || explicitTransport === "http") {
+    return explicitTransport;
+  }
+
+  if (explicitTransport !== undefined) {
+    throw new Error(`Server "${config.name}" transport must be "stdio" or "http" when provided.`);
+  }
+
+  const hasCommand = hasNonEmptyStringField(config.definition, "command");
+  const hasUrl = hasNonEmptyStringField(config.definition, "url");
+
+  if (hasCommand && hasUrl) {
+    throw new Error(`Server "${config.name}" has both command and url; set transport explicitly or remove one of them.`);
+  }
+
+  if (hasCommand) {
+    return "stdio";
+  }
+
+  if (hasUrl) {
+    return "http";
+  }
+
+  throw new Error(`Server "${config.name}" must provide command or url, or set transport to "stdio" or "http".`);
+}
+
 export function resolveCompatibilityProfile(config: ResolvedServerConfig): CompatibilityProfile {
-  const transport = config.definition.transport;
+  const transport = resolveTransportHint(config);
 
   if (transport === "stdio") {
     return "stdio-tools-pragmatic";
   }
 
-  if (transport === "http") {
-    return hasStaticAuth(config.definition) ? "http-tools-token" : "http-tools-public";
-  }
-
-  throw new Error(`Server "${config.name}" must set transport to "stdio" or "http".`);
+  return hasStaticAuth(config.definition) ? "http-tools-token" : "http-tools-public";
 }
 
 export function createMcpServer(config: ResolvedServerConfig): McpServer {
