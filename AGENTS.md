@@ -1,0 +1,37 @@
+# AGENTS.md
+
+## 项目概述
+
+`just-enough-mcp` 是一个 Pi 插件，提供最小化的多 MCP server runtime。核心设计目标是 server 级渐进披露：启动时只注入 server overview，需要时再连接单个 server、读取工具目录并调用工具。
+
+当前范围以 Tools 为主；Resources、Prompts、Sampling、Elicitation 暂不支持。
+
+## 常用命令
+
+- `npm test`：运行 Vitest 测试。
+- `npm run test:types`：运行 TypeScript 类型检查。
+
+## 代码结构
+
+- `extensions/config/`：插件配置、overview 加载与 overview bootstrap。
+- `extensions/modeling/`：跨模块共享的核心类型。
+- `extensions/servers/`：MCP server runtime、registry、具体 server 实现。
+- `extensions/tools/`：暴露给 Pi 的 `mcp` 工具入口。
+- `extensions/artifacts/`：工具调用结果物化与展示相关模型。
+- `extensions/prompting/`：系统提示词中 server overview 的生成逻辑。
+
+## 架构约定
+
+- Registry 只管理 `McpServer` 对象并转发调用，不直接理解 SDK transport、鉴权、profile 细节。
+- `createMcpServer()` 是当前唯一 profile 推断与具体 Server 类型分派点。
+- 配置层输出 `ResolvedServerConfig`，只保留通用字段和 `definition`；具体 Server 构造函数负责校验并保存自己需要的配置字段。
+- `ServerOverview` 只表示文档内容与来源，不携带 transport/profile 等 runtime 分类信息。
+- 当前 `connect` / `connectServer` / `connectState` 是历史命名，实际语义是“让 server 进入可用状态”，不应狭义理解为底层网络连接。
+- 对 HTTP server，`connected` 表示 MCP client/transport 已初始化且 tools catalog 可用，不表示 TCP 连接长期存在。
+
+## 开发注意事项
+
+- 保持变更聚焦，不要顺手修无关问题。
+- 优先补充贴近变更边界的单元测试。
+- 完成代码修改后优先运行 `npm test` 和 `npm run test:types`。
+- `docs/` 在本地可能被 git exclude，用于任务说明和本地笔记时不要默认强制加入提交。
