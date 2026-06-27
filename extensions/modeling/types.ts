@@ -1,5 +1,5 @@
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
-import type { ResultPresentationSettings } from "./materialization.js";
+import type { ResultPresentationSettings } from "../artifacts/types.js";
 
 export type ServerTransportKind = "stdio" | "http";
 export type ServerConnectionMode = "lazy" | "eager";

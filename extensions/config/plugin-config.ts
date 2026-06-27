@@ -10,7 +10,7 @@ import {
 import {
   DEFAULT_RESULT_PRESENTATION_SETTINGS,
   type ResultPresentationSettings,
-} from "../modeling/materialization.js";
+} from "../artifacts/types.js";
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

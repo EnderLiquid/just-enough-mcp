@@ -10,7 +10,7 @@ import {
   type PayloadItem,
   type PayloadItemIndex,
   type SummaryBudget,
-} from "../modeling/materialization.js";
+} from "./types.js";
 
 interface TextPreviewResult {
   lines: string[];
