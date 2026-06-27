@@ -31,14 +31,14 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
     if (!config) {
       return {
         systemPrompt:
-          `${event.systemPrompt}\n\n## MCP Servers\n\n` +
+          `${event.systemPrompt}\n\n# MCP Servers\n\n` +
           "just-enough-mcp has not loaded its configuration for this session yet. Use /reload if needed.",
       };
     }
 
     const injectedPrompt = createServerOverviewPrompt(config);
     return {
-      systemPrompt: `${event.systemPrompt}\n\n## MCP Servers\n\n${injectedPrompt}`,
+      systemPrompt: `${event.systemPrompt}\n\n# MCP Servers\n\n${injectedPrompt}`,
     };
   });
 

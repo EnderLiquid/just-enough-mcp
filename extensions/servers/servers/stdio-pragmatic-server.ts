@@ -26,7 +26,7 @@ export class StdioPragmaticServer extends ConnectedSdkServer {
       name: this.name,
       profile: PROFILE,
       connectState: this.connectState,
-      tools: this.tools,
+      tools: this.visibleTools(),
     };
   }
 
