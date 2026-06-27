@@ -41,10 +41,9 @@ function isConnectedSnapshot(snapshot: ServerSnapshot): boolean {
   const profile = snapshot.profile;
   switch (profile) {
     case "stdio-tools-pragmatic":
-      return snapshot.connectState === "connected";
     case "http-tools-public":
     case "http-tools-token":
-      return snapshot.tools !== undefined;
+      return snapshot.connectState === "connected";
     default:
       return assertNever(profile);
   }

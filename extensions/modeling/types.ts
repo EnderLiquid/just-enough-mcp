@@ -87,11 +87,13 @@ export type ServerSnapshot =
   | {
       name: string;
       profile: "http-tools-public";
+      connectState: ServerConnectState;
       tools?: Tool[];
     }
   | {
       name: string;
       profile: "http-tools-token";
+      connectState: ServerConnectState;
       tools?: Tool[];
     };
 

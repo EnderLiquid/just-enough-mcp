@@ -1,16 +1,20 @@
-import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { ResolvedServerSpec, ServerCatalogResult, ServerSnapshot, ToolCallExecutionResult } from "../../modeling/types.js";
-import { createServerDriver } from "../drivers/factory.js";
-import type { ServerDriver } from "../drivers/types.js";
 import type { McpServer } from "./types.js";
+
+function createBaseClient(serverName: string): Client {
+  return new Client({ name: `just-enough-mcp-${serverName}`, version: "0.1.0" });
+}
 
 export abstract class SdkBackedServer implements McpServer {
   readonly name: string;
   readonly profile: ResolvedServerSpec["profile"];
 
-  protected driver: ServerDriver | undefined;
+  protected client: Client | undefined;
+  protected transport: Transport | undefined;
   protected tools: Tool[] | undefined;
-  private connectPromise: Promise<ServerSnapshot> | undefined;
 
   constructor(readonly spec: ResolvedServerSpec) {
     this.name = spec.name;
@@ -18,23 +22,7 @@ export abstract class SdkBackedServer implements McpServer {
   }
 
   abstract snapshot(): ServerSnapshot;
-
-  async connect(): Promise<ServerSnapshot> {
-    if (this.driver) {
-      return this.snapshot();
-    }
-
-    if (this.connectPromise) {
-      return this.connectPromise;
-    }
-
-    this.connectPromise = this.connectFresh();
-    try {
-      return await this.connectPromise;
-    } finally {
-      this.connectPromise = undefined;
-    }
-  }
+  abstract connect(): Promise<ServerSnapshot>;
 
   async getCatalog(): Promise<ServerCatalogResult> {
     await this.connect();
@@ -46,11 +34,12 @@ export abstract class SdkBackedServer implements McpServer {
 
   async callTool(name: string, args: Record<string, unknown>): Promise<ToolCallExecutionResult> {
     await this.connect();
-    if (!this.driver) {
-      throw new Error(`No active connection for MCP server: ${this.name}`);
-    }
+    const client = this.requireClient();
+    const result = await client.callTool({
+      name,
+      arguments: args,
+    }) as CallToolResult;
 
-    const result = await this.driver.callTool(name, args);
     return {
       server: this.snapshot(),
       toolName: name,
@@ -60,29 +49,50 @@ export abstract class SdkBackedServer implements McpServer {
   }
 
   async close(): Promise<void> {
-    const driver = this.driver;
-    this.driver = undefined;
+    const client = this.client;
+    const transport = this.transport;
+
+    this.client = undefined;
+    this.transport = undefined;
     this.tools = undefined;
-    await driver?.close().catch(() => {});
+
+    await client?.close().catch(() => {});
+    await transport?.close().catch(() => {});
   }
 
   getServerDescription(): string | undefined {
-    return this.driver?.getServerDescription();
+    return this.client?.getServerVersion()?.description;
   }
 
-  protected async openDriver(): Promise<void> {
-    const nextDriver = createServerDriver(this.spec);
+  protected async openClient(): Promise<void> {
+    const client = createBaseClient(this.name);
+    const transport = this.createTransport();
+
     try {
-      await nextDriver.open();
-      this.tools = await nextDriver.listTools();
-      const previous = this.driver;
-      this.driver = nextDriver;
-      await previous?.close().catch(() => {});
+      await client.connect(transport);
+      const listed = await client.listTools();
+      const previousClient = this.client;
+      const previousTransport = this.transport;
+
+      this.client = client;
+      this.transport = transport;
+      this.tools = listed.tools ?? [];
+
+      await previousClient?.close().catch(() => {});
+      await previousTransport?.close().catch(() => {});
     } catch (error) {
-      await nextDriver.close().catch(() => {});
+      await client.close().catch(() => {});
+      await transport.close().catch(() => {});
       throw error;
     }
   }
 
-  protected abstract connectFresh(): Promise<ServerSnapshot>;
+  protected abstract createTransport(): Transport;
+
+  private requireClient(): Client {
+    if (!this.client) {
+      throw new Error(`MCP server client is not open: ${this.name}`);
+    }
+    return this.client;
+  }
 }

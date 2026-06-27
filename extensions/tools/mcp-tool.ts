@@ -33,10 +33,9 @@ function formatServerSnapshot(snapshot: ServerSnapshot): string {
   const profile = snapshot.profile;
   switch (profile) {
     case "stdio-tools-pragmatic":
-      return `${snapshot.name}: ${snapshot.connectState}`;
     case "http-tools-public":
     case "http-tools-token":
-      return `${snapshot.name}: ${profile}`;
+      return `${snapshot.name}: ${snapshot.connectState}`;
     default:
       return assertNever(profile);
   }

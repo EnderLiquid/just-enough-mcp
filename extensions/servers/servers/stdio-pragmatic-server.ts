@@ -1,8 +1,14 @@
-import type { ServerConnectState, ServerSnapshot } from "../../modeling/types.js";
-import { SdkBackedServer } from "./sdk-server.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import type { ResolvedServerSpec, ServerSnapshot, ServerTransportConfig } from "../../modeling/types.js";
+import { ConnectedSdkServer } from "./connected-sdk-server.js";
 
-export class StdioPragmaticServer extends SdkBackedServer {
-  private connectState: ServerConnectState = "disconnected";
+type StdioResolvedServerSpec = Extract<ResolvedServerSpec, ServerTransportConfig & { transport: "stdio" }>;
+
+export class StdioPragmaticServer extends ConnectedSdkServer {
+  constructor(readonly spec: StdioResolvedServerSpec) {
+    super(spec);
+  }
 
   snapshot(): ServerSnapshot {
     return {
@@ -13,20 +19,13 @@ export class StdioPragmaticServer extends SdkBackedServer {
     };
   }
 
-  async close(): Promise<void> {
-    await super.close();
-    this.connectState = "disconnected";
-  }
-
-  protected async connectFresh(): Promise<ServerSnapshot> {
-    this.connectState = "connecting";
-    try {
-      await this.openDriver();
-      this.connectState = "connected";
-      return this.snapshot();
-    } catch (error) {
-      this.connectState = "disconnected";
-      throw error;
-    }
+  protected createTransport(): Transport {
+    return new StdioClientTransport({
+      command: this.spec.command,
+      args: this.spec.args,
+      cwd: this.spec.cwd,
+      env: this.spec.env,
+      stderr: "ignore",
+    });
   }
 }

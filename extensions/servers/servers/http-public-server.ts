@@ -1,17 +1,25 @@
-import type { ServerSnapshot } from "../../modeling/types.js";
-import { SdkBackedServer } from "./sdk-server.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import type { ResolvedServerSpec, ServerSnapshot, ServerTransportConfig } from "../../modeling/types.js";
+import { ConnectedSdkServer } from "./connected-sdk-server.js";
 
-export class HttpPublicServer extends SdkBackedServer {
+type HttpResolvedServerSpec = Extract<ResolvedServerSpec, ServerTransportConfig & { transport: "http" }>;
+
+export class HttpPublicServer extends ConnectedSdkServer {
+  constructor(readonly spec: HttpResolvedServerSpec) {
+    super(spec);
+  }
+
   snapshot(): ServerSnapshot {
     return {
       name: this.name,
       profile: "http-tools-public",
+      connectState: this.connectState,
       tools: this.tools,
     };
   }
 
-  protected async connectFresh(): Promise<ServerSnapshot> {
-    await this.openDriver();
-    return this.snapshot();
+  protected createTransport(): Transport {
+    return new StreamableHTTPClientTransport(new URL(this.spec.url));
   }
 }
