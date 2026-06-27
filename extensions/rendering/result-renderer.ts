@@ -1,7 +1,7 @@
 import type { AgentToolResult, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { getMcpRuntime } from "../clients/runtime.js";
+import { getMcpRuntime } from "../servers/runtime.js";
 import { DEFAULT_RESULT_PRESENTATION_SETTINGS } from "../modeling/materialization.js";
 
 type McpToolContentBlock = AgentToolResult<undefined>["content"][number];

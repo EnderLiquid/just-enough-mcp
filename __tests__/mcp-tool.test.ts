@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
   materializeToolCallResult: vi.fn(),
 }));
 
-vi.mock("../extensions/clients/runtime.js", () => ({
+vi.mock("../extensions/servers/runtime.js", () => ({
   getMcpRuntime: mocks.getMcpRuntime,
 }));
 

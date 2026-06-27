@@ -32,7 +32,7 @@ vi.mock("@modelcontextprotocol/sdk/client/streamableHttp.js", () => ({
   },
 }));
 
-import { createServerRegistry } from "../extensions/clients/registry.js";
+import { createServerRegistry } from "../extensions/servers/registry.js";
 
 function makeServer(overrides: Partial<ResolvedServerSpec> = {}): ResolvedServerSpec {
   return {

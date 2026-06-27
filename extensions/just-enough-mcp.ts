@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { getMcpRuntime } from "./clients/runtime.js";
+import { getMcpRuntime } from "./servers/runtime.js";
 import { createServerOverviewPrompt } from "./prompting/system-prompt.js";
 import { registerMcpTool } from "./tools/mcp-tool.js";
 import { clearNotifier, notifyError, setNotifier } from "./ui/notifier.js";

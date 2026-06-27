@@ -1,7 +1,7 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { materializeToolCallResult } from "../artifacts/materializer.js";
-import { getMcpRuntime } from "../clients/runtime.js";
+import { getMcpRuntime } from "../servers/runtime.js";
 import type { ServerSnapshot } from "../modeling/types.js";
 import { renderMcpToolCall, renderMcpToolResult } from "../rendering/result-renderer.js";
 
