@@ -85,30 +85,12 @@ export interface ManifestPayloadItem {
   description?: string;
 }
 
-export interface PayloadItem {
-  index?: number;
-  source: string;
-  contentType?: PayloadContentType;
-  mimeType: string;
-  rawMimeType?: string;
-  uri?: string;
-  description?: string;
-  text?: string;
-  binaryBase64?: string;
-  parsedJson?: unknown;
-  path?: string;
-  fileName?: string;
-  preview?: string[];
-}
-
-export type PayloadItemIndex = ManifestPayloadItem;
-
 export interface MaterializedToolCallResult {
   summaryText: string;
   callDir: string;
   manifestPath: string;
-  payloadItems: PayloadItem[];
-  payloadItemIndexes: PayloadItemIndex[];
+  payloadItems: StoredPayloadItem[];
+  manifestPayloadItems: ManifestPayloadItem[];
   mainFiles: string[];
   metaFiles: string[];
   budget: SummaryBudget;

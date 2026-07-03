@@ -12,10 +12,10 @@ export interface WriteToolCallManifestInput {
 
 export interface WrittenToolCallManifest {
   manifestPath: string;
-  payloadItemIndexes: ManifestPayloadItem[];
+  payloadItems: ManifestPayloadItem[];
 }
 
-export function toPayloadItemIndex(item: StoredPayloadItem): ManifestPayloadItem {
+export function toManifestPayloadItem(item: StoredPayloadItem): ManifestPayloadItem {
   return {
     index: item.index,
     source: item.source,
@@ -30,7 +30,7 @@ export function toPayloadItemIndex(item: StoredPayloadItem): ManifestPayloadItem
 }
 
 export function writeToolCallManifest(input: WriteToolCallManifestInput): WrittenToolCallManifest {
-  const payloadItemIndexes = input.payloadItems.map(toPayloadItemIndex);
+  const payloadItems = input.payloadItems.map(toManifestPayloadItem);
 
   writeFileSync(
     input.context.manifestPath,
@@ -41,7 +41,7 @@ export function writeToolCallManifest(input: WriteToolCallManifestInput): Writte
       createdAt: new Date().toISOString(),
       callDir: input.context.callDir,
       manifestPath: input.context.manifestPath,
-      payloadItemIndexes,
+      payloadItems,
       ...(input.suppressedStructuredContent
         ? { suppressedStructuredContent: input.suppressedStructuredContent }
         : {}),
@@ -51,6 +51,6 @@ export function writeToolCallManifest(input: WriteToolCallManifestInput): Writte
 
   return {
     manifestPath: input.context.manifestPath,
-    payloadItemIndexes,
+    payloadItems,
   };
 }

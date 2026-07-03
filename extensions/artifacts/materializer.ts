@@ -43,14 +43,14 @@ export function materializeToolCallResult(input: MaterializeCallToolResultInput)
   const extracted = extractPayloadDrafts(input.result);
   const normalized = normalizePayloadDrafts(extracted, settings);
   const storedItems = storePayloadItems(normalized.items, context);
-  const payloadItems = attachPayloadPreviews(storedItems, settings);
   const manifest = writeToolCallManifest({
     server: input.server,
     tool: input.tool,
     context,
-    payloadItems,
+    payloadItems: storedItems,
     suppressedStructuredContent: normalized.suppressedStructuredContent,
   });
+  const payloadItems = attachPayloadPreviews(storedItems, settings);
   const budget = toSummaryBudget(settings);
   const summaryText = buildResultSummary(payloadItems, manifest.manifestPath, budget);
 
@@ -59,7 +59,7 @@ export function materializeToolCallResult(input: MaterializeCallToolResultInput)
     callDir: context.callDir,
     manifestPath: manifest.manifestPath,
     payloadItems,
-    payloadItemIndexes: manifest.payloadItemIndexes,
+    manifestPayloadItems: manifest.payloadItems,
     mainFiles: payloadItems.map((item) => item.path),
     metaFiles: [manifest.manifestPath],
     budget,

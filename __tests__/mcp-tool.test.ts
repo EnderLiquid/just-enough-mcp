@@ -126,7 +126,7 @@ describe("mcpTool.execute", () => {
       callDir: "D:/projects/ts/just-enough-mcp/.pi/mcp/20260622-1",
       manifestPath: "D:/projects/ts/just-enough-mcp/.pi/mcp/20260622-1/manifest.json",
       payloadItems: [],
-      payloadItemIndexes: [],
+      manifestPayloadItems: [],
       mainFiles: ["D:/projects/ts/just-enough-mcp/.pi/mcp/20260622-1/01-text.txt"],
       metaFiles: ["D:/projects/ts/just-enough-mcp/.pi/mcp/20260622-1/manifest.json"],
       summaryText: "remote tool failed\nFull output: D:/projects/ts/just-enough-mcp/.pi/mcp/20260622-1/01-text.txt",
