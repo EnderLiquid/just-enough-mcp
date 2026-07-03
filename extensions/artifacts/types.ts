@@ -6,24 +6,83 @@ export type PayloadContentType =
   | "resource_link"
   | "unknown";
 
-export interface MaterializationSettings {
+export interface ArtifactStorageSettings {
   artifactRoot: string;
+}
+
+export interface PayloadNormalizationSettings {
+  prettyPrintJson: boolean;
+}
+
+export interface SummarySettings {
   summaryItemCount: number;
   previewFullCharsPerItem: number;
   previewTruncateToCharsPerItem: number;
   hardMaxChars: number;
-  prettyPrintJson: boolean;
 }
 
-export interface ResultPresentationSettings extends MaterializationSettings {
+export interface TuiResultRenderSettings {
   collapsedPreviewLines: number;
 }
+
+export interface MaterializationSettings extends ArtifactStorageSettings, PayloadNormalizationSettings, SummarySettings {}
+
+export interface ResultPresentationSettings extends MaterializationSettings, TuiResultRenderSettings {}
 
 export interface SummaryBudget {
   summaryItemCount: number;
   previewFullCharsPerItem: number;
   previewTruncateToCharsPerItem: number;
   hardMaxChars: number;
+}
+
+export interface SuppressedStructuredContent {
+  duplicateOf: number;
+  reason: "semantic-json-equal" | "exact-text-equal";
+}
+
+export interface PayloadDraft {
+  source: string;
+  contentType?: PayloadContentType;
+  mimeType: string;
+  rawMimeType?: string;
+  uri?: string;
+  description?: string;
+  text?: string;
+  binaryBase64?: string;
+  parsedJson?: unknown;
+}
+
+export interface ExtractedPayloadDrafts {
+  contentItems: PayloadDraft[];
+  structuredContent?: Record<string, unknown>;
+}
+
+export interface StoredPayloadItem {
+  index: number;
+  source: string;
+  contentType?: PayloadContentType;
+  mimeType: string;
+  rawMimeType?: string;
+  uri?: string;
+  description?: string;
+  text?: string;
+  binaryBase64?: string;
+  path: string;
+  fileName: string;
+  preview?: string[];
+}
+
+export interface ManifestPayloadItem {
+  index: number;
+  source: string;
+  contentType?: PayloadContentType;
+  mimeType: string;
+  rawMimeType?: string;
+  path: string;
+  fileName: string;
+  uri?: string;
+  description?: string;
 }
 
 export interface PayloadItem {
@@ -42,17 +101,7 @@ export interface PayloadItem {
   preview?: string[];
 }
 
-export interface PayloadItemIndex {
-  index: number;
-  source: string;
-  contentType?: PayloadContentType;
-  mimeType: string;
-  rawMimeType?: string;
-  path: string;
-  fileName: string;
-  uri?: string;
-  description?: string;
-}
+export type PayloadItemIndex = ManifestPayloadItem;
 
 export interface MaterializedToolCallResult {
   summaryText: string;

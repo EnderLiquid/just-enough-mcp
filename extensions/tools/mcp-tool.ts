@@ -1,6 +1,7 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { materializeToolCallResult } from "../artifacts/materializer.js";
+import { toMaterializationSettings } from "../artifacts/settings.js";
 import { getMcpRuntime } from "../servers/runtime.js";
 import type { ServerSnapshot } from "../modeling/types.js";
 import { renderMcpToolCall, renderMcpToolResult } from "../rendering/result-renderer.js";
@@ -111,14 +112,12 @@ export const mcpTool = defineTool<typeof parametersSchema, undefined>({
     if (params.server && params.tool) {
       const parsedArgs = parseArgs(params.args);
       const execution = await runtime.registry().callTool(params.server, params.tool, parsedArgs);
-      const resultPresentation = runtime.config()?.resultPresentation;
-      const { collapsedPreviewLines: _collapsedPreviewLines, ...materializationSettings } = resultPresentation ?? {};
       const materialized = materializeToolCallResult({
         cwd: ctx.cwd,
         server: execution.server.name,
         tool: execution.toolName,
         result: execution.result,
-        settings: materializationSettings,
+        settings: toMaterializationSettings(runtime.config()?.resultPresentation),
       });
       runtime.refreshFooter(ctx);
       return {
