@@ -142,6 +142,27 @@ describe("renderMcpToolResult", () => {
     expect(status).toBe("<muted>↳ 2/5 servers connected • Ctrl+O to expand</muted>");
   });
 
+  it("uses singular nouns in minimal summaries", () => {
+    setRenderMode("minimal");
+
+    const catalog = renderFirstLine(renderMcpToolResult({
+      content: [{ type: "text", text: "1 tool available:" }],
+      details: { kind: "catalog", toolCount: 1 },
+    }, { expanded: false, isPartial: false }, testTheme));
+    const call = renderFirstLine(renderMcpToolResult({
+      content: [{ type: "text", text: "payload summary" }],
+      details: { kind: "call", payloadItemCount: 1 },
+    }, { expanded: false, isPartial: false }, testTheme));
+    const status = renderFirstLine(renderMcpToolResult({
+      content: [{ type: "text", text: "1/1 server connected:" }],
+      details: { kind: "status", connectedCount: 1, totalCount: 1 },
+    }, { expanded: false, isPartial: false }, testTheme));
+
+    expect(catalog).toBe("<muted>↳ 1 tool available • Ctrl+O to expand</muted>");
+    expect(call).toBe("<muted>↳ 1 payload item returned • Ctrl+O to expand</muted>");
+    expect(status).toBe("<muted>↳ 1/1 server connected • Ctrl+O to expand</muted>");
+  });
+
   it("does not render a minimal connect result", () => {
     setRenderMode("minimal");
 

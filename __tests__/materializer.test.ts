@@ -102,8 +102,29 @@ describe("materializeToolCallResult", () => {
     });
 
     expect(materialized.summaryText).toContain("abcdefghij… ⟦TRUNCATED⟧");
-    expect(materialized.summaryText).toContain("16 more chars across 1 lines of remaining text");
+    expect(materialized.summaryText).toContain("16 more chars across 1 line of remaining text");
     expect(materialized.summaryText).toContain("Full output: ");
+  });
+
+  it("uses singular nouns in truncation summaries", () => {
+    const cwd = makeTempDir();
+    const result: CallToolResult = {
+      content: [{ type: "text", text: "abcde" }],
+      isError: false,
+    };
+
+    const materialized = materializeToolCallResult({
+      cwd,
+      server: "demo",
+      tool: "preview-singular",
+      result,
+      settings: {
+        previewFullCharsPerItem: 4,
+        previewTruncateToCharsPerItem: 4,
+      },
+    });
+
+    expect(materialized.summaryText).toContain("1 more char across 1 line of remaining text");
   });
 
   it("shows truncation summary on a new line when truncation happens at a line boundary", () => {
@@ -159,7 +180,7 @@ describe("materializeToolCallResult", () => {
     expect(materialized.summaryText).toContain("[2] image");
     expect(materialized.summaryText).toContain("File: ");
     expect(materialized.summaryText).toContain("Read manifest for full index: ");
-    expect(materialized.summaryText).toContain("… and 1 more payload items; inspect manifest.json");
+    expect(materialized.summaryText).toContain("… and 1 more payload item; inspect manifest.json");
     expect(materialized.summaryText).not.toContain("source:");
     expect(materialized.summaryText).not.toContain("mimeType:");
     expect(materialized.payloadItems[2]?.preview?.join("\n")).toContain("⟦TRUNCATED⟧");

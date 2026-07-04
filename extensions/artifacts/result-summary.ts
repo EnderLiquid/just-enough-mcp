@@ -1,3 +1,4 @@
+import { pluralize } from "../formatting/english.js";
 import type { MaterializationSettings, StoredPayloadItem, SummaryBudget } from "./types.js";
 
 interface TextPreviewResult {
@@ -39,7 +40,7 @@ function buildTextPreview(
   const remainingLines = totalLines - visibleLines + (truncatedInLine ? 1 : 0);
 
   const previewLines = visibleText.split("\n");
-  const remainderSummary = `${remainingChars} more chars across ${remainingLines} lines of remaining text`;
+  const remainderSummary = `${remainingChars} more ${pluralize(remainingChars, "char")} across ${remainingLines} ${pluralize(remainingLines, "line")} of remaining text`;
 
   if (truncatedInLine) {
     previewLines[previewLines.length - 1] = `${previewLines[previewLines.length - 1]}… ⟦TRUNCATED⟧`;
@@ -93,7 +94,8 @@ function buildSummary(payloadItems: StoredPayloadItem[], manifestPath: string, b
   }
 
   if (payloadItems.length > displayedItems.length) {
-    sections.push([`… and ${payloadItems.length - displayedItems.length} more payload items; inspect manifest.json`]);
+    const remainingItems = payloadItems.length - displayedItems.length;
+    sections.push([`… and ${remainingItems} more ${pluralize(remainingItems, "payload item")}; inspect manifest.json`]);
   }
 
   sections.push([`Read manifest for full index: ${manifestPath}`]);

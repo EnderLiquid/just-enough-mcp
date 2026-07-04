@@ -6,6 +6,7 @@ import {
   type McpTuiRenderMode,
 } from "../artifacts/types.js";
 import type { McpToolResultDetails } from "../modeling/types.js";
+import { pluralize } from "../formatting/english.js";
 
 type McpToolContentBlock = AgentToolResult<McpToolResultDetails>["content"][number];
 
@@ -125,13 +126,13 @@ function formatMinimalResultLine(details: McpToolResultDetails | undefined): str
 
   switch (details.kind) {
     case "status":
-      return `↳ ${details.connectedCount}/${details.totalCount} servers connected • Ctrl+O to expand`;
+      return `↳ ${details.connectedCount}/${details.totalCount} ${pluralize(details.totalCount, "server")} connected • Ctrl+O to expand`;
     case "connect":
       return undefined;
     case "catalog":
-      return `↳ ${details.toolCount} tools available • Ctrl+O to expand`;
+      return `↳ ${details.toolCount} ${pluralize(details.toolCount, "tool")} available • Ctrl+O to expand`;
     case "call":
-      return `↳ ${details.payloadItemCount} payload items returned • Ctrl+O to expand`;
+      return `↳ ${details.payloadItemCount} ${pluralize(details.payloadItemCount, "payload item")} returned • Ctrl+O to expand`;
     default: {
       const unreachable: never = details;
       return unreachable;

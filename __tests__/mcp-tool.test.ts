@@ -121,6 +121,32 @@ describe("mcpTool.execute", () => {
     });
   });
 
+  it("uses singular server in status when total count is one", async () => {
+    const refreshFooter = vi.fn();
+    const status = {
+      connectedCount: 1,
+      totalCount: 1,
+      servers: [makeServerSnapshot({ name: "context7", connectState: "connected" })],
+    };
+
+    mocks.getMcpRuntime.mockReturnValue({
+      getStatus: vi.fn().mockReturnValue(status),
+      refreshFooter,
+      registry: vi.fn(),
+      config: () => undefined,
+      sync: vi.fn(),
+      closeAll: vi.fn(),
+    });
+
+    const ctx = makeContext();
+    const result = await mcpTool.execute("tool-call-status-one", {}, undefined, vi.fn(), ctx as never);
+
+    expect(result.content[0]).toMatchObject({
+      type: "text",
+      text: expect.stringContaining("1/1 server connected:"),
+    });
+  });
+
   it("formats successful connect as a terse result", async () => {
     const refreshFooter = vi.fn();
     const connectServer = vi.fn().mockResolvedValue(makeServerSnapshot({ name: "codegraph" }));
@@ -223,7 +249,7 @@ describe("mcpTool.execute", () => {
 
     expect(result.content[0]).toMatchObject({
       type: "text",
-      text: expect.stringContaining("1 tools available:\n\n[1] only_tool"),
+      text: expect.stringContaining("1 tool available:\n\n[1] only_tool"),
     });
   });
 

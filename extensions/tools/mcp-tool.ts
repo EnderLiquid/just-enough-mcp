@@ -5,6 +5,7 @@ import { getMcpRuntime } from "../servers/runtime.js";
 import type { McpToolResultDetails, ServerCatalogResult } from "../modeling/types.js";
 import type { ServerRegistryStatus } from "../servers/registry.js";
 import { renderMcpToolCall, renderMcpToolResult } from "../rendering/result-renderer.js";
+import { pluralize } from "../formatting/english.js";
 
 const parametersSchema = Type.Object({
   connect: Type.Optional(Type.String({ description: "Server name to connect" })),
@@ -27,7 +28,7 @@ function parseArgs(input: string | undefined): Record<string, unknown> {
 }
 
 function formatStatusResult(status: ServerRegistryStatus): string {
-  const header = `${status.connectedCount}/${status.totalCount} servers connected:`;
+  const header = `${status.connectedCount}/${status.totalCount} ${pluralize(status.totalCount, "server")} connected:`;
   if (status.servers.length === 0) {
     return header;
   }
@@ -59,7 +60,7 @@ function formatCatalogResult(catalog: ServerCatalogResult): string {
     }),
   ].join("\n"));
 
-  return [`${catalog.tools.length} tools available:`, ...sections].join("\n\n");
+  return [`${catalog.tools.length} ${pluralize(catalog.tools.length, "tool")} available:`, ...sections].join("\n\n");
 }
 
 export const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>({
