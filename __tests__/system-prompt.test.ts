@@ -26,15 +26,17 @@ function makeConfig(overrides: Partial<PluginConfigLoadResult> = {}): PluginConf
   return {
     configPath: "C:/Users/Admin/.pi/agent/just-enough-mcp.json",
     overviewDir: "C:/Users/Admin/.pi/agent/mcp-overviews",
-    resultPresentation: {
+    materialization: {
       artifactRoot: ".pi/mcp",
       summaryItemCount: 6,
       previewFullCharsPerItem: 1500,
       previewTruncateToCharsPerItem: 600,
       hardMaxChars: 40000,
       prettyPrintJson: true,
-      collapsedPreviewLines: 4,
-      tuiRenderMode: "minimal",
+    },
+    tui: {
+      renderMode: "minimal",
+      expandedModeCollapsedLines: 4,
     },
     servers: [makeServer()],
     ...overrides,

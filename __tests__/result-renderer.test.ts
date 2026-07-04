@@ -23,11 +23,11 @@ const testTheme = {
   bold: (text: string) => `<b>${text}</b>`,
 } as Theme;
 
-function setRenderMode(tuiRenderMode: McpTuiRenderMode, collapsedPreviewLines = 4): void {
+function setRenderMode(renderMode: McpTuiRenderMode, expandedModeCollapsedLines = 4): void {
   mocks.runtimeConfig.mockReturnValue({
-    resultPresentation: {
-      tuiRenderMode,
-      collapsedPreviewLines,
+    tui: {
+      renderMode,
+      expandedModeCollapsedLines,
     },
   });
 }
@@ -82,7 +82,7 @@ describe("renderMcpToolCall", () => {
       args: JSON.stringify({ query: "x" }),
     }, testTheme));
 
-    expect(line).toBe("<toolTitle><b>mcp</b></toolTitle> <accent>call</accent> <accent>codegraph_explore</accent> <muted>@ codegraph</muted>");
+    expect(line).toBe("<toolTitle><b>mcp</b></toolTitle> <b>call</b> <accent>codegraph_explore</accent> <muted>@ codegraph</muted>");
   });
 
   it("hides args in minimal mode until the tool row is expanded", () => {

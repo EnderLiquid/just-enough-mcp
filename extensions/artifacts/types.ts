@@ -24,13 +24,11 @@ export interface SummarySettings {
 export type McpTuiRenderMode = "hidden" | "minimal" | "expanded";
 
 export interface TuiResultRenderSettings {
-  collapsedPreviewLines: number;
-  tuiRenderMode: McpTuiRenderMode;
+  renderMode: McpTuiRenderMode;
+  expandedModeCollapsedLines: number;
 }
 
 export interface MaterializationSettings extends ArtifactStorageSettings, PayloadNormalizationSettings, SummarySettings {}
-
-export interface ResultPresentationSettings extends MaterializationSettings, TuiResultRenderSettings {}
 
 export interface SummaryBudget {
   summaryItemCount: number;
@@ -99,22 +97,16 @@ export interface MaterializedToolCallResult {
   budget: SummaryBudget;
 }
 
-export const DEFAULT_RESULT_PRESENTATION_SETTINGS: ResultPresentationSettings = {
+export const DEFAULT_MATERIALIZATION_SETTINGS: MaterializationSettings = {
   artifactRoot: ".pi/mcp",
   summaryItemCount: 6,
   previewFullCharsPerItem: 1500,
   previewTruncateToCharsPerItem: 600,
   hardMaxChars: 40000,
   prettyPrintJson: true,
-  collapsedPreviewLines: 4,
-  tuiRenderMode: "minimal",
 };
 
-export const DEFAULT_MATERIALIZATION_SETTINGS: MaterializationSettings = {
-  artifactRoot: DEFAULT_RESULT_PRESENTATION_SETTINGS.artifactRoot,
-  summaryItemCount: DEFAULT_RESULT_PRESENTATION_SETTINGS.summaryItemCount,
-  previewFullCharsPerItem: DEFAULT_RESULT_PRESENTATION_SETTINGS.previewFullCharsPerItem,
-  previewTruncateToCharsPerItem: DEFAULT_RESULT_PRESENTATION_SETTINGS.previewTruncateToCharsPerItem,
-  hardMaxChars: DEFAULT_RESULT_PRESENTATION_SETTINGS.hardMaxChars,
-  prettyPrintJson: DEFAULT_RESULT_PRESENTATION_SETTINGS.prettyPrintJson,
+export const DEFAULT_TUI_RESULT_RENDER_SETTINGS: TuiResultRenderSettings = {
+  renderMode: "minimal",
+  expandedModeCollapsedLines: 4,
 };

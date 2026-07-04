@@ -12,7 +12,7 @@ function makeTempDir(): string {
 }
 
 describe("loadPluginConfigFromPaths", () => {
-  it("parses server definitions with connection modes and result presentation settings", () => {
+  it("parses server definitions with connection modes, materialization settings, and TUI settings", () => {
     const root = makeTempDir();
     const configPath = join(root, "just-enough-mcp.json");
     const overviewDir = join(root, "mcp-overviews");
@@ -20,15 +20,17 @@ describe("loadPluginConfigFromPaths", () => {
     writeFileSync(join(overviewDir, "tavily.md"), "Search and extract web content.\nUse it for latest info.\n", "utf8");
 
     writeFileSync(configPath, JSON.stringify({
-      resultPresentation: {
+      materialization: {
         summaryItemCount: 3,
         previewFullCharsPerItem: 240,
         previewTruncateToCharsPerItem: 120,
         hardMaxChars: 5000,
-        collapsedPreviewLines: 5,
-        tuiRenderMode: "hidden",
         prettyPrintJson: false,
-        artifactRoot: "custom-artifacts"
+        artifactRoot: "custom-artifacts",
+      },
+      tui: {
+        renderMode: "hidden",
+        expandedModeCollapsedLines: 5,
       },
       servers: {
         tavily: {
@@ -49,14 +51,14 @@ describe("loadPluginConfigFromPaths", () => {
     const tavily = loaded.servers.find(server => server.name === "tavily");
     const localTools = loaded.servers.find(server => server.name === "localTools");
 
-    expect(loaded.resultPresentation.summaryItemCount).toBe(3);
-    expect(loaded.resultPresentation.previewFullCharsPerItem).toBe(240);
-    expect(loaded.resultPresentation.previewTruncateToCharsPerItem).toBe(120);
-    expect(loaded.resultPresentation.hardMaxChars).toBe(5000);
-    expect(loaded.resultPresentation.collapsedPreviewLines).toBe(5);
-    expect(loaded.resultPresentation.tuiRenderMode).toBe("hidden");
-    expect(loaded.resultPresentation.prettyPrintJson).toBe(false);
-    expect(loaded.resultPresentation.artifactRoot).toBe("custom-artifacts");
+    expect(loaded.materialization.summaryItemCount).toBe(3);
+    expect(loaded.materialization.previewFullCharsPerItem).toBe(240);
+    expect(loaded.materialization.previewTruncateToCharsPerItem).toBe(120);
+    expect(loaded.materialization.hardMaxChars).toBe(5000);
+    expect(loaded.materialization.prettyPrintJson).toBe(false);
+    expect(loaded.materialization.artifactRoot).toBe("custom-artifacts");
+    expect(loaded.tui.expandedModeCollapsedLines).toBe(5);
+    expect(loaded.tui.renderMode).toBe("hidden");
     expect(tavily?.definition).toMatchObject({
       url: "https://example.com/mcp",
       bearerToken: "token-123",
@@ -71,7 +73,7 @@ describe("loadPluginConfigFromPaths", () => {
     expect(localTools?.connectionMode).toBe("lazy");
   });
 
-  it("uses the updated default result presentation settings when omitted", () => {
+  it("uses default materialization and TUI settings when omitted", () => {
     const root = makeTempDir();
     const configPath = join(root, "just-enough-mcp.json");
     const overviewDir = join(root, "mcp-overviews");
@@ -81,16 +83,17 @@ describe("loadPluginConfigFromPaths", () => {
       servers: {
         localTools: {
           command: "npx",
-          args: ["-y", "some-server"]
-        }
-      }
+          args: ["-y", "some-server"],
+        },
+      },
     }, null, 2), "utf8");
 
     const loaded = loadPluginConfigFromPaths(configPath, overviewDir);
 
-    expect(loaded.resultPresentation.previewFullCharsPerItem).toBe(1500);
-    expect(loaded.resultPresentation.previewTruncateToCharsPerItem).toBe(600);
-    expect(loaded.resultPresentation.tuiRenderMode).toBe("minimal");
+    expect(loaded.materialization.previewFullCharsPerItem).toBe(1500);
+    expect(loaded.materialization.previewTruncateToCharsPerItem).toBe(600);
+    expect(loaded.tui.renderMode).toBe("minimal");
+    expect(loaded.tui.expandedModeCollapsedLines).toBe(4);
     expect(loaded.servers[0]?.definition).toMatchObject({
       command: "npx",
     });
@@ -111,20 +114,37 @@ describe("loadPluginConfigFromPaths", () => {
     expect(() => loadPluginConfigFromPaths(configPath, overviewDir)).toThrow(/broken/);
   });
 
-  it("rejects invalid result presentation settings", () => {
+  it("rejects invalid materialization settings", () => {
     const root = makeTempDir();
     const configPath = join(root, "just-enough-mcp.json");
     const overviewDir = join(root, "mcp-overviews");
     mkdirSync(overviewDir, { recursive: true });
 
     writeFileSync(configPath, JSON.stringify({
-      resultPresentation: {
+      materialization: {
         summaryItemCount: 0,
       },
       servers: {},
     }, null, 2), "utf8");
 
-    expect(() => loadPluginConfigFromPaths(configPath, overviewDir)).toThrow(/resultPresentation.summaryItemCount/);
+    expect(() => loadPluginConfigFromPaths(configPath, overviewDir)).toThrow(/materialization.summaryItemCount/);
+  });
+
+  it("rejects inconsistent materialization preview thresholds", () => {
+    const root = makeTempDir();
+    const configPath = join(root, "just-enough-mcp.json");
+    const overviewDir = join(root, "mcp-overviews");
+    mkdirSync(overviewDir, { recursive: true });
+
+    writeFileSync(configPath, JSON.stringify({
+      materialization: {
+        previewFullCharsPerItem: 120,
+        previewTruncateToCharsPerItem: 121,
+      },
+      servers: {},
+    }, null, 2), "utf8");
+
+    expect(() => loadPluginConfigFromPaths(configPath, overviewDir)).toThrow(/materialization.previewTruncateToCharsPerItem/);
   });
 
   it("accepts all TUI render modes", () => {
@@ -135,14 +155,14 @@ describe("loadPluginConfigFromPaths", () => {
       mkdirSync(overviewDir, { recursive: true });
 
       writeFileSync(configPath, JSON.stringify({
-        resultPresentation: {
-          tuiRenderMode: mode,
+        tui: {
+          renderMode: mode,
         },
         servers: {},
       }, null, 2), "utf8");
 
       const loaded = loadPluginConfigFromPaths(configPath, overviewDir);
-      expect(loaded.resultPresentation.tuiRenderMode).toBe(mode);
+      expect(loaded.tui.renderMode).toBe(mode);
     }
   });
 
@@ -153,32 +173,28 @@ describe("loadPluginConfigFromPaths", () => {
     mkdirSync(overviewDir, { recursive: true });
 
     writeFileSync(configPath, JSON.stringify({
-      resultPresentation: {
-        tuiRenderMode: "compact",
+      tui: {
+        renderMode: "compact",
       },
       servers: {},
     }, null, 2), "utf8");
 
-    expect(() => loadPluginConfigFromPaths(configPath, overviewDir)).toThrow(/resultPresentation.tuiRenderMode/);
+    expect(() => loadPluginConfigFromPaths(configPath, overviewDir)).toThrow(/tui.renderMode/);
   });
 
-  it("accepts legacy previewCharsPerItem and equal dual-threshold values", () => {
+  it("rejects invalid expanded-mode collapsed line count", () => {
     const root = makeTempDir();
     const configPath = join(root, "just-enough-mcp.json");
     const overviewDir = join(root, "mcp-overviews");
     mkdirSync(overviewDir, { recursive: true });
 
     writeFileSync(configPath, JSON.stringify({
-      resultPresentation: {
-        previewCharsPerItem: 120,
-        previewFullCharsPerItem: 120,
-        previewTruncateToCharsPerItem: 120,
+      tui: {
+        expandedModeCollapsedLines: 0,
       },
       servers: {},
     }, null, 2), "utf8");
 
-    const loaded = loadPluginConfigFromPaths(configPath, overviewDir);
-    expect(loaded.resultPresentation.previewFullCharsPerItem).toBe(120);
-    expect(loaded.resultPresentation.previewTruncateToCharsPerItem).toBe(120);
+    expect(() => loadPluginConfigFromPaths(configPath, overviewDir)).toThrow(/tui.expandedModeCollapsedLines/);
   });
 });

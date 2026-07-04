@@ -249,14 +249,17 @@ describe("mcpTool.execute", () => {
         configPath: "C:/Users/Admin/.pi/agent/just-enough-mcp.json",
         overviewDir: "C:/Users/Admin/.pi/agent/mcp-overviews",
         servers: [],
-        resultPresentation: {
+        materialization: {
           artifactRoot: ".pi/mcp",
           summaryItemCount: 3,
           previewFullCharsPerItem: 400,
           previewTruncateToCharsPerItem: 200,
           hardMaxChars: 40000,
-          collapsedPreviewLines: 4,
           prettyPrintJson: true,
+        },
+        tui: {
+          renderMode: "minimal",
+          expandedModeCollapsedLines: 4,
         },
       }),
       sync: vi.fn(),

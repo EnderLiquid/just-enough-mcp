@@ -9,35 +9,37 @@ import {
   type ServerConnectionMode,
 } from "../modeling/types.js";
 import {
-  DEFAULT_RESULT_PRESENTATION_SETTINGS,
+  DEFAULT_MATERIALIZATION_SETTINGS,
+  DEFAULT_TUI_RESULT_RENDER_SETTINGS,
+  type MaterializationSettings,
   type McpTuiRenderMode,
-  type ResultPresentationSettings,
+  type TuiResultRenderSettings,
 } from "../artifacts/types.js";
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function ensurePositiveInteger(value: unknown, fieldName: string): number | undefined {
+function ensurePositiveInteger(value: unknown, fieldPath: string): number | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
-    throw new Error(`just-enough-mcp config field "resultPresentation.${fieldName}" must be a positive integer.`);
+    throw new Error(`just-enough-mcp config field "${fieldPath}" must be a positive integer.`);
   }
   return value;
 }
 
-function ensureBoolean(value: unknown, fieldName: string): boolean | undefined {
+function ensureBoolean(value: unknown, fieldPath: string): boolean | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== "boolean") {
-    throw new Error(`just-enough-mcp config field "resultPresentation.${fieldName}" must be a boolean.`);
+    throw new Error(`just-enough-mcp config field "${fieldPath}" must be a boolean.`);
   }
   return value;
 }
 
-function ensureNonEmptyString(value: unknown, fieldName: string): string | undefined {
+function ensureNonEmptyString(value: unknown, fieldPath: string): string | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== "string" || value.length === 0) {
-    throw new Error(`just-enough-mcp config field "resultPresentation.${fieldName}" must be a non-empty string.`);
+    throw new Error(`just-enough-mcp config field "${fieldPath}" must be a non-empty string.`);
   }
   return value;
 }
@@ -45,38 +47,52 @@ function ensureNonEmptyString(value: unknown, fieldName: string): string | undef
 function ensureTuiRenderMode(value: unknown): McpTuiRenderMode | undefined {
   if (value === undefined) return undefined;
   if (value !== "hidden" && value !== "minimal" && value !== "expanded") {
-    throw new Error("just-enough-mcp config field \"resultPresentation.tuiRenderMode\" must be \"hidden\", \"minimal\", or \"expanded\".");
+    throw new Error("just-enough-mcp config field \"tui.renderMode\" must be \"hidden\", \"minimal\", or \"expanded\".");
   }
   return value;
 }
 
-function parseResultPresentation(raw: unknown): ResultPresentationSettings {
+function parseMaterialization(raw: unknown): MaterializationSettings {
   if (raw === undefined) {
-    return { ...DEFAULT_RESULT_PRESENTATION_SETTINGS };
+    return { ...DEFAULT_MATERIALIZATION_SETTINGS };
   }
 
   if (!isObject(raw)) {
-    throw new Error("just-enough-mcp config field \"resultPresentation\" must be an object.");
+    throw new Error("just-enough-mcp config field \"materialization\" must be an object.");
   }
 
-  const previewFullCharsPerItem = ensurePositiveInteger(raw.previewFullCharsPerItem, "previewFullCharsPerItem")
-    ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.previewFullCharsPerItem;
-  const previewTruncateToCharsPerItem = ensurePositiveInteger(raw.previewTruncateToCharsPerItem, "previewTruncateToCharsPerItem")
-    ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.previewTruncateToCharsPerItem;
+  const previewFullCharsPerItem = ensurePositiveInteger(raw.previewFullCharsPerItem, "materialization.previewFullCharsPerItem")
+    ?? DEFAULT_MATERIALIZATION_SETTINGS.previewFullCharsPerItem;
+  const previewTruncateToCharsPerItem = ensurePositiveInteger(raw.previewTruncateToCharsPerItem, "materialization.previewTruncateToCharsPerItem")
+    ?? DEFAULT_MATERIALIZATION_SETTINGS.previewTruncateToCharsPerItem;
 
   if (previewTruncateToCharsPerItem > previewFullCharsPerItem) {
-    throw new Error("just-enough-mcp config field \"resultPresentation.previewTruncateToCharsPerItem\" must be smaller than \"resultPresentation.previewFullCharsPerItem\".");
+    throw new Error("just-enough-mcp config field \"materialization.previewTruncateToCharsPerItem\" must be smaller than \"materialization.previewFullCharsPerItem\".");
   }
 
   return {
-    artifactRoot: ensureNonEmptyString(raw.artifactRoot, "artifactRoot") ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.artifactRoot,
-    summaryItemCount: ensurePositiveInteger(raw.summaryItemCount, "summaryItemCount") ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.summaryItemCount,
+    artifactRoot: ensureNonEmptyString(raw.artifactRoot, "materialization.artifactRoot") ?? DEFAULT_MATERIALIZATION_SETTINGS.artifactRoot,
+    summaryItemCount: ensurePositiveInteger(raw.summaryItemCount, "materialization.summaryItemCount") ?? DEFAULT_MATERIALIZATION_SETTINGS.summaryItemCount,
     previewFullCharsPerItem,
     previewTruncateToCharsPerItem,
-    hardMaxChars: ensurePositiveInteger(raw.hardMaxChars, "hardMaxChars") ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.hardMaxChars,
-    prettyPrintJson: ensureBoolean(raw.prettyPrintJson, "prettyPrintJson") ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.prettyPrintJson,
-    collapsedPreviewLines: ensurePositiveInteger(raw.collapsedPreviewLines, "collapsedPreviewLines") ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.collapsedPreviewLines,
-    tuiRenderMode: ensureTuiRenderMode(raw.tuiRenderMode) ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.tuiRenderMode,
+    hardMaxChars: ensurePositiveInteger(raw.hardMaxChars, "materialization.hardMaxChars") ?? DEFAULT_MATERIALIZATION_SETTINGS.hardMaxChars,
+    prettyPrintJson: ensureBoolean(raw.prettyPrintJson, "materialization.prettyPrintJson") ?? DEFAULT_MATERIALIZATION_SETTINGS.prettyPrintJson,
+  };
+}
+
+function parseTui(raw: unknown): TuiResultRenderSettings {
+  if (raw === undefined) {
+    return { ...DEFAULT_TUI_RESULT_RENDER_SETTINGS };
+  }
+
+  if (!isObject(raw)) {
+    throw new Error("just-enough-mcp config field \"tui\" must be an object.");
+  }
+
+  return {
+    renderMode: ensureTuiRenderMode(raw.renderMode) ?? DEFAULT_TUI_RESULT_RENDER_SETTINGS.renderMode,
+    expandedModeCollapsedLines: ensurePositiveInteger(raw.expandedModeCollapsedLines, "tui.expandedModeCollapsedLines")
+      ?? DEFAULT_TUI_RESULT_RENDER_SETTINGS.expandedModeCollapsedLines,
   };
 }
 
@@ -157,12 +173,14 @@ function resolveServers(configPath: string, overviewDir: string, raw: RawPluginC
 export function loadPluginConfigFromPaths(configPath: string, overviewDir: string): PluginConfigLoadResult {
   const raw = parseRawConfig(configPath);
   const servers = resolveServers(configPath, overviewDir, raw);
-  const resultPresentation = parseResultPresentation(raw.resultPresentation);
+  const materialization = parseMaterialization(raw.materialization);
+  const tui = parseTui(raw.tui);
 
   return {
     configPath,
     overviewDir,
-    resultPresentation,
+    materialization,
+    tui,
     servers,
   };
 }

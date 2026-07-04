@@ -1,5 +1,5 @@
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
-import type { ResultPresentationSettings } from "../artifacts/types.js";
+import type { MaterializationSettings, TuiResultRenderSettings } from "../artifacts/types.js";
 
 export type ServerConnectionMode = "lazy" | "eager";
 export type ServerConnectState = "disconnected" | "connecting" | "connected";
@@ -32,7 +32,8 @@ export interface BaseServerConfig {
 }
 
 export interface RawPluginConfig {
-  resultPresentation?: unknown;
+  materialization?: unknown;
+  tui?: unknown;
   servers?: Record<string, unknown>;
 }
 
@@ -48,7 +49,8 @@ export interface ResolvedServerConfig {
 export interface PluginConfigLoadResult {
   configPath: string;
   overviewDir: string;
-  resultPresentation: ResultPresentationSettings;
+  materialization: MaterializationSettings;
+  tui: TuiResultRenderSettings;
   servers: ResolvedServerConfig[];
 }
 

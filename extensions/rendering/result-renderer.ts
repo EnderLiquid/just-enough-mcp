@@ -2,7 +2,7 @@ import type { AgentToolResult, Theme, ToolRenderResultOptions } from "@earendil-
 import { Text } from "@earendil-works/pi-tui";
 import { getMcpRuntime } from "../servers/runtime.js";
 import {
-  DEFAULT_RESULT_PRESENTATION_SETTINGS,
+  DEFAULT_TUI_RESULT_RENDER_SETTINGS,
   type McpTuiRenderMode,
 } from "../artifacts/types.js";
 import type { McpToolResultDetails } from "../modeling/types.js";
@@ -51,7 +51,9 @@ function emptyText(): Text {
 }
 
 function renderCallTitle(args: McpToolInput, theme: RenderTheme): string {
-  const toolName = theme.fg("toolTitle", theme.bold ? theme.bold("mcp") : "mcp");
+  const bold = (value: string) => theme.bold ? theme.bold(value) : value;
+  const toolName = theme.fg("toolTitle", bold("mcp"));
+  const action = (value: string) => bold(value);
   const accent = (value: string) => theme.fg("accent", value);
   const muted = (value: string) => theme.fg("muted", value);
 
@@ -59,18 +61,18 @@ function renderCallTitle(args: McpToolInput, theme: RenderTheme): string {
     const target = args.server
       ? `${accent(args.tool)} ${muted(`@ ${args.server}`)}`
       : accent(args.tool);
-    return `${toolName} ${accent("call")} ${target}`;
+    return `${toolName} ${action("call")} ${target}`;
   }
 
   if (args.connect) {
-    return `${toolName} ${accent("connect")} ${accent(args.connect)}`;
+    return `${toolName} ${action("connect")} ${accent(args.connect)}`;
   }
 
   if (args.server) {
-    return `${toolName} ${accent("list")} ${accent(args.server)}`;
+    return `${toolName} ${action("list")} ${accent(args.server)}`;
   }
 
-  return `${toolName} ${accent("status")}`;
+  return `${toolName} ${action("status")}`;
 }
 
 function shouldRenderCallDetails(mode: McpTuiRenderMode, expanded: boolean): boolean {
@@ -102,14 +104,14 @@ function blockToLines(block: McpToolContentBlock): string[] {
   return ["[non-text content]"];
 }
 
-function getCollapsedPreviewLines(): number {
-  return getMcpRuntime().config()?.resultPresentation.collapsedPreviewLines
-    ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.collapsedPreviewLines;
+function getExpandedModeCollapsedLines(): number {
+  return getMcpRuntime().config()?.tui.expandedModeCollapsedLines
+    ?? DEFAULT_TUI_RESULT_RENDER_SETTINGS.expandedModeCollapsedLines;
 }
 
 function getTuiRenderMode(): McpTuiRenderMode {
-  return getMcpRuntime().config()?.resultPresentation.tuiRenderMode
-    ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.tuiRenderMode;
+  return getMcpRuntime().config()?.tui.renderMode
+    ?? DEFAULT_TUI_RESULT_RENDER_SETTINGS.renderMode;
 }
 
 function shouldRenderExpandedResult(mode: McpTuiRenderMode, expanded: boolean): boolean {
@@ -164,7 +166,7 @@ export function formatMcpToolCallLines(
 export function formatMcpToolResultLines(
   result: Pick<AgentToolResult<McpToolResultDetails>, "content">,
   expanded: boolean,
-  maxCollapsedLines = getCollapsedPreviewLines(),
+  maxCollapsedLines = getExpandedModeCollapsedLines(),
 ): McpToolResultDisplay {
   const allLines = result.content.flatMap(blockToLines);
   const lines = allLines.length > 0 ? allLines : ["(empty result)"];
