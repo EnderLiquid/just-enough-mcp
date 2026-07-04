@@ -17,9 +17,11 @@
 - `extensions/modeling/`：跨模块共享的核心类型。
 - `extensions/servers/`：MCP server runtime、registry、具体 server 实现。
 - `extensions/tools/`：暴露给 Pi 的 `mcp` 工具入口。
-- `extensions/artifacts/`：工具调用结果物化与展示相关模型。
+- `extensions/artifacts/`：工具调用结果物化、payload 提取/归一化、artifact 存储、manifest 与模型 summary 生成。
+- `extensions/rendering/`：TUI 工具调用/结果渲染与 footer status 展示。
 - `extensions/formatting/`：跨模块共享的轻量文本格式化工具，如英文单复数 `pluralize()`。
 - `extensions/prompting/`：系统提示词中 server overview 的生成逻辑。
+- `extensions/ui/`：插件 UI 通知等 Pi TUI 交互辅助。
 
 ## 架构约定
 
@@ -29,6 +31,8 @@
 - `ServerOverview` 只表示文档内容与来源，不携带 transport/profile 等 runtime 分类信息。
 - 当前 `connect` / `connectServer` / `connectState` 是历史命名，实际语义是“让 server 进入可用状态”，不应狭义理解为底层网络连接。
 - 对 HTTP server，`connected` 表示 MCP client/transport 已初始化且 tools catalog 可用，不表示 TCP 连接长期存在。
+- 插件配置顶层按职责拆分为 `materialization` 与 `tui`；`materialization` 控制 artifact 落盘、payload/JSON 归一化和给模型的 summary 预算，`tui` 只控制 TUI 渲染模式与展开模式折叠行数。
+- TUI 渲染模式为 `hidden` / `minimal` / `expanded`，默认 `minimal`；不要把 TUI 展示配置混入 materialization 或模型 summary 配置。
 - 用户可见英文数量文案应使用 `extensions/formatting/english.ts` 的 `pluralize()` 处理单复数，避免写出 `1 tools`、`1 payload items` 等文本。
 
 ## 开发注意事项
