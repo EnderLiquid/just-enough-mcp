@@ -64,6 +64,7 @@ function makeConfig(serverOverrides: Partial<ResolvedServerConfig> = {}): Plugin
       hardMaxChars: 40000,
       prettyPrintJson: true,
       collapsedPreviewLines: 4,
+      tuiRenderMode: "minimal",
     },
     servers: [makeServer(serverOverrides)],
   };

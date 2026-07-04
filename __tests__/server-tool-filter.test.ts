@@ -65,6 +65,7 @@ function makeConfig(definition: Record<string, unknown>): PluginConfigLoadResult
       hardMaxChars: 40000,
       prettyPrintJson: true,
       collapsedPreviewLines: 4,
+      tuiRenderMode: "minimal",
     },
     servers: [makeServer(definition)],
   };

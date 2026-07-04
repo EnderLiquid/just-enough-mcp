@@ -21,8 +21,11 @@ export interface SummarySettings {
   hardMaxChars: number;
 }
 
+export type McpTuiRenderMode = "hidden" | "minimal" | "expanded";
+
 export interface TuiResultRenderSettings {
   collapsedPreviewLines: number;
+  tuiRenderMode: McpTuiRenderMode;
 }
 
 export interface MaterializationSettings extends ArtifactStorageSettings, PayloadNormalizationSettings, SummarySettings {}
@@ -104,6 +107,7 @@ export const DEFAULT_RESULT_PRESENTATION_SETTINGS: ResultPresentationSettings = 
   hardMaxChars: 40000,
   prettyPrintJson: true,
   collapsedPreviewLines: 4,
+  tuiRenderMode: "minimal",
 };
 
 export const DEFAULT_MATERIALIZATION_SETTINGS: MaterializationSettings = {

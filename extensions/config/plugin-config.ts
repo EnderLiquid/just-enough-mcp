@@ -10,6 +10,7 @@ import {
 } from "../modeling/types.js";
 import {
   DEFAULT_RESULT_PRESENTATION_SETTINGS,
+  type McpTuiRenderMode,
   type ResultPresentationSettings,
 } from "../artifacts/types.js";
 
@@ -41,6 +42,14 @@ function ensureNonEmptyString(value: unknown, fieldName: string): string | undef
   return value;
 }
 
+function ensureTuiRenderMode(value: unknown): McpTuiRenderMode | undefined {
+  if (value === undefined) return undefined;
+  if (value !== "hidden" && value !== "minimal" && value !== "expanded") {
+    throw new Error("just-enough-mcp config field \"resultPresentation.tuiRenderMode\" must be \"hidden\", \"minimal\", or \"expanded\".");
+  }
+  return value;
+}
+
 function parseResultPresentation(raw: unknown): ResultPresentationSettings {
   if (raw === undefined) {
     return { ...DEFAULT_RESULT_PRESENTATION_SETTINGS };
@@ -67,6 +76,7 @@ function parseResultPresentation(raw: unknown): ResultPresentationSettings {
     hardMaxChars: ensurePositiveInteger(raw.hardMaxChars, "hardMaxChars") ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.hardMaxChars,
     prettyPrintJson: ensureBoolean(raw.prettyPrintJson, "prettyPrintJson") ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.prettyPrintJson,
     collapsedPreviewLines: ensurePositiveInteger(raw.collapsedPreviewLines, "collapsedPreviewLines") ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.collapsedPreviewLines,
+    tuiRenderMode: ensureTuiRenderMode(raw.tuiRenderMode) ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.tuiRenderMode,
   };
 }
 

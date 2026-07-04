@@ -90,6 +90,12 @@ export interface ToolCallExecutionResult {
   result: CallToolResult;
 }
 
+export type McpToolResultDetails =
+  | { kind: "status"; connectedCount: number; totalCount: number }
+  | { kind: "connect" }
+  | { kind: "catalog"; toolCount: number }
+  | { kind: "call"; payloadItemCount: number };
+
 export const DEFAULT_RUNTIME_CAPABILITIES: McpRuntimeCapabilities = {
   supportsTools: true,
   supportsResources: false,

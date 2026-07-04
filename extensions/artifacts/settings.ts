@@ -22,5 +22,6 @@ export function toTuiResultRenderSettings(settings: ResultPresentationSettings |
 
   return {
     collapsedPreviewLines: settings.collapsedPreviewLines,
+    tuiRenderMode: settings.tuiRenderMode,
   };
 }

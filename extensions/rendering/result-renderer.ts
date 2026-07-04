@@ -1,10 +1,13 @@
-import type { AgentToolResult, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
+import type { AgentToolResult, Theme, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import type { Theme } from "@earendil-works/pi-coding-agent";
 import { getMcpRuntime } from "../servers/runtime.js";
-import { DEFAULT_RESULT_PRESENTATION_SETTINGS } from "../artifacts/types.js";
+import {
+  DEFAULT_RESULT_PRESENTATION_SETTINGS,
+  type McpTuiRenderMode,
+} from "../artifacts/types.js";
+import type { McpToolResultDetails } from "../modeling/types.js";
 
-type McpToolContentBlock = AgentToolResult<undefined>["content"][number];
+type McpToolContentBlock = AgentToolResult<McpToolResultDetails>["content"][number];
 
 type RenderTheme = Theme;
 
@@ -43,11 +46,48 @@ function formatJsonish(value: unknown, maxChars: number): string {
   }
 }
 
-function renderToolCallLines(lines: string[], theme: RenderTheme) {
-  const [title = "mcp", ...rest] = lines;
-  const styledTitle = theme.fg("toolTitle", theme.bold ? theme.bold(title) : title);
-  const styledRest = rest.map(line => theme.fg("muted", line));
-  return new Text([styledTitle, ...styledRest].join("\n"), 0, 0);
+function emptyText(): Text {
+  return new Text("", 0, 0);
+}
+
+function renderCallTitle(args: McpToolInput, theme: RenderTheme): string {
+  const toolName = theme.fg("toolTitle", theme.bold ? theme.bold("mcp") : "mcp");
+  const accent = (value: string) => theme.fg("accent", value);
+  const muted = (value: string) => theme.fg("muted", value);
+
+  if (args.tool) {
+    const target = args.server
+      ? `${accent(args.tool)} ${muted(`@ ${args.server}`)}`
+      : accent(args.tool);
+    return `${toolName} ${accent("call")} ${target}`;
+  }
+
+  if (args.connect) {
+    return `${toolName} ${accent("connect")} ${accent(args.connect)}`;
+  }
+
+  if (args.server) {
+    return `${toolName} ${accent("list")} ${accent(args.server)}`;
+  }
+
+  return `${toolName} ${accent("status")}`;
+}
+
+function shouldRenderCallDetails(mode: McpTuiRenderMode, expanded: boolean): boolean {
+  if (mode === "hidden") {
+    return false;
+  }
+
+  return mode === "expanded" || expanded;
+}
+
+function renderToolCallLines(args: McpToolInput, theme: RenderTheme, expanded: boolean) {
+  const mode = getTuiRenderMode();
+  const lines = [renderCallTitle(args, theme)];
+  if (shouldRenderCallDetails(mode, expanded) && args.args) {
+    lines.push(theme.fg("muted", formatJsonish(args.args, DEFAULT_MAX_CALL_INPUT_CHARS)));
+  }
+  return new Text(lines.join("\n"), 0, 0);
 }
 
 function blockToLines(block: McpToolContentBlock): string[] {
@@ -65,6 +105,36 @@ function blockToLines(block: McpToolContentBlock): string[] {
 function getCollapsedPreviewLines(): number {
   return getMcpRuntime().config()?.resultPresentation.collapsedPreviewLines
     ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.collapsedPreviewLines;
+}
+
+function getTuiRenderMode(): McpTuiRenderMode {
+  return getMcpRuntime().config()?.resultPresentation.tuiRenderMode
+    ?? DEFAULT_RESULT_PRESENTATION_SETTINGS.tuiRenderMode;
+}
+
+function shouldRenderExpandedResult(mode: McpTuiRenderMode, expanded: boolean): boolean {
+  return mode === "expanded" || (mode === "minimal" && expanded);
+}
+
+function formatMinimalResultLine(details: McpToolResultDetails | undefined): string | undefined {
+  if (!details) {
+    return "↳ result available • Ctrl+O to expand";
+  }
+
+  switch (details.kind) {
+    case "status":
+      return `↳ ${details.connectedCount}/${details.totalCount} servers connected • Ctrl+O to expand`;
+    case "connect":
+      return undefined;
+    case "catalog":
+      return `↳ ${details.toolCount} tools available • Ctrl+O to expand`;
+    case "call":
+      return `↳ ${details.payloadItemCount} payload items returned • Ctrl+O to expand`;
+    default: {
+      const unreachable: never = details;
+      return unreachable;
+    }
+  }
 }
 
 export function formatMcpToolCallLines(
@@ -92,7 +162,7 @@ export function formatMcpToolCallLines(
 }
 
 export function formatMcpToolResultLines(
-  result: Pick<AgentToolResult<undefined>, "content">,
+  result: Pick<AgentToolResult<McpToolResultDetails>, "content">,
   expanded: boolean,
   maxCollapsedLines = getCollapsedPreviewLines(),
 ): McpToolResultDisplay {
@@ -113,28 +183,47 @@ export function formatMcpToolResultLines(
   };
 }
 
-export function renderMcpToolCall(args: McpToolInput, theme: RenderTheme) {
-  return renderToolCallLines(formatMcpToolCallLines(args), theme);
+export function renderMcpToolCall(
+  args: McpToolInput,
+  theme: RenderTheme,
+  context?: { expanded?: boolean },
+) {
+  return renderToolCallLines(args, theme, context?.expanded ?? false);
 }
 
 export function renderMcpToolResult(
-  result: AgentToolResult<undefined>,
+  result: AgentToolResult<McpToolResultDetails>,
   options: ToolRenderResultOptions,
   theme: RenderTheme,
 ) {
+  const mode = getTuiRenderMode();
+
+  if (mode === "hidden") {
+    return emptyText();
+  }
+
   if (options.isPartial) {
-    return new Text(theme.fg("warning", "Running MCP tool..."), 0, 0);
+    return mode === "minimal"
+      ? new Text(theme.fg("muted", "↳ running..."), 0, 0)
+      : new Text(theme.fg("warning", "Running MCP tool..."), 0, 0);
+  }
+
+  if (!shouldRenderExpandedResult(mode, options.expanded)) {
+    const line = formatMinimalResultLine(result.details);
+    return line ? new Text(theme.fg("muted", line), 0, 0) : emptyText();
   }
 
   const display = formatMcpToolResultLines(result, options.expanded);
   const output = display.lines
-    .map((line) => line === "…"
-      ? theme.fg("muted", line)
-      : theme.fg("toolOutput", line))
+    .map((line) => {
+      if (line === "…" && display.truncated && !options.expanded) {
+        return theme.fg("muted", "… (Ctrl+O to expand)");
+      }
+      return line === "…"
+        ? theme.fg("muted", line)
+        : theme.fg("toolOutput", line);
+    })
     .join("\n");
-  const hint = display.truncated && !options.expanded
-    ? `\n${theme.fg("muted", "(Ctrl+O to expand)")}`
-    : "";
 
-  return new Text(`${output}${hint}`, 0, 0);
+  return new Text(output, 0, 0);
 }

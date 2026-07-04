@@ -26,6 +26,7 @@ describe("loadPluginConfigFromPaths", () => {
         previewTruncateToCharsPerItem: 120,
         hardMaxChars: 5000,
         collapsedPreviewLines: 5,
+        tuiRenderMode: "hidden",
         prettyPrintJson: false,
         artifactRoot: "custom-artifacts"
       },
@@ -53,6 +54,7 @@ describe("loadPluginConfigFromPaths", () => {
     expect(loaded.resultPresentation.previewTruncateToCharsPerItem).toBe(120);
     expect(loaded.resultPresentation.hardMaxChars).toBe(5000);
     expect(loaded.resultPresentation.collapsedPreviewLines).toBe(5);
+    expect(loaded.resultPresentation.tuiRenderMode).toBe("hidden");
     expect(loaded.resultPresentation.prettyPrintJson).toBe(false);
     expect(loaded.resultPresentation.artifactRoot).toBe("custom-artifacts");
     expect(tavily?.definition).toMatchObject({
@@ -88,6 +90,7 @@ describe("loadPluginConfigFromPaths", () => {
 
     expect(loaded.resultPresentation.previewFullCharsPerItem).toBe(1500);
     expect(loaded.resultPresentation.previewTruncateToCharsPerItem).toBe(600);
+    expect(loaded.resultPresentation.tuiRenderMode).toBe("minimal");
     expect(loaded.servers[0]?.definition).toMatchObject({
       command: "npx",
     });
@@ -122,6 +125,41 @@ describe("loadPluginConfigFromPaths", () => {
     }, null, 2), "utf8");
 
     expect(() => loadPluginConfigFromPaths(configPath, overviewDir)).toThrow(/resultPresentation.summaryItemCount/);
+  });
+
+  it("accepts all TUI render modes", () => {
+    for (const mode of ["hidden", "minimal", "expanded"] as const) {
+      const root = makeTempDir();
+      const configPath = join(root, "just-enough-mcp.json");
+      const overviewDir = join(root, "mcp-overviews");
+      mkdirSync(overviewDir, { recursive: true });
+
+      writeFileSync(configPath, JSON.stringify({
+        resultPresentation: {
+          tuiRenderMode: mode,
+        },
+        servers: {},
+      }, null, 2), "utf8");
+
+      const loaded = loadPluginConfigFromPaths(configPath, overviewDir);
+      expect(loaded.resultPresentation.tuiRenderMode).toBe(mode);
+    }
+  });
+
+  it("rejects invalid TUI render mode", () => {
+    const root = makeTempDir();
+    const configPath = join(root, "just-enough-mcp.json");
+    const overviewDir = join(root, "mcp-overviews");
+    mkdirSync(overviewDir, { recursive: true });
+
+    writeFileSync(configPath, JSON.stringify({
+      resultPresentation: {
+        tuiRenderMode: "compact",
+      },
+      servers: {},
+    }, null, 2), "utf8");
+
+    expect(() => loadPluginConfigFromPaths(configPath, overviewDir)).toThrow(/resultPresentation.tuiRenderMode/);
   });
 
   it("accepts legacy previewCharsPerItem and equal dual-threshold values", () => {

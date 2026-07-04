@@ -112,7 +112,12 @@ describe("mcpTool.execute", () => {
     expect(refreshFooter).toHaveBeenCalledWith(ctx);
     expect(result.content[0]).toEqual({
       type: "text",
-      text: "1/2 Connected\n\n[1] context7\nConnect State: connected\n\n[2] tavily\nConnect State: disconnected",
+      text: "1/2 servers connected:\n\n[1] context7\nconnected\n\n[2] tavily\ndisconnected",
+    });
+    expect(result.details).toEqual({
+      kind: "status",
+      connectedCount: 1,
+      totalCount: 2,
     });
   });
 
@@ -140,6 +145,7 @@ describe("mcpTool.execute", () => {
       type: "text",
       text: "Connected",
     });
+    expect(result.details).toEqual({ kind: "connect" });
   });
 
   it("formats catalog with tool count and numbered JSON entries", async () => {
@@ -179,14 +185,18 @@ describe("mcpTool.execute", () => {
     expect(result.content[0]).toEqual({
       type: "text",
       text: [
-        "2 Tools",
+        "2 tools available:",
         "[1] codegraph_search\n{\n  \"name\": \"codegraph_search\",\n  \"description\": \"Search symbols\",\n  \"inputSchema\": {\n    \"type\": \"object\"\n  }\n}",
         "[2] codegraph_explore\n{\n  \"name\": \"codegraph_explore\",\n  \"description\": \"Explore code\",\n  \"inputSchema\": {\n    \"type\": \"object\"\n  }\n}",
       ].join("\n\n"),
     });
+    expect(result.details).toEqual({
+      kind: "catalog",
+      toolCount: 2,
+    });
   });
 
-  it("uses singular tool count for one catalog entry", async () => {
+  it("formats one catalog entry with the fixed tools-available summary", async () => {
     const refreshFooter = vi.fn();
     const getServerCatalog = vi.fn().mockResolvedValue({
       server: makeServerSnapshot({ name: "demo" }),
@@ -213,7 +223,7 @@ describe("mcpTool.execute", () => {
 
     expect(result.content[0]).toMatchObject({
       type: "text",
-      text: expect.stringContaining("1 Tool\n\n[1] only_tool"),
+      text: expect.stringContaining("1 tools available:\n\n[1] only_tool"),
     });
   });
 
@@ -279,6 +289,9 @@ describe("mcpTool.execute", () => {
       type: "text",
       text: "remote tool failed\nFull output: D:/projects/ts/just-enough-mcp/.pi/mcp/20260622-1/01-text.txt",
     });
-    expect(result.details).toBeUndefined();
+    expect(result.details).toEqual({
+      kind: "call",
+      payloadItemCount: 0,
+    });
   });
 });

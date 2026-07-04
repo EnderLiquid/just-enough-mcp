@@ -3,7 +3,7 @@ import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { materializeToolCallResult } from "../artifacts/materializer.js";
 import { toMaterializationSettings } from "../artifacts/settings.js";
 import { getMcpRuntime } from "../servers/runtime.js";
-import type { ServerCatalogResult } from "../modeling/types.js";
+import type { McpToolResultDetails, ServerCatalogResult } from "../modeling/types.js";
 import type { ServerRegistryStatus } from "../servers/registry.js";
 import { renderMcpToolCall, renderMcpToolResult } from "../rendering/result-renderer.js";
 
@@ -27,12 +27,8 @@ function parseArgs(input: string | undefined): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
-function formatToolCount(count: number): string {
-  return `${count} ${count === 1 ? "Tool" : "Tools"}`;
-}
-
 function formatStatusResult(status: ServerRegistryStatus): string {
-  const header = `${status.connectedCount}/${status.totalCount} Connected`;
+  const header = `${status.connectedCount}/${status.totalCount} servers connected:`;
   if (status.servers.length === 0) {
     return header;
   }
@@ -41,7 +37,7 @@ function formatStatusResult(status: ServerRegistryStatus): string {
     header,
     ...status.servers.map((server, index) => [
       `[${index + 1}] ${server.name}`,
-      `Connect State: ${server.connectState}`,
+      server.connectState,
     ].join("\n")),
   ].join("\n\n");
 }
@@ -64,15 +60,15 @@ function formatCatalogResult(catalog: ServerCatalogResult): string {
     }),
   ].join("\n"));
 
-  return [formatToolCount(catalog.tools.length), ...sections].join("\n\n");
+  return [`${catalog.tools.length} tools available:`, ...sections].join("\n\n");
 }
 
-export const mcpTool = defineTool<typeof parametersSchema, undefined>({
+export const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>({
   name: "mcp",
   label: "MCP",
   description: "Minimal MCP runtime entry point for server-level progressive disclosure.",
   promptSnippet: "Inspect MCP servers, connect to one server, read that server's full tool catalog, then call tools.",
-  renderCall: (args, theme) => renderMcpToolCall(args, theme),
+  renderCall: (args, theme, context) => renderMcpToolCall(args, theme, context),
   renderResult: (result, options, theme) => renderMcpToolResult(result, options, theme),
   parameters: parametersSchema,
   async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -86,7 +82,11 @@ export const mcpTool = defineTool<typeof parametersSchema, undefined>({
           type: "text",
           text: formatStatusResult(status),
         }],
-        details: undefined,
+        details: {
+          kind: "status",
+          connectedCount: status.connectedCount,
+          totalCount: status.totalCount,
+        },
       };
     }
 
@@ -102,7 +102,7 @@ export const mcpTool = defineTool<typeof parametersSchema, undefined>({
           type: "text",
           text: formatConnectResult(),
         }],
-        details: undefined,
+        details: { kind: "connect" },
       };
     }
 
@@ -114,7 +114,10 @@ export const mcpTool = defineTool<typeof parametersSchema, undefined>({
           type: "text",
           text: formatCatalogResult(catalog),
         }],
-        details: undefined,
+        details: {
+          kind: "catalog",
+          toolCount: catalog.tools.length,
+        },
       };
     }
 
@@ -134,7 +137,10 @@ export const mcpTool = defineTool<typeof parametersSchema, undefined>({
           type: "text",
           text: materialized.summaryText,
         }],
-        details: undefined,
+        details: {
+          kind: "call",
+          payloadItemCount: materialized.payloadItems.length,
+        },
         isError: execution.result.isError === true,
       };
     }
