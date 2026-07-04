@@ -86,6 +86,137 @@ describe("mcpTool.execute", () => {
     );
   });
 
+  it("formats status with a compact summary and numbered server states", async () => {
+    const refreshFooter = vi.fn();
+    const status = {
+      connectedCount: 1,
+      totalCount: 2,
+      servers: [
+        makeServerSnapshot({ name: "context7", connectState: "connected" }),
+        makeServerSnapshot({ name: "tavily", connectState: "disconnected" }),
+      ],
+    };
+
+    mocks.getMcpRuntime.mockReturnValue({
+      getStatus: vi.fn().mockReturnValue(status),
+      refreshFooter,
+      registry: vi.fn(),
+      config: () => undefined,
+      sync: vi.fn(),
+      closeAll: vi.fn(),
+    });
+
+    const ctx = makeContext();
+    const result = await mcpTool.execute("tool-call-status", {}, undefined, vi.fn(), ctx as never);
+
+    expect(refreshFooter).toHaveBeenCalledWith(ctx);
+    expect(result.content[0]).toEqual({
+      type: "text",
+      text: "1/2 Connected\n\n[1] context7\nConnect State: connected\n\n[2] tavily\nConnect State: disconnected",
+    });
+  });
+
+  it("formats successful connect as a terse result", async () => {
+    const refreshFooter = vi.fn();
+    const connectServer = vi.fn().mockResolvedValue(makeServerSnapshot({ name: "codegraph" }));
+
+    mocks.getMcpRuntime.mockReturnValue({
+      getStatus: vi.fn(),
+      refreshFooter,
+      registry: () => ({
+        connectServer,
+      }),
+      config: () => undefined,
+      sync: vi.fn(),
+      closeAll: vi.fn(),
+    });
+
+    const ctx = makeContext();
+    const result = await mcpTool.execute("tool-call-connect", { connect: "codegraph" }, undefined, vi.fn(), ctx as never);
+
+    expect(connectServer).toHaveBeenCalledWith("codegraph");
+    expect(refreshFooter).toHaveBeenCalledWith(ctx);
+    expect(result.content[0]).toEqual({
+      type: "text",
+      text: "Connected",
+    });
+  });
+
+  it("formats catalog with tool count and numbered JSON entries", async () => {
+    const refreshFooter = vi.fn();
+    const getServerCatalog = vi.fn().mockResolvedValue({
+      server: makeServerSnapshot({ name: "codegraph" }),
+      tools: [
+        {
+          name: "codegraph_search",
+          description: "Search symbols",
+          inputSchema: { type: "object" },
+        },
+        {
+          name: "codegraph_explore",
+          description: "Explore code",
+          inputSchema: { type: "object" },
+        },
+      ],
+    });
+
+    mocks.getMcpRuntime.mockReturnValue({
+      getStatus: vi.fn(),
+      refreshFooter,
+      registry: () => ({
+        getServerCatalog,
+      }),
+      config: () => undefined,
+      sync: vi.fn(),
+      closeAll: vi.fn(),
+    });
+
+    const ctx = makeContext();
+    const result = await mcpTool.execute("tool-call-catalog", { server: "codegraph" }, undefined, vi.fn(), ctx as never);
+
+    expect(getServerCatalog).toHaveBeenCalledWith("codegraph");
+    expect(refreshFooter).toHaveBeenCalledWith(ctx);
+    expect(result.content[0]).toEqual({
+      type: "text",
+      text: [
+        "2 Tools",
+        "[1] codegraph_search\n{\n  \"name\": \"codegraph_search\",\n  \"description\": \"Search symbols\",\n  \"inputSchema\": {\n    \"type\": \"object\"\n  }\n}",
+        "[2] codegraph_explore\n{\n  \"name\": \"codegraph_explore\",\n  \"description\": \"Explore code\",\n  \"inputSchema\": {\n    \"type\": \"object\"\n  }\n}",
+      ].join("\n\n"),
+    });
+  });
+
+  it("uses singular tool count for one catalog entry", async () => {
+    const refreshFooter = vi.fn();
+    const getServerCatalog = vi.fn().mockResolvedValue({
+      server: makeServerSnapshot({ name: "demo" }),
+      tools: [{
+        name: "only_tool",
+        description: "Only tool",
+        inputSchema: { type: "object" },
+      }],
+    });
+
+    mocks.getMcpRuntime.mockReturnValue({
+      getStatus: vi.fn(),
+      refreshFooter,
+      registry: () => ({
+        getServerCatalog,
+      }),
+      config: () => undefined,
+      sync: vi.fn(),
+      closeAll: vi.fn(),
+    });
+
+    const ctx = makeContext();
+    const result = await mcpTool.execute("tool-call-one-catalog", { server: "demo" }, undefined, vi.fn(), ctx as never);
+
+    expect(result.content[0]).toMatchObject({
+      type: "text",
+      text: expect.stringContaining("1 Tool\n\n[1] only_tool"),
+    });
+  });
+
   it("preserves downstream MCP business failures as materialized error results", async () => {
     const refreshFooter = vi.fn();
     const callTool = vi.fn().mockResolvedValue({

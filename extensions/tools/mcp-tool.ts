@@ -3,7 +3,8 @@ import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { materializeToolCallResult } from "../artifacts/materializer.js";
 import { toMaterializationSettings } from "../artifacts/settings.js";
 import { getMcpRuntime } from "../servers/runtime.js";
-import type { ServerSnapshot } from "../modeling/types.js";
+import type { ServerCatalogResult } from "../modeling/types.js";
+import type { ServerRegistryStatus } from "../servers/registry.js";
 import { renderMcpToolCall, renderMcpToolResult } from "../rendering/result-renderer.js";
 
 const parametersSchema = Type.Object({
@@ -26,20 +27,44 @@ function parseArgs(input: string | undefined): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
-function assertNever(value: never): never {
-  throw new Error(`Unhandled server profile: ${value}`);
+function formatToolCount(count: number): string {
+  return `${count} ${count === 1 ? "Tool" : "Tools"}`;
 }
 
-function formatServerSnapshot(snapshot: ServerSnapshot): string {
-  const profile = snapshot.profile;
-  switch (profile) {
-    case "stdio-tools-pragmatic":
-    case "http-tools-public":
-    case "http-tools-token":
-      return `${snapshot.name}: ${snapshot.connectState}`;
-    default:
-      return assertNever(profile);
+function formatStatusResult(status: ServerRegistryStatus): string {
+  const header = `${status.connectedCount}/${status.totalCount} Connected`;
+  if (status.servers.length === 0) {
+    return header;
   }
+
+  return [
+    header,
+    ...status.servers.map((server, index) => [
+      `[${index + 1}] ${server.name}`,
+      `Connect State: ${server.connectState}`,
+    ].join("\n")),
+  ].join("\n\n");
+}
+
+function formatConnectResult(): string {
+  return "Connected";
+}
+
+function formatCatalogResult(catalog: ServerCatalogResult): string {
+  const sections = catalog.tools.map((tool, index) => [
+    `[${index + 1}] ${tool.name}`,
+    stringifyJson({
+      name: tool.name,
+      title: tool.title,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+      outputSchema: tool.outputSchema,
+      annotations: tool.annotations,
+      execution: tool.execution,
+    }),
+  ].join("\n"));
+
+  return [formatToolCount(catalog.tools.length), ...sections].join("\n\n");
 }
 
 export const mcpTool = defineTool<typeof parametersSchema, undefined>({
@@ -59,20 +84,15 @@ export const mcpTool = defineTool<typeof parametersSchema, undefined>({
       return {
         content: [{
           type: "text",
-          text: [
-            "just-enough-mcp status",
-            `connected servers: ${status.connectedCount}/${status.totalCount}`,
-            ...status.servers.map(server => `- ${formatServerSnapshot(server)}`),
-          ].join("\n"),
+          text: formatStatusResult(status),
         }],
         details: undefined,
       };
     }
 
     if (params.connect) {
-      let server: ServerSnapshot;
       try {
-        server = await runtime.registry().connectServer(params.connect);
+        await runtime.registry().connectServer(params.connect);
       } finally {
         runtime.refreshFooter(ctx);
       }
@@ -80,7 +100,7 @@ export const mcpTool = defineTool<typeof parametersSchema, undefined>({
       return {
         content: [{
           type: "text",
-          text: `Connected MCP server: ${server.name}`,
+          text: formatConnectResult(),
         }],
         details: undefined,
       };
@@ -92,18 +112,7 @@ export const mcpTool = defineTool<typeof parametersSchema, undefined>({
       return {
         content: [{
           type: "text",
-          text: [
-            `MCP tool catalog for ${catalog.server.name}`,
-            ...catalog.tools.map(tool => stringifyJson({
-              name: tool.name,
-              title: tool.title,
-              description: tool.description,
-              inputSchema: tool.inputSchema,
-              outputSchema: tool.outputSchema,
-              annotations: tool.annotations,
-              execution: tool.execution,
-            })),
-          ].join("\n\n"),
+          text: formatCatalogResult(catalog),
         }],
         details: undefined,
       };
