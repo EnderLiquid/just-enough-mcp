@@ -76,7 +76,7 @@ export const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>
 
     if (!params.connect && !params.server && !params.tool) {
       const status = runtime.getStatus();
-      runtime.refreshFooter(ctx);
+      runtime.refreshFooter();
       return {
         content: [{
           type: "text",
@@ -94,7 +94,7 @@ export const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>
       try {
         await runtime.registry().connectServer(params.connect);
       } finally {
-        runtime.refreshFooter(ctx);
+        runtime.refreshFooter();
       }
 
       return {
@@ -108,7 +108,7 @@ export const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>
 
     if (params.server && !params.tool) {
       const catalog = await runtime.registry().getServerCatalog(params.server);
-      runtime.refreshFooter(ctx);
+      runtime.refreshFooter();
       return {
         content: [{
           type: "text",
@@ -131,7 +131,7 @@ export const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>
         result: execution.result,
         settings: runtime.config()?.materialization,
       });
-      runtime.refreshFooter(ctx);
+      runtime.refreshFooter();
       return {
         content: [{
           type: "text",

@@ -1,19 +1,16 @@
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { loadPluginConfig } from "../config/plugin-config.js";
 import { tryBootstrapOverviewFromDescription } from "../config/overview-bootstrap.js";
 import type { PluginConfigLoadResult } from "../modeling/types.js";
-import { buildFooterStatus } from "../rendering/footer-status.js";
+import { updateFooterStatus } from "../rendering/footer-status.js";
 import { createServerRegistry, type ServerReadyEvent, type ServerRegistry, type ServerRegistryStatus } from "./registry.js";
 import { notifyInfo } from "../rendering/notifier.js";
-
-const STATUS_KEY = "just-enough-mcp";
 
 export interface McpRuntime {
   sync(): Promise<ServerRegistryStatus>;
   config: () => PluginConfigLoadResult | undefined;
   getStatus: () => ServerRegistryStatus;
   registry: () => ServerRegistry;
-  refreshFooter(ctx: Pick<ExtensionContext, "hasUI" | "ui">): void;
+  refreshFooter(): void;
   closeAll(): Promise<void>;
 }
 
@@ -47,10 +44,9 @@ function createRuntime(): McpRuntime {
     return registry.getStatus();
   }
 
-  function refreshFooter(ctx: Pick<ExtensionContext, "hasUI" | "ui">): void {
-    if (!ctx.hasUI) return;
+  function refreshFooter(): void {
     const current = getStatus();
-    ctx.ui.setStatus(STATUS_KEY, buildFooterStatus(current.connectedCount, current.totalCount).text);
+    updateFooterStatus(current.connectedCount, current.totalCount);
   }
 
   return {

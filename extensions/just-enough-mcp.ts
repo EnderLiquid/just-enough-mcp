@@ -2,9 +2,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getMcpRuntime } from "./servers/runtime.js";
 import { createServerOverviewPrompt } from "./prompting/system-prompt.js";
 import { registerMcpTool } from "./tools/mcp-tool.js";
+import { clearFooterStatus, setFooterStatusSink, updateFooterStatus } from "./rendering/footer-status.js";
 import { clearNotifier, notifyError, setNotifier } from "./rendering/notifier.js";
-
-const STATUS_KEY = "just-enough-mcp";
 
 export default function justEnoughMcp(pi: ExtensionAPI): void {
   registerMcpTool(pi);
@@ -12,15 +11,14 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
   pi.on("session_start", async (_event, ctx) => {
     const runtime = getMcpRuntime();
     setNotifier(ctx.hasUI ? { notify: ctx.ui.notify.bind(ctx.ui) } : undefined);
+    setFooterStatusSink(ctx.hasUI ? { setStatus: ctx.ui.setStatus.bind(ctx.ui) } : undefined);
     try {
       await runtime.sync();
-      runtime.refreshFooter(ctx);
+      runtime.refreshFooter();
     } catch (error) {
-      if (ctx.hasUI) {
-        const message = error instanceof Error ? error.message : String(error);
-        notifyError(`just-enough-mcp config error: ${message}`);
-        ctx.ui.setStatus(STATUS_KEY, "0/0 MCP");
-      }
+      const message = error instanceof Error ? error.message : String(error);
+      notifyError(`just-enough-mcp config error: ${message}`);
+      updateFooterStatus(0, 0);
     }
   });
 
@@ -42,12 +40,13 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
     };
   });
 
-  pi.on("session_shutdown", async (_event, ctx) => {
+  pi.on("session_shutdown", async () => {
     const runtime = getMcpRuntime();
     clearNotifier();
-    await runtime.closeAll();
-    if (ctx.hasUI) {
-      ctx.ui.setStatus(STATUS_KEY, undefined);
+    try {
+      await runtime.closeAll();
+    } finally {
+      clearFooterStatus();
     }
   });
 }

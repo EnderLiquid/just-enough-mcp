@@ -54,12 +54,6 @@ export interface PluginConfigLoadResult {
   servers: ResolvedServerConfig[];
 }
 
-export interface McpFooterStatus {
-  connectedServers: number;
-  totalServers: number;
-  text: string;
-}
-
 export type ServerSnapshot =
   | {
       name: string;

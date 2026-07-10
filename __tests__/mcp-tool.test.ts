@@ -28,10 +28,6 @@ function makeServerSnapshot(overrides: Partial<ServerSnapshot> = {}): ServerSnap
 function makeContext() {
   return {
     cwd: "D:/projects/ts/just-enough-mcp",
-    hasUI: true,
-    ui: {
-      setStatus: vi.fn(),
-    },
   };
 }
 
@@ -62,7 +58,7 @@ describe("mcpTool.execute", () => {
     );
 
     expect(connectServer).toHaveBeenCalledWith("demo");
-    expect(refreshFooter).toHaveBeenCalledWith(ctx);
+    expect(refreshFooter).toHaveBeenCalledWith();
   });
 
   it("throws on invalid invocation instead of returning an isError result", async () => {
@@ -109,7 +105,7 @@ describe("mcpTool.execute", () => {
     const ctx = makeContext();
     const result = await mcpTool.execute("tool-call-status", {}, undefined, vi.fn(), ctx as never);
 
-    expect(refreshFooter).toHaveBeenCalledWith(ctx);
+    expect(refreshFooter).toHaveBeenCalledWith();
     expect(result.content[0]).toEqual({
       type: "text",
       text: "1/2 servers connected:\n\n[1] context7\nconnected\n\n[2] tavily\ndisconnected",
@@ -166,7 +162,7 @@ describe("mcpTool.execute", () => {
     const result = await mcpTool.execute("tool-call-connect", { connect: "codegraph" }, undefined, vi.fn(), ctx as never);
 
     expect(connectServer).toHaveBeenCalledWith("codegraph");
-    expect(refreshFooter).toHaveBeenCalledWith(ctx);
+    expect(refreshFooter).toHaveBeenCalledWith();
     expect(result.content[0]).toEqual({
       type: "text",
       text: "Connected",
@@ -207,7 +203,7 @@ describe("mcpTool.execute", () => {
     const result = await mcpTool.execute("tool-call-catalog", { server: "codegraph" }, undefined, vi.fn(), ctx as never);
 
     expect(getServerCatalog).toHaveBeenCalledWith("codegraph");
-    expect(refreshFooter).toHaveBeenCalledWith(ctx);
+    expect(refreshFooter).toHaveBeenCalledWith();
     expect(result.content[0]).toEqual({
       type: "text",
       text: [
@@ -312,7 +308,7 @@ describe("mcpTool.execute", () => {
     );
 
     expect(callTool).toHaveBeenCalledWith("demo", "search", { query: "pi" });
-    expect(refreshFooter).toHaveBeenCalledWith(ctx);
+    expect(refreshFooter).toHaveBeenCalledWith();
     expect((result as { isError?: boolean }).isError).toBe(true);
     expect(result.content[0]).toEqual({
       type: "text",
