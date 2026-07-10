@@ -1,19 +1,18 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
-import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { loadPluginConfigFromPaths } from "../extensions/config/plugin-config.js";
+import { createTempDirFixture } from "./support/temp-dir.js";
 
-function makeTempDir(): string {
-  const dir = join(tmpdir(), `jem-config-${randomUUID()}`);
-  mkdirSync(dir, { recursive: true });
-  return dir;
-}
+const tempDirs = createTempDirFixture("jem-config");
 
 describe("loadPluginConfigFromPaths", () => {
+  afterEach(() => {
+    tempDirs.cleanup();
+  });
+
   it("parses server definitions with connection modes, materialization settings, and TUI settings", () => {
-    const root = makeTempDir();
+    const root = tempDirs.create();
     const configPath = join(root, "just-enough-mcp.json");
     const overviewDir = join(root, "mcp-overviews");
     mkdirSync(overviewDir, { recursive: true });
@@ -74,7 +73,7 @@ describe("loadPluginConfigFromPaths", () => {
   });
 
   it("uses default materialization and TUI settings when omitted", () => {
-    const root = makeTempDir();
+    const root = tempDirs.create();
     const configPath = join(root, "just-enough-mcp.json");
     const overviewDir = join(root, "mcp-overviews");
     mkdirSync(overviewDir, { recursive: true });
@@ -100,7 +99,7 @@ describe("loadPluginConfigFromPaths", () => {
   });
 
   it("rejects non-object server configuration", () => {
-    const root = makeTempDir();
+    const root = tempDirs.create();
     const configPath = join(root, "just-enough-mcp.json");
     const overviewDir = join(root, "mcp-overviews");
     mkdirSync(overviewDir, { recursive: true });
@@ -115,7 +114,7 @@ describe("loadPluginConfigFromPaths", () => {
   });
 
   it("rejects invalid materialization settings", () => {
-    const root = makeTempDir();
+    const root = tempDirs.create();
     const configPath = join(root, "just-enough-mcp.json");
     const overviewDir = join(root, "mcp-overviews");
     mkdirSync(overviewDir, { recursive: true });
@@ -131,7 +130,7 @@ describe("loadPluginConfigFromPaths", () => {
   });
 
   it("rejects inconsistent materialization preview thresholds", () => {
-    const root = makeTempDir();
+    const root = tempDirs.create();
     const configPath = join(root, "just-enough-mcp.json");
     const overviewDir = join(root, "mcp-overviews");
     mkdirSync(overviewDir, { recursive: true });
@@ -149,7 +148,7 @@ describe("loadPluginConfigFromPaths", () => {
 
   it("accepts all TUI render modes", () => {
     for (const mode of ["hidden", "minimal", "expanded"] as const) {
-      const root = makeTempDir();
+      const root = tempDirs.create();
       const configPath = join(root, "just-enough-mcp.json");
       const overviewDir = join(root, "mcp-overviews");
       mkdirSync(overviewDir, { recursive: true });
@@ -167,7 +166,7 @@ describe("loadPluginConfigFromPaths", () => {
   });
 
   it("rejects invalid TUI render mode", () => {
-    const root = makeTempDir();
+    const root = tempDirs.create();
     const configPath = join(root, "just-enough-mcp.json");
     const overviewDir = join(root, "mcp-overviews");
     mkdirSync(overviewDir, { recursive: true });
@@ -183,7 +182,7 @@ describe("loadPluginConfigFromPaths", () => {
   });
 
   it("rejects invalid expanded-mode collapsed line count", () => {
-    const root = makeTempDir();
+    const root = tempDirs.create();
     const configPath = join(root, "just-enough-mcp.json");
     const overviewDir = join(root, "mcp-overviews");
     mkdirSync(overviewDir, { recursive: true });

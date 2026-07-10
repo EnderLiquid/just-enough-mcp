@@ -1,22 +1,16 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
-import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { tryBootstrapOverviewFromDescription } from "../extensions/config/overview-bootstrap.js";
 import type { ResolvedServerConfig } from "../extensions/modeling/types.js";
+import { makeResolvedServerConfig } from "./support/model-fixtures.js";
+import { createTempDirFixture } from "./support/temp-dir.js";
 
-function makeTempDir(): string {
-  const dir = join(tmpdir(), `jem-overview-bootstrap-${randomUUID()}`);
-  mkdirSync(dir, { recursive: true });
-  return dir;
-}
+const tempDirs = createTempDirFixture("jem-overview-bootstrap");
 
 function makeServer(overrides: Partial<ResolvedServerConfig> = {}): ResolvedServerConfig {
-  return {
+  return makeResolvedServerConfig({
     name: "tavily",
-    connectionMode: "lazy",
-    hasExplicitOverviewConfig: false,
     overview: {
       name: "tavily",
       content: "No overview configured yet.",
@@ -27,12 +21,16 @@ function makeServer(overrides: Partial<ResolvedServerConfig> = {}): ResolvedServ
       url: "https://example.com/mcp",
     },
     ...overrides,
-  };
+  });
 }
 
 describe("tryBootstrapOverviewFromDescription", () => {
+  afterEach(() => {
+    tempDirs.cleanup();
+  });
+
   it("creates a minimal overview stub from server description", () => {
-    const root = makeTempDir();
+    const root = tempDirs.create();
     const server = makeServer();
 
     const result = tryBootstrapOverviewFromDescription(
@@ -50,7 +48,7 @@ describe("tryBootstrapOverviewFromDescription", () => {
   });
 
   it("skips creation when an auto overview file already exists", () => {
-    const root = makeTempDir();
+    const root = tempDirs.create();
     writeFileSync(join(root, "tavily.md"), "# Tavily\n\nManual overview\n", "utf8");
     const server = makeServer();
 
@@ -68,7 +66,7 @@ describe("tryBootstrapOverviewFromDescription", () => {
   });
 
   it("skips creation when server uses explicit overview config or empty description", () => {
-    const root = makeTempDir();
+    const root = tempDirs.create();
     const explicitServer = makeServer({ hasExplicitOverviewConfig: true });
     const emptyDescriptionServer = makeServer();
 

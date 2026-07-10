@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createServerOverviewPrompt } from "../extensions/prompting/system-prompt.js";
 import type { PluginConfigLoadResult, ResolvedServerConfig } from "../extensions/modeling/types.js";
+import { createServerOverviewPrompt } from "../extensions/prompting/system-prompt.js";
+import { makePluginConfig, makeResolvedServerConfig } from "./support/model-fixtures.js";
 
 function makeServer(overrides: Partial<ResolvedServerConfig> = {}): ResolvedServerConfig {
-  return {
+  return makeResolvedServerConfig({
     name: "tavily",
-    connectionMode: "lazy",
-    hasExplicitOverviewConfig: false,
     overviewPath: "C:/Users/Admin/.pi/agent/mcp-overviews/tavily.md",
     overview: {
       name: "tavily",
@@ -19,28 +18,14 @@ function makeServer(overrides: Partial<ResolvedServerConfig> = {}): ResolvedServ
       url: "https://example.com/mcp",
     },
     ...overrides,
-  };
+  });
 }
 
 function makeConfig(overrides: Partial<PluginConfigLoadResult> = {}): PluginConfigLoadResult {
-  return {
-    configPath: "C:/Users/Admin/.pi/agent/just-enough-mcp.json",
-    overviewDir: "C:/Users/Admin/.pi/agent/mcp-overviews",
-    materialization: {
-      artifactRoot: ".pi/mcp",
-      summaryItemCount: 6,
-      previewFullCharsPerItem: 1500,
-      previewTruncateToCharsPerItem: 600,
-      hardMaxChars: 40000,
-      prettyPrintJson: true,
-    },
-    tui: {
-      renderMode: "minimal",
-      expandedModeCollapsedLines: 4,
-    },
+  return makePluginConfig({
     servers: [makeServer()],
     ...overrides,
-  };
+  });
 }
 
 describe("createServerOverviewPrompt", () => {

@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ServerSnapshot } from "../extensions/modeling/types.js";
+import type { MaterializedToolCallResult } from "../extensions/artifacts/types.js";
+import type { McpRuntime } from "../extensions/servers/runtime.js";
+import type { ServerRegistry } from "../extensions/servers/registry.js";
+import { makePluginConfig, makeServerSnapshot } from "./support/model-fixtures.js";
 
 const mocks = vi.hoisted(() => ({
   getMcpRuntime: vi.fn(),
@@ -16,19 +19,49 @@ vi.mock("../extensions/artifacts/materializer.js", () => ({
 
 import { mcpTool } from "../extensions/tools/mcp-tool.js";
 
-function makeServerSnapshot(overrides: Partial<ServerSnapshot> = {}): ServerSnapshot {
-  return {
-    name: "demo",
-    profile: "stdio-tools-pragmatic",
-    connectState: "connected",
-    ...overrides,
-  } as ServerSnapshot;
+type RuntimeStubOverrides = Partial<Omit<McpRuntime, "registry">> & {
+  registry?: Partial<ServerRegistry>;
+};
+
+function useRuntime(overrides: RuntimeStubOverrides = {}): McpRuntime {
+  const { registry: registryOverrides, ...runtimeOverrides } = overrides;
+  const emptyStatus = { connectedCount: 0, totalCount: 0, servers: [] };
+  const registry: ServerRegistry = {
+    syncConfig: async () => {},
+    getStatus: () => emptyStatus,
+    getServerState: () => undefined,
+    connectServer: async () => {
+      throw new Error("Unexpected connectServer call.");
+    },
+    getServerCatalog: async () => {
+      throw new Error("Unexpected getServerCatalog call.");
+    },
+    callTool: async () => {
+      throw new Error("Unexpected callTool call.");
+    },
+    closeAll: async () => {},
+    ...registryOverrides,
+  };
+  const runtime: McpRuntime = {
+    sync: async () => emptyStatus,
+    config: () => undefined,
+    getStatus: () => emptyStatus,
+    registry: () => registry,
+    refreshFooter: vi.fn(),
+    closeAll: async () => {},
+    ...runtimeOverrides,
+  };
+
+  mocks.getMcpRuntime.mockReturnValue(runtime);
+  return runtime;
 }
 
-function makeContext() {
-  return {
+function executeMcp(params: Parameters<typeof mcpTool.execute>[1]) {
+  const context = {
     cwd: "D:/projects/ts/just-enough-mcp",
-  };
+  } as Parameters<typeof mcpTool.execute>[4];
+
+  return mcpTool.execute("tool-call", params, undefined, vi.fn(), context);
 }
 
 describe("mcpTool.execute", () => {
@@ -39,45 +72,21 @@ describe("mcpTool.execute", () => {
   it("throws on failed connect after refreshing the footer", async () => {
     const refreshFooter = vi.fn();
     const connectServer = vi.fn().mockRejectedValue(new Error("dial tcp timeout"));
-
-    mocks.getMcpRuntime.mockReturnValue({
-      getStatus: vi.fn(),
+    useRuntime({
       refreshFooter,
-      registry: () => ({
-        connectServer,
-      }),
-      config: () => undefined,
-      sync: vi.fn(),
-      closeAll: vi.fn(),
+      registry: { connectServer },
     });
 
-    const ctx = makeContext();
-
-    await expect(mcpTool.execute("tool-call-1", { connect: "demo" }, undefined, vi.fn(), ctx as never)).rejects.toThrow(
-      "dial tcp timeout",
-    );
+    await expect(executeMcp({ connect: "demo" })).rejects.toThrow("dial tcp timeout");
 
     expect(connectServer).toHaveBeenCalledWith("demo");
     expect(refreshFooter).toHaveBeenCalledWith();
   });
 
   it("throws on invalid invocation instead of returning an isError result", async () => {
-    mocks.getMcpRuntime.mockReturnValue({
-      getStatus: vi.fn(),
-      refreshFooter: vi.fn(),
-      registry: () => ({
-        connectServer: vi.fn(),
-        getServerCatalog: vi.fn(),
-        callTool: vi.fn(),
-      }),
-      config: () => undefined,
-      sync: vi.fn(),
-      closeAll: vi.fn(),
-    });
+    useRuntime();
 
-    const ctx = makeContext();
-
-    await expect(mcpTool.execute("tool-call-2", { tool: "search" }, undefined, vi.fn(), ctx as never)).rejects.toThrow(
+    await expect(executeMcp({ tool: "search" })).rejects.toThrow(
       "Invalid mcp invocation. Use status, connect, server, or server+tool.",
     );
   });
@@ -92,18 +101,12 @@ describe("mcpTool.execute", () => {
         makeServerSnapshot({ name: "tavily", connectState: "disconnected" }),
       ],
     };
-
-    mocks.getMcpRuntime.mockReturnValue({
-      getStatus: vi.fn().mockReturnValue(status),
+    useRuntime({
+      getStatus: () => status,
       refreshFooter,
-      registry: vi.fn(),
-      config: () => undefined,
-      sync: vi.fn(),
-      closeAll: vi.fn(),
     });
 
-    const ctx = makeContext();
-    const result = await mcpTool.execute("tool-call-status", {}, undefined, vi.fn(), ctx as never);
+    const result = await executeMcp({});
 
     expect(refreshFooter).toHaveBeenCalledWith();
     expect(result.content[0]).toEqual({
@@ -118,24 +121,14 @@ describe("mcpTool.execute", () => {
   });
 
   it("uses singular server in status when total count is one", async () => {
-    const refreshFooter = vi.fn();
     const status = {
       connectedCount: 1,
       totalCount: 1,
       servers: [makeServerSnapshot({ name: "context7", connectState: "connected" })],
     };
+    useRuntime({ getStatus: () => status });
 
-    mocks.getMcpRuntime.mockReturnValue({
-      getStatus: vi.fn().mockReturnValue(status),
-      refreshFooter,
-      registry: vi.fn(),
-      config: () => undefined,
-      sync: vi.fn(),
-      closeAll: vi.fn(),
-    });
-
-    const ctx = makeContext();
-    const result = await mcpTool.execute("tool-call-status-one", {}, undefined, vi.fn(), ctx as never);
+    const result = await executeMcp({});
 
     expect(result.content[0]).toMatchObject({
       type: "text",
@@ -146,20 +139,12 @@ describe("mcpTool.execute", () => {
   it("formats successful connect as a terse result", async () => {
     const refreshFooter = vi.fn();
     const connectServer = vi.fn().mockResolvedValue(makeServerSnapshot({ name: "codegraph" }));
-
-    mocks.getMcpRuntime.mockReturnValue({
-      getStatus: vi.fn(),
+    useRuntime({
       refreshFooter,
-      registry: () => ({
-        connectServer,
-      }),
-      config: () => undefined,
-      sync: vi.fn(),
-      closeAll: vi.fn(),
+      registry: { connectServer },
     });
 
-    const ctx = makeContext();
-    const result = await mcpTool.execute("tool-call-connect", { connect: "codegraph" }, undefined, vi.fn(), ctx as never);
+    const result = await executeMcp({ connect: "codegraph" });
 
     expect(connectServer).toHaveBeenCalledWith("codegraph");
     expect(refreshFooter).toHaveBeenCalledWith();
@@ -187,20 +172,12 @@ describe("mcpTool.execute", () => {
         },
       ],
     });
-
-    mocks.getMcpRuntime.mockReturnValue({
-      getStatus: vi.fn(),
+    useRuntime({
       refreshFooter,
-      registry: () => ({
-        getServerCatalog,
-      }),
-      config: () => undefined,
-      sync: vi.fn(),
-      closeAll: vi.fn(),
+      registry: { getServerCatalog },
     });
 
-    const ctx = makeContext();
-    const result = await mcpTool.execute("tool-call-catalog", { server: "codegraph" }, undefined, vi.fn(), ctx as never);
+    const result = await executeMcp({ server: "codegraph" });
 
     expect(getServerCatalog).toHaveBeenCalledWith("codegraph");
     expect(refreshFooter).toHaveBeenCalledWith();
@@ -218,30 +195,18 @@ describe("mcpTool.execute", () => {
     });
   });
 
-  it("formats one catalog entry with the fixed tools-available summary", async () => {
-    const refreshFooter = vi.fn();
+  it("uses singular tool in a one-entry catalog summary", async () => {
     const getServerCatalog = vi.fn().mockResolvedValue({
-      server: makeServerSnapshot({ name: "demo" }),
+      server: makeServerSnapshot(),
       tools: [{
         name: "only_tool",
         description: "Only tool",
         inputSchema: { type: "object" },
       }],
     });
+    useRuntime({ registry: { getServerCatalog } });
 
-    mocks.getMcpRuntime.mockReturnValue({
-      getStatus: vi.fn(),
-      refreshFooter,
-      registry: () => ({
-        getServerCatalog,
-      }),
-      config: () => undefined,
-      sync: vi.fn(),
-      closeAll: vi.fn(),
-    });
-
-    const ctx = makeContext();
-    const result = await mcpTool.execute("tool-call-one-catalog", { server: "demo" }, undefined, vi.fn(), ctx as never);
+    const result = await executeMcp({ server: "demo" });
 
     expect(result.content[0]).toMatchObject({
       type: "text",
@@ -260,16 +225,10 @@ describe("mcpTool.execute", () => {
         isError: true,
       },
     });
-
-    mocks.getMcpRuntime.mockReturnValue({
-      getStatus: vi.fn(),
+    useRuntime({
       refreshFooter,
-      registry: () => ({
-        callTool,
-      }),
-      config: () => ({
-        configPath: "C:/Users/Admin/.pi/agent/just-enough-mcp.json",
-        overviewDir: "C:/Users/Admin/.pi/agent/mcp-overviews",
+      registry: { callTool },
+      config: () => makePluginConfig({
         servers: [],
         materialization: {
           artifactRoot: ".pi/mcp",
@@ -279,44 +238,60 @@ describe("mcpTool.execute", () => {
           hardMaxChars: 40000,
           prettyPrintJson: true,
         },
-        tui: {
-          renderMode: "minimal",
-          expandedModeCollapsedLines: 4,
-        },
       }),
-      sync: vi.fn(),
-      closeAll: vi.fn(),
     });
 
-    mocks.materializeToolCallResult.mockReturnValue({
-      callDir: "D:/projects/ts/just-enough-mcp/.pi/mcp/20260622-1",
-      manifestPath: "D:/projects/ts/just-enough-mcp/.pi/mcp/20260622-1/manifest.json",
-      payloadItems: [],
-      manifestPayloadItems: [],
-      mainFiles: ["D:/projects/ts/just-enough-mcp/.pi/mcp/20260622-1/01-text.txt"],
-      metaFiles: ["D:/projects/ts/just-enough-mcp/.pi/mcp/20260622-1/manifest.json"],
-      summaryText: "remote tool failed\nFull output: D:/projects/ts/just-enough-mcp/.pi/mcp/20260622-1/01-text.txt",
-    });
+    const callDir = "D:/projects/ts/just-enough-mcp/.pi/mcp/20260622-1";
+    const payloadPath = `${callDir}/01-text.txt`;
+    const manifestPath = `${callDir}/manifest.json`;
+    const materialized = {
+      callDir,
+      manifestPath,
+      payloadItems: [{
+        index: 1,
+        source: "content[0]",
+        contentType: "text",
+        mimeType: "text/plain",
+        path: payloadPath,
+        fileName: "01-text.txt",
+        text: "remote tool failed",
+      }],
+      manifestPayloadItems: [{
+        index: 1,
+        source: "content[0]",
+        contentType: "text",
+        mimeType: "text/plain",
+        path: payloadPath,
+        fileName: "01-text.txt",
+      }],
+      mainFiles: [payloadPath],
+      metaFiles: [manifestPath],
+      summaryText: `remote tool failed\nFull output: ${payloadPath}`,
+      budget: {
+        summaryItemCount: 3,
+        previewFullCharsPerItem: 400,
+        previewTruncateToCharsPerItem: 200,
+        hardMaxChars: 40000,
+      },
+    } satisfies MaterializedToolCallResult;
+    mocks.materializeToolCallResult.mockReturnValue(materialized);
 
-    const ctx = makeContext();
-    const result = await mcpTool.execute(
-      "tool-call-3",
-      { server: "demo", tool: "search", args: JSON.stringify({ query: "pi" }) },
-      undefined,
-      vi.fn(),
-      ctx as never,
-    );
+    const result = await executeMcp({
+      server: "demo",
+      tool: "search",
+      args: JSON.stringify({ query: "pi" }),
+    });
 
     expect(callTool).toHaveBeenCalledWith("demo", "search", { query: "pi" });
     expect(refreshFooter).toHaveBeenCalledWith();
     expect((result as { isError?: boolean }).isError).toBe(true);
     expect(result.content[0]).toEqual({
       type: "text",
-      text: "remote tool failed\nFull output: D:/projects/ts/just-enough-mcp/.pi/mcp/20260622-1/01-text.txt",
+      text: `remote tool failed\nFull output: ${payloadPath}`,
     });
     expect(result.details).toEqual({
       kind: "call",
-      payloadItemCount: 0,
+      payloadItemCount: 1,
     });
   });
 });

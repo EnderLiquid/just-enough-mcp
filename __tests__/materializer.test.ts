@@ -1,25 +1,22 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
-import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { materializeToolCallResult } from "../extensions/artifacts/materializer.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { materializeToolCallResult } from "../extensions/artifacts/materializer.js";
+import { createTempDirFixture } from "./support/temp-dir.js";
 
-function makeTempDir(): string {
-  return join(tmpdir(), `jem-materializer-${randomUUID()}`);
-}
+const tempDirs = createTempDirFixture("jem-materializer");
 
 describe("materializeToolCallResult", () => {
   afterEach(() => {
     vi.useRealTimers();
+    tempDirs.cleanup();
   });
 
   it("uses a shorter call directory name based on server and compact UTC timestamp", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-23T04:18:22Z"));
 
-    const cwd = makeTempDir();
+    const cwd = tempDirs.create();
     const result: CallToolResult = {
       content: [{ type: "text", text: "hello world" }],
       isError: false,
@@ -38,7 +35,7 @@ describe("materializeToolCallResult", () => {
   });
 
   it("returns a single text preview without manifest hint while still writing manifest", () => {
-    const cwd = makeTempDir();
+    const cwd = tempDirs.create();
     const result: CallToolResult = {
       content: [{ type: "text", text: "hello world" }],
       isError: false,
@@ -63,7 +60,7 @@ describe("materializeToolCallResult", () => {
   });
 
   it("detects JSON text, assigns application/json, and writes a .json file", () => {
-    const cwd = makeTempDir();
+    const cwd = tempDirs.create();
     const result: CallToolResult = {
       content: [{ type: "text", text: '{"ok":true,"count":2}' }],
       isError: false,
@@ -84,7 +81,7 @@ describe("materializeToolCallResult", () => {
   });
 
   it("marks in-line truncation and reports remaining chars and lines", () => {
-    const cwd = makeTempDir();
+    const cwd = tempDirs.create();
     const result: CallToolResult = {
       content: [{ type: "text", text: "abcdefghijklmnopqrstuvwxyz" }],
       isError: false,
@@ -107,7 +104,7 @@ describe("materializeToolCallResult", () => {
   });
 
   it("uses singular nouns in truncation summaries", () => {
-    const cwd = makeTempDir();
+    const cwd = tempDirs.create();
     const result: CallToolResult = {
       content: [{ type: "text", text: "abcde" }],
       isError: false,
@@ -128,7 +125,7 @@ describe("materializeToolCallResult", () => {
   });
 
   it("shows truncation summary on a new line when truncation happens at a line boundary", () => {
-    const cwd = makeTempDir();
+    const cwd = tempDirs.create();
     const result: CallToolResult = {
       content: [{ type: "text", text: "abc\ndef\nghi" }],
       isError: false,
@@ -151,7 +148,7 @@ describe("materializeToolCallResult", () => {
   });
 
   it("builds lightweight multi-item summary with file and manifest paths", () => {
-    const cwd = makeTempDir();
+    const cwd = tempDirs.create();
     const result: CallToolResult = {
       content: [
         { type: "text", text: "hello world" },
@@ -193,7 +190,7 @@ describe("materializeToolCallResult", () => {
   });
 
   it("shortens long resource basenames with a 4-character hash suffix", () => {
-    const cwd = makeTempDir();
+    const cwd = tempDirs.create();
     const result: CallToolResult = {
       content: [{
         type: "resource",
@@ -219,7 +216,7 @@ describe("materializeToolCallResult", () => {
   });
 
   it("materializes resource_link as text while preserving target mime type in rawMimeType", () => {
-    const cwd = makeTempDir();
+    const cwd = tempDirs.create();
     const result: CallToolResult = {
       content: [{
         type: "resource_link",
@@ -249,7 +246,7 @@ describe("materializeToolCallResult", () => {
   });
 
   it("suppresses duplicate structuredContent when it is semantically equal to a text payload", () => {
-    const cwd = makeTempDir();
+    const cwd = tempDirs.create();
     const result: CallToolResult = {
       content: [{
         type: "text",

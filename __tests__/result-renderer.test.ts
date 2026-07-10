@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { McpTuiRenderMode } from "../extensions/artifacts/types.js";
 import {
-  formatMcpToolCallLines,
   formatMcpToolResultLines,
   renderMcpToolCall,
   renderMcpToolResult,
@@ -36,28 +35,11 @@ function renderFirstLine(component: { render(width: number): string[] }): string
   return component.render(200)[0]?.trimEnd();
 }
 
-describe("formatMcpToolCallLines", () => {
-  beforeEach(() => {
-    mocks.runtimeConfig.mockReset();
-  });
-
-  it("formats call input with server and args", () => {
-    const lines = formatMcpToolCallLines({
-      server: "tavily",
-      tool: "search",
-      args: JSON.stringify({ query: "pi mcp" }),
-    });
-
-    expect(lines[0]).toBe("mcp call search @ tavily");
-    expect(lines[1]).toContain("query");
-  });
+beforeEach(() => {
+  mocks.runtimeConfig.mockReset();
 });
 
 describe("formatMcpToolResultLines", () => {
-  beforeEach(() => {
-    mocks.runtimeConfig.mockReset();
-  });
-
   it("collapses long results uniformly with ellipsis", () => {
     const display = formatMcpToolResultLines({
       content: [{ type: "text", text: "line 1\nline 2\nline 3\nline 4\nline 5" }],
@@ -69,10 +51,6 @@ describe("formatMcpToolResultLines", () => {
 });
 
 describe("renderMcpToolCall", () => {
-  beforeEach(() => {
-    mocks.runtimeConfig.mockReset();
-  });
-
   it("styles the call title by mcp action and target", () => {
     setRenderMode("minimal");
 
@@ -106,10 +84,6 @@ describe("renderMcpToolCall", () => {
 });
 
 describe("renderMcpToolResult", () => {
-  beforeEach(() => {
-    mocks.runtimeConfig.mockReset();
-  });
-
   it("renders nothing in hidden mode", () => {
     setRenderMode("hidden");
 

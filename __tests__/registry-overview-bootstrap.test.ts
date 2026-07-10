@@ -1,5 +1,6 @@
-import { describe, expect, it, beforeEach, vi } from "vitest";
-import type { PluginConfigLoadResult, ResolvedServerConfig } from "../extensions/modeling/types.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ResolvedServerConfig } from "../extensions/modeling/types.js";
+import { makePluginConfig, makeResolvedServerConfig } from "./support/model-fixtures.js";
 
 const mocks = vi.hoisted(() => ({
   listTools: vi.fn(),
@@ -34,42 +35,16 @@ vi.mock("@modelcontextprotocol/sdk/client/streamableHttp.js", () => ({
 
 import { createServerRegistry } from "../extensions/servers/registry.js";
 
-function makeServer(overrides: Partial<ResolvedServerConfig> = {}): ResolvedServerConfig {
-  return {
-    name: "demo",
-    connectionMode: "lazy",
-    hasExplicitOverviewConfig: false,
-    overview: {
-      name: "demo",
-      content: "No overview configured yet.",
-      source: "none",
-    },
-    definition: {
-      transport: "stdio",
-      command: "npx",
-    },
-    ...overrides,
-  };
-}
-
-function makeConfig(serverOverrides: Partial<ResolvedServerConfig> = {}): PluginConfigLoadResult {
-  return {
-    configPath: "C:/Users/Admin/.pi/agent/just-enough-mcp.json",
-    overviewDir: "C:/Users/Admin/.pi/agent/mcp-overviews",
-    materialization: {
-      artifactRoot: ".pi/mcp",
-      summaryItemCount: 3,
-      previewFullCharsPerItem: 1600,
-      previewTruncateToCharsPerItem: 800,
-      hardMaxChars: 40000,
-      prettyPrintJson: true,
-    },
-    tui: {
-      renderMode: "minimal",
-      expandedModeCollapsedLines: 4,
-    },
-    servers: [makeServer(serverOverrides)],
-  };
+function makeConfig(serverOverrides: Partial<ResolvedServerConfig> = {}) {
+  return makePluginConfig({
+    servers: [makeResolvedServerConfig({
+      definition: {
+        transport: "stdio",
+        command: "npx",
+      },
+      ...serverOverrides,
+    })],
+  });
 }
 
 describe("createServerRegistry onServerReady", () => {

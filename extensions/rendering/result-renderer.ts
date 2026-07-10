@@ -140,30 +140,6 @@ function formatMinimalResultLine(details: McpToolResultDetails | undefined): str
   }
 }
 
-export function formatMcpToolCallLines(
-  args: McpToolInput,
-  maxInputChars = DEFAULT_MAX_CALL_INPUT_CHARS,
-): string[] {
-  if (args.tool) {
-    const target = args.server ? `${args.tool} @ ${args.server}` : args.tool;
-    const lines = [`mcp call ${target}`];
-    if (args.args) {
-      lines.push(formatJsonish(args.args, maxInputChars));
-    }
-    return lines;
-  }
-
-  if (args.connect) {
-    return [`mcp connect ${args.connect}`];
-  }
-
-  if (args.server) {
-    return [`mcp list ${args.server}`];
-  }
-
-  return ["mcp status"];
-}
-
 export function formatMcpToolResultLines(
   result: Pick<AgentToolResult<McpToolResultDetails>, "content">,
   expanded: boolean,
