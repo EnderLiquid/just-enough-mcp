@@ -2,7 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getMcpRuntime } from "./servers/runtime.js";
 import { createServerOverviewPrompt } from "./prompting/system-prompt.js";
 import { registerMcpTool } from "./tools/mcp-tool.js";
-import { clearNotifier, notifyError, setNotifier } from "./ui/notifier.js";
+import { clearNotifier, notifyError, setNotifier } from "./rendering/notifier.js";
 
 const STATUS_KEY = "just-enough-mcp";
 

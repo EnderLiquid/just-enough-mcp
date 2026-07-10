@@ -4,7 +4,7 @@ import { tryBootstrapOverviewFromDescription } from "../config/overview-bootstra
 import type { PluginConfigLoadResult } from "../modeling/types.js";
 import { buildFooterStatus } from "../rendering/footer-status.js";
 import { createServerRegistry, type ServerReadyEvent, type ServerRegistry, type ServerRegistryStatus } from "./registry.js";
-import { notifyInfo } from "../ui/notifier.js";
+import { notifyInfo } from "../rendering/notifier.js";
 
 const STATUS_KEY = "just-enough-mcp";
 
