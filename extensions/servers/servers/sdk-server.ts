@@ -1,12 +1,17 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
+import { ErrorCode, McpError, type CallToolResult, type Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { CompatibilityProfile, ResolvedServerConfig, ServerCatalogResult, ServerSnapshot, ToolCallExecutionResult } from "../../modeling/types.js";
 import { applyToolNameFilter, createToolNameFilter, isToolNameFilteredByConfig, type ToolNameFilter } from "./tool-filter.js";
 import type { McpServer } from "./types.js";
 
 function createBaseClient(serverName: string): Client {
   return new Client({ name: `just-enough-mcp-${serverName}`, version: "0.1.0" });
+}
+
+function isConnectionFailure(error: unknown, client: Client): boolean {
+  return (error instanceof McpError && error.code === ErrorCode.ConnectionClosed)
+    || client.transport === undefined;
 }
 
 export abstract class SdkBackedServer implements McpServer {
@@ -44,14 +49,22 @@ export abstract class SdkBackedServer implements McpServer {
     await this.connect(signal);
     this.requireAvailableTool(name);
     const client = this.requireClient();
-    const result = await client.callTool(
-      {
-        name,
-        arguments: args,
-      },
-      undefined,
-      signal ? { signal } : undefined,
-    ) as CallToolResult;
+    let result: CallToolResult;
+    try {
+      result = await client.callTool(
+        {
+          name,
+          arguments: args,
+        },
+        undefined,
+        signal ? { signal } : undefined,
+      ) as CallToolResult;
+    } catch (error) {
+      if (isConnectionFailure(error, client) && this.client === client) {
+        await this.close();
+      }
+      throw error;
+    }
 
     return {
       server: this.snapshot(),

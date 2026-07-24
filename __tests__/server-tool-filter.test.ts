@@ -1,3 +1,4 @@
+import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ResolvedServerConfig } from "../extensions/modeling/types.js";
 import { makePluginConfig, makeResolvedServerConfig } from "./support/model-fixtures.js";
@@ -13,11 +14,29 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@modelcontextprotocol/sdk/client/index.js", () => ({
   Client: class MockClient {
-    connect = mocks.connect;
-    listTools = mocks.listTools;
-    callTool = mocks.callTool;
-    getServerVersion = mocks.getServerVersion;
-    close = mocks.close;
+    transport: unknown = undefined;
+
+    async connect(transport: unknown, options?: unknown) {
+      await mocks.connect.call(this, transport, options);
+      this.transport = transport;
+    }
+
+    listTools(params?: unknown, options?: unknown) {
+      return mocks.listTools.call(this, params, options);
+    }
+
+    callTool(params: unknown, resultSchema?: unknown, options?: unknown) {
+      return mocks.callTool.call(this, params, resultSchema, options);
+    }
+
+    getServerVersion() {
+      return mocks.getServerVersion.call(this);
+    }
+
+    async close() {
+      this.transport = undefined;
+      await mocks.close.call(this);
+    }
   },
 }));
 
@@ -166,6 +185,78 @@ describe("SDK-backed server tools", () => {
       undefined,
       { signal: controller.signal },
     );
+    expect(registry.getServerState("demo")?.connectState).toBe("connected");
+  });
+
+  it("invalidates a closed connection and reconnects on the next call", async () => {
+    const registry = createServerRegistry();
+    await registry.syncConfig(makeConfig({}));
+    const connectionError = new McpError(ErrorCode.ConnectionClosed, "Connection closed");
+    mocks.callTool.mockRejectedValueOnce(connectionError);
+
+    await expect(registry.callTool("demo", "search", {})).rejects.toBe(connectionError);
+
+    expect(mocks.callTool).toHaveBeenCalledTimes(1);
+    expect(registry.getServerState("demo")).toMatchObject({
+      connectState: "disconnected",
+      tools: undefined,
+    });
+
+    await expect(registry.callTool("demo", "search", {})).resolves.toMatchObject({
+      toolName: "search",
+    });
+    expect(mocks.connect).toHaveBeenCalledTimes(2);
+    expect(mocks.listTools).toHaveBeenCalledTimes(2);
+    expect(mocks.callTool).toHaveBeenCalledTimes(2);
+    expect(registry.getServerState("demo")?.connectState).toBe("connected");
+  });
+
+  it("invalidates the connection when the client transport is already absent", async () => {
+    const registry = createServerRegistry();
+    await registry.syncConfig(makeConfig({}));
+    const notConnectedError = new Error("Not connected");
+    mocks.callTool.mockImplementationOnce(function (this: { transport: unknown }) {
+      this.transport = undefined;
+      throw notConnectedError;
+    });
+
+    await expect(registry.callTool("demo", "search", {})).rejects.toBe(notConnectedError);
+
+    expect(mocks.callTool).toHaveBeenCalledTimes(1);
+    expect(registry.getServerState("demo")).toMatchObject({
+      connectState: "disconnected",
+      tools: undefined,
+    });
+  });
+
+  it.each([
+    ["request timeout", new McpError(ErrorCode.RequestTimeout, "Request timed out")],
+    ["invalid params", new McpError(ErrorCode.InvalidParams, "Invalid params")],
+  ])("keeps the connection after a %s error", async (_label, requestError) => {
+    const registry = createServerRegistry();
+    await registry.syncConfig(makeConfig({}));
+    mocks.callTool.mockRejectedValueOnce(requestError);
+
+    await expect(registry.callTool("demo", "search", {})).rejects.toBe(requestError);
+
+    expect(registry.getServerState("demo")?.connectState).toBe("connected");
+    expect(registry.getServerState("demo")?.tools).toHaveLength(remoteTools.length);
+    expect(mocks.close).not.toHaveBeenCalled();
+  });
+
+  it("keeps the connection for a remote business failure", async () => {
+    const registry = createServerRegistry();
+    await registry.syncConfig(makeConfig({}));
+    mocks.callTool.mockResolvedValueOnce({
+      content: [{ type: "text", text: "remote failure" }],
+      isError: true,
+    });
+
+    const execution = await registry.callTool("demo", "search", {});
+
+    expect(execution.result.isError).toBe(true);
+    expect(registry.getServerState("demo")?.connectState).toBe("connected");
+    expect(mocks.close).not.toHaveBeenCalled();
   });
 
   it("rejects direct calls to tools hidden by filters", async () => {

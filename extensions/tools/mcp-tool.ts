@@ -107,42 +107,48 @@ export const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>
     }
 
     if (params.server && !params.tool) {
-      const catalog = await runtime.registry().getServerCatalog(params.server, signal);
-      runtime.refreshFooter();
-      return {
-        content: [{
-          type: "text",
-          text: formatCatalogResult(catalog),
-        }],
-        details: {
-          kind: "catalog",
-          toolCount: catalog.tools.length,
-        },
-      };
+      try {
+        const catalog = await runtime.registry().getServerCatalog(params.server, signal);
+        return {
+          content: [{
+            type: "text",
+            text: formatCatalogResult(catalog),
+          }],
+          details: {
+            kind: "catalog",
+            toolCount: catalog.tools.length,
+          },
+        };
+      } finally {
+        runtime.refreshFooter();
+      }
     }
 
     if (params.server && params.tool) {
-      const parsedArgs = parseArgs(params.args);
-      const execution = await runtime.registry().callTool(params.server, params.tool, parsedArgs, signal);
-      const materialized = materializeToolCallResult({
-        cwd: ctx.cwd,
-        server: execution.server.name,
-        tool: execution.toolName,
-        result: execution.result,
-        settings: runtime.config()?.materialization,
-      });
-      runtime.refreshFooter();
-      return {
-        content: [{
-          type: "text",
-          text: materialized.summaryText,
-        }],
-        details: {
-          kind: "call",
-          payloadItemCount: materialized.payloadItems.length,
-          outcome: execution.result.isError === true ? "error" : "success",
-        },
-      };
+      try {
+        const parsedArgs = parseArgs(params.args);
+        const execution = await runtime.registry().callTool(params.server, params.tool, parsedArgs, signal);
+        const materialized = materializeToolCallResult({
+          cwd: ctx.cwd,
+          server: execution.server.name,
+          tool: execution.toolName,
+          result: execution.result,
+          settings: runtime.config()?.materialization,
+        });
+        return {
+          content: [{
+            type: "text",
+            text: materialized.summaryText,
+          }],
+          details: {
+            kind: "call",
+            payloadItemCount: materialized.payloadItems.length,
+            outcome: execution.result.isError === true ? "error" : "success",
+          },
+        };
+      } finally {
+        runtime.refreshFooter();
+      }
     }
 
     throw new Error("Invalid mcp invocation. Use status, connect, server, or server+tool.");

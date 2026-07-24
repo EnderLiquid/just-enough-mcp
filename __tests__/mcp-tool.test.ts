@@ -100,7 +100,8 @@ describe("mcpTool.execute", () => {
     const controller = new AbortController();
     const abortReason = new Error("cancelled by user");
     const callTool = vi.fn().mockRejectedValue(abortReason);
-    useRuntime({ registry: { callTool } });
+    const refreshFooter = vi.fn();
+    useRuntime({ refreshFooter, registry: { callTool } });
 
     controller.abort(abortReason);
     await expect(executeMcp({
@@ -116,6 +117,7 @@ describe("mcpTool.execute", () => {
       controller.signal,
     );
     expect(mocks.materializeToolCallResult).not.toHaveBeenCalled();
+    expect(refreshFooter).toHaveBeenCalledTimes(1);
   });
 
   it("formats status with a compact summary and numbered server states", async () => {
@@ -209,7 +211,7 @@ describe("mcpTool.execute", () => {
     const result = await executeMcp({ server: "codegraph" }, signal);
 
     expect(getServerCatalog).toHaveBeenCalledWith("codegraph", signal);
-    expect(refreshFooter).toHaveBeenCalledWith();
+    expect(refreshFooter).toHaveBeenCalledTimes(1);
     expect(result.content[0]).toEqual({
       type: "text",
       text: [
@@ -222,6 +224,17 @@ describe("mcpTool.execute", () => {
       kind: "catalog",
       toolCount: 2,
     });
+  });
+
+  it("refreshes the footer when catalog retrieval fails", async () => {
+    const catalogError = new Error("catalog unavailable");
+    const getServerCatalog = vi.fn().mockRejectedValue(catalogError);
+    const refreshFooter = vi.fn();
+    useRuntime({ refreshFooter, registry: { getServerCatalog } });
+
+    await expect(executeMcp({ server: "demo" })).rejects.toBe(catalogError);
+
+    expect(refreshFooter).toHaveBeenCalledTimes(1);
   });
 
   it("uses singular tool in a one-entry catalog summary", async () => {
@@ -241,6 +254,30 @@ describe("mcpTool.execute", () => {
       type: "text",
       text: expect.stringContaining("1 tool available:\n\n[1] only_tool"),
     });
+  });
+
+  it("refreshes the footer when result materialization fails", async () => {
+    const materializationError = new Error("artifact write failed");
+    const refreshFooter = vi.fn();
+    const callTool = vi.fn().mockResolvedValue({
+      server: makeServerSnapshot(),
+      toolName: "search",
+      args: { query: "pi" },
+      result: { content: [{ type: "text", text: "ok" }] },
+    });
+    mocks.materializeToolCallResult.mockImplementationOnce(() => {
+      throw materializationError;
+    });
+    useRuntime({ refreshFooter, registry: { callTool } });
+
+    await expect(executeMcp({
+      server: "demo",
+      tool: "search",
+      args: JSON.stringify({ query: "pi" }),
+    })).rejects.toBe(materializationError);
+
+    expect(callTool).toHaveBeenCalledTimes(1);
+    expect(refreshFooter).toHaveBeenCalledTimes(1);
   });
 
   it("preserves downstream MCP business failures for the tool_result hook", async () => {
@@ -313,7 +350,7 @@ describe("mcpTool.execute", () => {
     }, signal);
 
     expect(callTool).toHaveBeenCalledWith("demo", "search", { query: "pi" }, signal);
-    expect(refreshFooter).toHaveBeenCalledWith();
+    expect(refreshFooter).toHaveBeenCalledTimes(1);
     expect(result).not.toHaveProperty("isError");
     expect(result.content[0]).toEqual({
       type: "text",
