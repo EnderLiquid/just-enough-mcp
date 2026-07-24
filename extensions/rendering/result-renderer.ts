@@ -119,9 +119,14 @@ function shouldRenderExpandedResult(mode: McpTuiRenderMode, expanded: boolean): 
   return mode === "expanded" || (mode === "minimal" && expanded);
 }
 
-function formatMinimalResultLine(details: McpToolResultDetails | undefined): string | undefined {
+function formatMinimalResultLine(
+  details: McpToolResultDetails | undefined,
+  isError: boolean,
+): string | undefined {
   if (!details) {
-    return "↳ result available • Ctrl+O to expand";
+    return isError
+      ? "↳ tool failed • Ctrl+O to expand"
+      : "↳ result available • Ctrl+O to expand";
   }
 
   switch (details.kind) {
@@ -131,8 +136,12 @@ function formatMinimalResultLine(details: McpToolResultDetails | undefined): str
       return undefined;
     case "catalog":
       return `↳ ${details.toolCount} ${pluralize(details.toolCount, "tool")} available • Ctrl+O to expand`;
-    case "call":
-      return `↳ ${details.payloadItemCount} ${pluralize(details.payloadItemCount, "payload item")} returned • Ctrl+O to expand`;
+    case "call": {
+      const payloadSummary = `${details.payloadItemCount} ${pluralize(details.payloadItemCount, "payload item")} returned`;
+      return isError
+        ? `↳ remote tool failed • ${payloadSummary} • Ctrl+O to expand`
+        : `↳ ${payloadSummary} • Ctrl+O to expand`;
+    }
     default: {
       const unreachable: never = details;
       return unreachable;
@@ -174,8 +183,10 @@ export function renderMcpToolResult(
   result: AgentToolResult<McpToolResultDetails>,
   options: ToolRenderResultOptions,
   theme: RenderTheme,
+  context?: { isError?: boolean },
 ) {
   const mode = getTuiRenderMode();
+  const isError = context?.isError === true;
 
   if (mode === "hidden") {
     return emptyText();
@@ -188,8 +199,10 @@ export function renderMcpToolResult(
   }
 
   if (!shouldRenderExpandedResult(mode, options.expanded)) {
-    const line = formatMinimalResultLine(result.details);
-    return line ? new Text(theme.fg("muted", line), 0, 0) : emptyText();
+    const line = formatMinimalResultLine(result.details, isError);
+    return line
+      ? new Text(theme.fg(isError ? "error" : "muted", line), 0, 0)
+      : emptyText();
   }
 
   const display = formatMcpToolResultLines(result, options.expanded);

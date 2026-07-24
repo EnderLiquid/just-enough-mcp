@@ -69,7 +69,7 @@ export const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>
   description: "Minimal MCP runtime entry point for server-level progressive disclosure.",
   promptSnippet: "Inspect MCP servers, connect to one server, read that server's full tool catalog, then call tools.",
   renderCall: (args, theme, context) => renderMcpToolCall(args, theme, context),
-  renderResult: (result, options, theme) => renderMcpToolResult(result, options, theme),
+  renderResult: (result, options, theme, context) => renderMcpToolResult(result, options, theme, context),
   parameters: parametersSchema,
   async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
     const runtime = getMcpRuntime();
@@ -140,8 +140,8 @@ export const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>
         details: {
           kind: "call",
           payloadItemCount: materialized.payloadItems.length,
+          outcome: execution.result.isError === true ? "error" : "success",
         },
-        isError: execution.result.isError === true,
       };
     }
 
@@ -151,4 +151,14 @@ export const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>
 
 export function registerMcpTool(pi: ExtensionAPI): void {
   pi.registerTool(mcpTool);
+  pi.on("tool_result", (event) => {
+    if (event.toolName !== mcpTool.name) {
+      return;
+    }
+
+    const details = event.details as McpToolResultDetails | undefined;
+    if (details?.kind === "call" && details.outcome === "error") {
+      return { isError: true };
+    }
+  });
 }

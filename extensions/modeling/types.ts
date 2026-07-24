@@ -90,7 +90,7 @@ export type McpToolResultDetails =
   | { kind: "status"; connectedCount: number; totalCount: number }
   | { kind: "connect" }
   | { kind: "catalog"; toolCount: number }
-  | { kind: "call"; payloadItemCount: number };
+  | { kind: "call"; payloadItemCount: number; outcome: "success" | "error" };
 
 export const DEFAULT_RUNTIME_CAPABILITIES: McpRuntimeCapabilities = {
   supportsTools: true,

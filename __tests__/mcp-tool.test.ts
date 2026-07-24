@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { MaterializedToolCallResult } from "../extensions/artifacts/types.js";
 import type { McpRuntime } from "../extensions/servers/runtime.js";
 import type { ServerRegistry } from "../extensions/servers/registry.js";
@@ -17,7 +18,7 @@ vi.mock("../extensions/artifacts/materializer.js", () => ({
   materializeToolCallResult: mocks.materializeToolCallResult,
 }));
 
-import { mcpTool } from "../extensions/tools/mcp-tool.js";
+import { mcpTool, registerMcpTool } from "../extensions/tools/mcp-tool.js";
 
 type RuntimeStubOverrides = Partial<Omit<McpRuntime, "registry">> & {
   registry?: Partial<ServerRegistry>;
@@ -214,7 +215,7 @@ describe("mcpTool.execute", () => {
     });
   });
 
-  it("preserves downstream MCP business failures as materialized error results", async () => {
+  it("preserves downstream MCP business failures for the tool_result hook", async () => {
     const refreshFooter = vi.fn();
     const callTool = vi.fn().mockResolvedValue({
       server: makeServerSnapshot(),
@@ -284,7 +285,7 @@ describe("mcpTool.execute", () => {
 
     expect(callTool).toHaveBeenCalledWith("demo", "search", { query: "pi" });
     expect(refreshFooter).toHaveBeenCalledWith();
-    expect((result as { isError?: boolean }).isError).toBe(true);
+    expect(result).not.toHaveProperty("isError");
     expect(result.content[0]).toEqual({
       type: "text",
       text: `remote tool failed\nFull output: ${payloadPath}`,
@@ -292,6 +293,33 @@ describe("mcpTool.execute", () => {
     expect(result.details).toEqual({
       kind: "call",
       payloadItemCount: 1,
+      outcome: "error",
     });
+  });
+});
+
+describe("registerMcpTool", () => {
+  it("promotes failed MCP call outcomes through the Pi tool_result hook", () => {
+    const registerTool = vi.fn();
+    const on = vi.fn();
+    registerMcpTool({ registerTool, on } as unknown as ExtensionAPI);
+
+    expect(registerTool).toHaveBeenCalledWith(mcpTool);
+    const registration = on.mock.calls.find(([eventName]) => eventName === "tool_result");
+    expect(registration).toBeDefined();
+    const handler = registration?.[1] as (event: { toolName: string; details?: unknown }) => unknown;
+
+    expect(handler({
+      toolName: "mcp",
+      details: { kind: "call", payloadItemCount: 1, outcome: "error" },
+    })).toEqual({ isError: true });
+    expect(handler({
+      toolName: "mcp",
+      details: { kind: "call", payloadItemCount: 1, outcome: "success" },
+    })).toBeUndefined();
+    expect(handler({
+      toolName: "other",
+      details: { kind: "call", payloadItemCount: 1, outcome: "error" },
+    })).toBeUndefined();
   });
 });

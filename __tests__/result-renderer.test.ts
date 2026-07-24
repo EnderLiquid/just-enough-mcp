@@ -104,7 +104,7 @@ describe("renderMcpToolResult", () => {
     }, { expanded: false, isPartial: false }, testTheme));
     const call = renderFirstLine(renderMcpToolResult({
       content: [{ type: "text", text: "payload summary" }],
-      details: { kind: "call", payloadItemCount: 2 },
+      details: { kind: "call", payloadItemCount: 2, outcome: "success" },
     }, { expanded: false, isPartial: false }, testTheme));
     const status = renderFirstLine(renderMcpToolResult({
       content: [{ type: "text", text: "2/5 servers connected:" }],
@@ -116,6 +116,17 @@ describe("renderMcpToolResult", () => {
     expect(status).toBe("<muted>↳ 2/5 servers connected • Ctrl+O to expand</muted>");
   });
 
+  it("renders failed MCP call summaries from the final tool context", () => {
+    setRenderMode("minimal");
+
+    const call = renderFirstLine(renderMcpToolResult({
+      content: [{ type: "text", text: "remote tool failed" }],
+      details: { kind: "call", payloadItemCount: 2, outcome: "error" },
+    }, { expanded: false, isPartial: false }, testTheme, { isError: true }));
+
+    expect(call).toBe("<error>↳ remote tool failed • 2 payload items returned • Ctrl+O to expand</error>");
+  });
+
   it("uses singular nouns in minimal summaries", () => {
     setRenderMode("minimal");
 
@@ -125,7 +136,7 @@ describe("renderMcpToolResult", () => {
     }, { expanded: false, isPartial: false }, testTheme));
     const call = renderFirstLine(renderMcpToolResult({
       content: [{ type: "text", text: "payload summary" }],
-      details: { kind: "call", payloadItemCount: 1 },
+      details: { kind: "call", payloadItemCount: 1, outcome: "success" },
     }, { expanded: false, isPartial: false }, testTheme));
     const status = renderFirstLine(renderMcpToolResult({
       content: [{ type: "text", text: "1/1 server connected:" }],
@@ -153,7 +164,7 @@ describe("renderMcpToolResult", () => {
 
     const line = renderFirstLine(renderMcpToolResult({
       content: [{ type: "text", text: "line 1\nline 2" }],
-      details: { kind: "call", payloadItemCount: 1 },
+      details: { kind: "call", payloadItemCount: 1, outcome: "success" },
     }, { expanded: true, isPartial: false }, testTheme));
 
     expect(line).toBe("<toolOutput>line 1</toolOutput>");
@@ -164,7 +175,7 @@ describe("renderMcpToolResult", () => {
 
     const lines = renderMcpToolResult({
       content: [{ type: "text", text: "line 1\nline 2\nline 3" }],
-      details: { kind: "call", payloadItemCount: 1 },
+      details: { kind: "call", payloadItemCount: 1, outcome: "success" },
     }, { expanded: false, isPartial: false }, testTheme).render(200).map(line => line.trimEnd());
 
     expect(lines).toEqual([
