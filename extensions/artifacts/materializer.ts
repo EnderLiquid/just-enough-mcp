@@ -1,5 +1,11 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { createArtifactContext, storePayloadItems } from "./artifact-store.js";
+import {
+  ArtifactTransactionCleanupError,
+  commitArtifactContext,
+  createArtifactContext,
+  rollbackArtifactContext,
+  storePayloadItems,
+} from "./artifact-store.js";
 import { writeToolCallManifest } from "./manifest.js";
 import { extractPayloadDrafts } from "./payload-extractor.js";
 import { normalizePayloadDrafts } from "./payload-normalizer.js";
@@ -34,34 +40,46 @@ export function materializeToolCallResult(input: MaterializeCallToolResultInput)
     ...(input.settings ?? {}),
   };
 
+  const extracted = extractPayloadDrafts(input.result);
+  const normalized = normalizePayloadDrafts(extracted, settings);
+  const budget = toSummaryBudget(settings);
+
   const context = createArtifactContext({
     cwd: input.cwd ?? process.cwd(),
     server: input.server,
     settings,
   });
 
-  const extracted = extractPayloadDrafts(input.result);
-  const normalized = normalizePayloadDrafts(extracted, settings);
-  const storedItems = storePayloadItems(normalized.items, context);
-  const manifest = writeToolCallManifest({
-    server: input.server,
-    tool: input.tool,
-    context,
-    payloadItems: storedItems,
-    suppressedStructuredContent: normalized.suppressedStructuredContent,
-  });
-  const payloadItems = attachPayloadPreviews(storedItems, settings);
-  const budget = toSummaryBudget(settings);
-  const summaryText = buildResultSummary(payloadItems, manifest.manifestPath, budget);
+  try {
+    const storedItems = storePayloadItems(normalized.items, context);
+    const manifest = writeToolCallManifest({
+      server: input.server,
+      tool: input.tool,
+      context,
+      payloadItems: storedItems,
+      suppressedStructuredContent: normalized.suppressedStructuredContent,
+    });
+    const payloadItems = attachPayloadPreviews(storedItems, settings);
+    const summaryText = buildResultSummary(payloadItems, manifest.manifestPath, budget);
+    const materialized = {
+      summaryText,
+      callDir: context.callDir,
+      manifestPath: manifest.manifestPath,
+      payloadItems,
+      manifestPayloadItems: manifest.payloadItems,
+      mainFiles: payloadItems.map((item) => item.path),
+      metaFiles: [manifest.manifestPath],
+      budget,
+    };
 
-  return {
-    summaryText,
-    callDir: context.callDir,
-    manifestPath: manifest.manifestPath,
-    payloadItems,
-    manifestPayloadItems: manifest.payloadItems,
-    mainFiles: payloadItems.map((item) => item.path),
-    metaFiles: [manifest.manifestPath],
-    budget,
-  };
+    commitArtifactContext(context);
+    return materialized;
+  } catch (error) {
+    try {
+      rollbackArtifactContext(context);
+    } catch (cleanupError) {
+      throw new ArtifactTransactionCleanupError(error, cleanupError, context.stagingDir);
+    }
+    throw error;
+  }
 }

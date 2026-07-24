@@ -256,7 +256,7 @@ describe("mcpTool.execute", () => {
     });
   });
 
-  it("refreshes the footer when result materialization fails", async () => {
+  it("reports that the server-side operation may have completed when materialization fails", async () => {
     const materializationError = new Error("artifact write failed");
     const refreshFooter = vi.fn();
     const callTool = vi.fn().mockResolvedValue({
@@ -274,7 +274,15 @@ describe("mcpTool.execute", () => {
       server: "demo",
       tool: "search",
       args: JSON.stringify({ query: "pi" }),
-    })).rejects.toBe(materializationError);
+    })).rejects.toMatchObject({
+      message: [
+        "MCP server \"demo\" returned a result for tool \"search\", but local result materialization failed.",
+        "The server-side operation may already have taken effect.",
+        "Do not retry this tool call automatically.",
+        "Cause: artifact write failed",
+      ].join(" "),
+      cause: materializationError,
+    });
 
     expect(callTool).toHaveBeenCalledTimes(1);
     expect(refreshFooter).toHaveBeenCalledTimes(1);

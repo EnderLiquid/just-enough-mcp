@@ -1,6 +1,11 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import {
+  ArtifactTransactionCleanupError,
+  createArtifactContext,
+  rollbackArtifactContext,
+} from "../extensions/artifacts/artifact-store.js";
 import { materializeToolCallResult } from "../extensions/artifacts/materializer.js";
 import { createTempDirFixture } from "./support/temp-dir.js";
 
@@ -30,8 +35,58 @@ describe("materializeToolCallResult", () => {
     });
 
     const callDirName = materialized.callDir.split("/").pop();
-    expect(callDirName).toMatch(/^codegraph-260623-041822-[0-9a-f]{4}$/);
+    expect(callDirName).toMatch(/^codegraph-260623-041822-[0-9a-f]{32}$/);
     expect(callDirName).not.toContain("codegraph_explore");
+    expect(readdirSync(`${cwd}/.pi/mcp`)).toEqual([callDirName]);
+  });
+
+  it("removes its staging directory without touching unrelated partial directories", () => {
+    const cwd = tempDirs.create();
+    const artifactRoot = `${cwd}/.pi/mcp`;
+    mkdirSync(`${artifactRoot}/.partial-existing`, { recursive: true });
+    const context = createArtifactContext({
+      cwd,
+      server: "demo",
+      settings: { artifactRoot: ".pi/mcp" },
+    });
+    writeFileSync(`${context.stagingDir}/01-text.txt`, "partial", "utf8");
+
+    rollbackArtifactContext(context);
+
+    expect(readdirSync(artifactRoot)).toEqual([".partial-existing"]);
+  });
+
+  it("preserves the materialization error when staging cleanup also fails", () => {
+    const cwd = tempDirs.create();
+    const materializationError = new Error("payload write failed");
+    const context = createArtifactContext({
+      cwd,
+      server: "demo",
+      settings: { artifactRoot: ".pi/mcp" },
+    });
+    rmSync(context.stagingDir, { recursive: true });
+    writeFileSync(context.stagingDir, "not a directory", "utf8");
+    let cleanupError: unknown;
+
+    try {
+      rollbackArtifactContext(context);
+    } catch (error) {
+      cleanupError = error;
+    }
+    const combinedError = new ArtifactTransactionCleanupError(
+      materializationError,
+      cleanupError,
+      context.stagingDir,
+    );
+
+    expect(combinedError).toMatchObject({
+      cause: materializationError,
+      materializationError,
+      cleanupError,
+      stagingDir: context.stagingDir,
+    });
+    expect(combinedError.message).toContain("payload write failed");
+    expect(combinedError.message).toContain("additionally failed to clean staging directory");
   });
 
   it("returns a single text preview without manifest hint while still writing manifest", () => {
@@ -57,6 +112,8 @@ describe("materializeToolCallResult", () => {
     const manifest = readFileSync(materialized.manifestPath, "utf8");
     expect(manifest).toContain('"tool": "search"');
     expect(manifest).toContain('"path":');
+    expect(manifest).not.toContain(".partial-");
+    expect(materialized.summaryText).not.toContain(".partial-");
   });
 
   it("detects JSON text, assigns application/json, and writes a .json file", () => {

@@ -33,7 +33,7 @@ export function writeToolCallManifest(input: WriteToolCallManifestInput): Writte
   const payloadItems = input.payloadItems.map(toManifestPayloadItem);
 
   writeFileSync(
-    input.context.manifestPath,
+    input.context.stagingManifestPath,
     `${JSON.stringify({
       server: input.server,
       tool: input.tool,

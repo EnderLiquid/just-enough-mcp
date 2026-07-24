@@ -1,6 +1,6 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { materializeToolCallResult } from "../artifacts/materializer.js";
+import { materializeToolCallResult, type MaterializeCallToolResultInput } from "../artifacts/materializer.js";
 import { getMcpRuntime } from "../servers/runtime.js";
 import type { McpToolResultDetails, ServerCatalogResult } from "../modeling/types.js";
 import type { ServerRegistryStatus } from "../servers/registry.js";
@@ -25,6 +25,24 @@ function parseArgs(input: string | undefined): Record<string, unknown> {
     throw new Error("mcp args must be a JSON object string.");
   }
   return parsed as Record<string, unknown>;
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function materializeMcpToolResult(input: MaterializeCallToolResultInput) {
+  try {
+    return materializeToolCallResult(input);
+  } catch (cause) {
+    throw new Error(
+      `MCP server "${input.server}" returned a result for tool "${input.tool}", but local result materialization failed. ` +
+      "The server-side operation may already have taken effect. " +
+      "Do not retry this tool call automatically. " +
+      `Cause: ${formatError(cause)}`,
+      { cause },
+    );
+  }
 }
 
 function formatStatusResult(status: ServerRegistryStatus): string {
@@ -128,7 +146,7 @@ export const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>
       try {
         const parsedArgs = parseArgs(params.args);
         const execution = await runtime.registry().callTool(params.server, params.tool, parsedArgs, signal);
-        const materialized = materializeToolCallResult({
+        const materialized = materializeMcpToolResult({
           cwd: ctx.cwd,
           server: execution.server.name,
           tool: execution.toolName,

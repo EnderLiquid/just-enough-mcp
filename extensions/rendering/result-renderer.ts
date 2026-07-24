@@ -139,7 +139,7 @@ function formatMinimalResultLine(
     case "call": {
       const payloadSummary = `${details.payloadItemCount} ${pluralize(details.payloadItemCount, "payload item")} returned`;
       return isError
-        ? `↳ remote tool failed • ${payloadSummary} • Ctrl+O to expand`
+        ? `↳ MCP server reported failure • ${payloadSummary} • Ctrl+O to expand`
         : `↳ ${payloadSummary} • Ctrl+O to expand`;
     }
     default: {

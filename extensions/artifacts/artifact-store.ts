@@ -1,13 +1,35 @@
 import { createHash, randomBytes } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { basename, extname, isAbsolute, join, resolve } from "node:path";
+import { existsSync, lstatSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path";
 import type { MaterializationSettings, PayloadDraft, StoredPayloadItem } from "./types.js";
 
 export interface ArtifactContext {
-  cwd: string;
-  artifactRoot: string;
-  callDir: string;
-  manifestPath: string;
+  readonly cwd: string;
+  readonly artifactRoot: string;
+  readonly callDir: string;
+  readonly manifestPath: string;
+  readonly stagingDir: string;
+  readonly stagingManifestPath: string;
+}
+
+export class ArtifactTransactionCleanupError extends Error {
+  constructor(
+    readonly materializationError: unknown,
+    readonly cleanupError: unknown,
+    readonly stagingDir: string,
+  ) {
+    super(
+      `${formatError(materializationError)}; additionally failed to clean staging directory "${stagingDir}": ${formatError(cleanupError)}`,
+      { cause: materializationError },
+    );
+    this.name = "ArtifactTransactionCleanupError";
+  }
+}
+
+const pendingArtifactContexts = new WeakSet<ArtifactContext>();
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function sanitizeSegment(value: string): string {
@@ -27,7 +49,7 @@ function toCompactUtcTimestamp(date = new Date()): string {
 
 function createCallDirectoryName(server: string): string {
   const target = sanitizeSegment(server).slice(0, 32);
-  const suffix = randomBytes(2).toString("hex");
+  const suffix = randomBytes(16).toString("hex");
   return `${target}-${toCompactUtcTimestamp()}-${suffix}`;
 }
 
@@ -174,22 +196,63 @@ export function createArtifactContext(input: {
 }): ArtifactContext {
   const cwd = resolve(input.cwd);
   const artifactRoot = resolveArtifactRoot(cwd, input.settings.artifactRoot);
-  const callDir = normalizePathSlashes(join(artifactRoot, createCallDirectoryName(input.server)));
-  mkdirSync(callDir, { recursive: true });
+  const callDirName = createCallDirectoryName(input.server);
+  const callDir = normalizePathSlashes(join(artifactRoot, callDirName));
+  const stagingDir = normalizePathSlashes(join(artifactRoot, `.partial-${callDirName}`));
+  mkdirSync(artifactRoot, { recursive: true });
+  mkdirSync(stagingDir);
 
-  return {
+  const context: ArtifactContext = {
     cwd: normalizePathSlashes(cwd),
     artifactRoot: normalizePathSlashes(artifactRoot),
     callDir,
     manifestPath: normalizePathSlashes(join(callDir, "manifest.json")),
+    stagingDir,
+    stagingManifestPath: normalizePathSlashes(join(stagingDir, "manifest.json")),
   };
+  pendingArtifactContexts.add(context);
+  return context;
 }
 
-export function storePayloadItems(items: PayloadDraft[], context: Pick<ArtifactContext, "callDir">): StoredPayloadItem[] {
+function assertOwnedStagingDirectory(context: ArtifactContext): void {
+  if (!pendingArtifactContexts.has(context)) {
+    throw new Error("Artifact staging directory is not owned by an active materialization transaction.");
+  }
+
+  const artifactRoot = resolve(context.artifactRoot);
+  const stagingDir = resolve(context.stagingDir);
+  if (dirname(stagingDir) !== artifactRoot || !basename(stagingDir).startsWith(".partial-")) {
+    throw new Error(`Refusing to operate on unsafe artifact staging directory: ${context.stagingDir}`);
+  }
+}
+
+export function commitArtifactContext(context: ArtifactContext): void {
+  assertOwnedStagingDirectory(context);
+  if (existsSync(context.callDir)) {
+    throw new Error(`Artifact call directory already exists: ${context.callDir}`);
+  }
+  renameSync(context.stagingDir, context.callDir);
+  pendingArtifactContexts.delete(context);
+}
+
+export function rollbackArtifactContext(context: ArtifactContext): void {
+  assertOwnedStagingDirectory(context);
+  const stats = lstatSync(context.stagingDir, { throwIfNoEntry: false });
+  if (stats) {
+    if (stats.isSymbolicLink() || !stats.isDirectory()) {
+      throw new Error(`Refusing to remove unsafe artifact staging path: ${context.stagingDir}`);
+    }
+    rmSync(context.stagingDir, { recursive: true });
+  }
+  pendingArtifactContexts.delete(context);
+}
+
+export function storePayloadItems(items: PayloadDraft[], context: Pick<ArtifactContext, "callDir" | "stagingDir">): StoredPayloadItem[] {
   return items.map((item, index) => {
     const fileName = buildMainFileName(index + 1, item);
     const filePath = normalizePathSlashes(join(context.callDir, fileName));
-    writePayloadMainFile(filePath, item);
+    const stagingFilePath = normalizePathSlashes(join(context.stagingDir, fileName));
+    writePayloadMainFile(stagingFilePath, item);
     return toStoredPayloadItem({
       ...item,
       index: index + 1,

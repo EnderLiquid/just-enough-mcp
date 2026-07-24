@@ -124,7 +124,7 @@ describe("renderMcpToolResult", () => {
       details: { kind: "call", payloadItemCount: 2, outcome: "error" },
     }, { expanded: false, isPartial: false }, testTheme, { isError: true }));
 
-    expect(call).toBe("<error>↳ remote tool failed • 2 payload items returned • Ctrl+O to expand</error>");
+    expect(call).toBe("<error>↳ MCP server reported failure • 2 payload items returned • Ctrl+O to expand</error>");
   });
 
   it("uses singular nouns in minimal summaries", () => {
