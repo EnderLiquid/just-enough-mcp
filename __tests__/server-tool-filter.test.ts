@@ -52,13 +52,28 @@ function makeConfig(definition: Record<string, unknown>) {
   });
 }
 
+function rejectWhenAborted(options: { signal?: AbortSignal } | undefined): Promise<never> {
+  return new Promise((_, reject) => {
+    const signal = options?.signal;
+    if (!signal) {
+      reject(new Error("AbortSignal was not forwarded."));
+      return;
+    }
+    if (signal.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+  });
+}
+
 const remoteTools = [
   { name: "search", description: "Search" },
   { name: "read", description: "Read" },
   { name: "write", description: "Write" },
 ];
 
-describe("server tool filters", () => {
+describe("SDK-backed server tools", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.connect.mockResolvedValue(undefined);
@@ -89,6 +104,68 @@ describe("server tool filters", () => {
     const catalog = await registry.getServerCatalog("demo");
 
     expect(catalog.tools.map(tool => tool.name)).toEqual(["search"]);
+  });
+
+  it("forwards AbortSignal while initializing the MCP client", async () => {
+    const registry = createServerRegistry();
+    await registry.syncConfig(makeConfig({}));
+    const controller = new AbortController();
+    const abortReason = new Error("cancelled during initialization");
+    mocks.connect.mockImplementationOnce((
+      _transport: unknown,
+      options: { signal?: AbortSignal } | undefined,
+    ) => rejectWhenAborted(options));
+
+    const pending = registry.getServerCatalog("demo", controller.signal);
+    controller.abort(abortReason);
+
+    await expect(pending).rejects.toBe(abortReason);
+    expect(mocks.connect).toHaveBeenCalledWith(expect.anything(), { signal: controller.signal });
+    expect(mocks.listTools).not.toHaveBeenCalled();
+    expect(registry.getServerState("demo")?.connectState).toBe("disconnected");
+  });
+
+  it("forwards AbortSignal while loading the tools catalog", async () => {
+    const registry = createServerRegistry();
+    await registry.syncConfig(makeConfig({}));
+    const controller = new AbortController();
+    const abortReason = new Error("cancelled while loading tools");
+    mocks.listTools.mockImplementationOnce((
+      _params: unknown,
+      options: { signal?: AbortSignal } | undefined,
+    ) => rejectWhenAborted(options));
+
+    const pending = registry.getServerCatalog("demo", controller.signal);
+    controller.abort(abortReason);
+
+    await expect(pending).rejects.toBe(abortReason);
+    expect(mocks.listTools).toHaveBeenCalledWith(undefined, { signal: controller.signal });
+    expect(registry.getServerState("demo")?.connectState).toBe("disconnected");
+  });
+
+  it("forwards AbortSignal to the SDK request and propagates cancellation", async () => {
+    const registry = createServerRegistry();
+    await registry.syncConfig(makeConfig({}));
+    const controller = new AbortController();
+    const abortReason = new Error("cancelled by user");
+    mocks.callTool.mockImplementationOnce((
+      _params: unknown,
+      _resultSchema: unknown,
+      options: { signal?: AbortSignal } | undefined,
+    ) => rejectWhenAborted(options));
+
+    const pending = registry.callTool("demo", "search", { query: "pi" }, controller.signal);
+    controller.abort(abortReason);
+
+    await expect(pending).rejects.toBe(abortReason);
+    expect(mocks.connect).toHaveBeenCalledWith(expect.anything(), { signal: controller.signal });
+    expect(mocks.listTools).toHaveBeenCalledWith(undefined, { signal: controller.signal });
+    expect(mocks.callTool).toHaveBeenCalledTimes(1);
+    expect(mocks.callTool).toHaveBeenCalledWith(
+      { name: "search", arguments: { query: "pi" } },
+      undefined,
+      { signal: controller.signal },
+    );
   });
 
   it("rejects direct calls to tools hidden by filters", async () => {

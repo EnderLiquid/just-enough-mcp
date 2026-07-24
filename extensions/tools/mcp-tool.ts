@@ -71,7 +71,7 @@ export const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>
   renderCall: (args, theme, context) => renderMcpToolCall(args, theme, context),
   renderResult: (result, options, theme, context) => renderMcpToolResult(result, options, theme, context),
   parameters: parametersSchema,
-  async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+  async execute(_toolCallId, params, signal, _onUpdate, ctx) {
     const runtime = getMcpRuntime();
 
     if (!params.connect && !params.server && !params.tool) {
@@ -92,7 +92,7 @@ export const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>
 
     if (params.connect) {
       try {
-        await runtime.registry().connectServer(params.connect);
+        await runtime.registry().connectServer(params.connect, signal);
       } finally {
         runtime.refreshFooter();
       }
@@ -107,7 +107,7 @@ export const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>
     }
 
     if (params.server && !params.tool) {
-      const catalog = await runtime.registry().getServerCatalog(params.server);
+      const catalog = await runtime.registry().getServerCatalog(params.server, signal);
       runtime.refreshFooter();
       return {
         content: [{
@@ -123,7 +123,7 @@ export const mcpTool = defineTool<typeof parametersSchema, McpToolResultDetails>
 
     if (params.server && params.tool) {
       const parsedArgs = parseArgs(params.args);
-      const execution = await runtime.registry().callTool(params.server, params.tool, parsedArgs);
+      const execution = await runtime.registry().callTool(params.server, params.tool, parsedArgs, signal);
       const materialized = materializeToolCallResult({
         cwd: ctx.cwd,
         server: execution.server.name,

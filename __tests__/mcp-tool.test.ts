@@ -57,12 +57,15 @@ function useRuntime(overrides: RuntimeStubOverrides = {}): McpRuntime {
   return runtime;
 }
 
-function executeMcp(params: Parameters<typeof mcpTool.execute>[1]) {
+function executeMcp(
+  params: Parameters<typeof mcpTool.execute>[1],
+  signal?: AbortSignal,
+) {
   const context = {
     cwd: "D:/projects/ts/just-enough-mcp",
   } as Parameters<typeof mcpTool.execute>[4];
 
-  return mcpTool.execute("tool-call", params, undefined, vi.fn(), context);
+  return mcpTool.execute("tool-call", params, signal, vi.fn(), context);
 }
 
 describe("mcpTool.execute", () => {
@@ -78,9 +81,10 @@ describe("mcpTool.execute", () => {
       registry: { connectServer },
     });
 
-    await expect(executeMcp({ connect: "demo" })).rejects.toThrow("dial tcp timeout");
+    const signal = new AbortController().signal;
+    await expect(executeMcp({ connect: "demo" }, signal)).rejects.toThrow("dial tcp timeout");
 
-    expect(connectServer).toHaveBeenCalledWith("demo");
+    expect(connectServer).toHaveBeenCalledWith("demo", signal);
     expect(refreshFooter).toHaveBeenCalledWith();
   });
 
@@ -90,6 +94,28 @@ describe("mcpTool.execute", () => {
     await expect(executeMcp({ tool: "search" })).rejects.toThrow(
       "Invalid mcp invocation. Use status, connect, server, or server+tool.",
     );
+  });
+
+  it("propagates cancellation without materializing a result", async () => {
+    const controller = new AbortController();
+    const abortReason = new Error("cancelled by user");
+    const callTool = vi.fn().mockRejectedValue(abortReason);
+    useRuntime({ registry: { callTool } });
+
+    controller.abort(abortReason);
+    await expect(executeMcp({
+      server: "demo",
+      tool: "search",
+      args: JSON.stringify({ query: "pi" }),
+    }, controller.signal)).rejects.toBe(abortReason);
+
+    expect(callTool).toHaveBeenCalledWith(
+      "demo",
+      "search",
+      { query: "pi" },
+      controller.signal,
+    );
+    expect(mocks.materializeToolCallResult).not.toHaveBeenCalled();
   });
 
   it("formats status with a compact summary and numbered server states", async () => {
@@ -145,9 +171,10 @@ describe("mcpTool.execute", () => {
       registry: { connectServer },
     });
 
-    const result = await executeMcp({ connect: "codegraph" });
+    const signal = new AbortController().signal;
+    const result = await executeMcp({ connect: "codegraph" }, signal);
 
-    expect(connectServer).toHaveBeenCalledWith("codegraph");
+    expect(connectServer).toHaveBeenCalledWith("codegraph", signal);
     expect(refreshFooter).toHaveBeenCalledWith();
     expect(result.content[0]).toEqual({
       type: "text",
@@ -178,9 +205,10 @@ describe("mcpTool.execute", () => {
       registry: { getServerCatalog },
     });
 
-    const result = await executeMcp({ server: "codegraph" });
+    const signal = new AbortController().signal;
+    const result = await executeMcp({ server: "codegraph" }, signal);
 
-    expect(getServerCatalog).toHaveBeenCalledWith("codegraph");
+    expect(getServerCatalog).toHaveBeenCalledWith("codegraph", signal);
     expect(refreshFooter).toHaveBeenCalledWith();
     expect(result.content[0]).toEqual({
       type: "text",
@@ -276,14 +304,15 @@ describe("mcpTool.execute", () => {
       },
     } satisfies MaterializedToolCallResult;
     mocks.materializeToolCallResult.mockReturnValue(materialized);
+    const signal = new AbortController().signal;
 
     const result = await executeMcp({
       server: "demo",
       tool: "search",
       args: JSON.stringify({ query: "pi" }),
-    });
+    }, signal);
 
-    expect(callTool).toHaveBeenCalledWith("demo", "search", { query: "pi" });
+    expect(callTool).toHaveBeenCalledWith("demo", "search", { query: "pi" }, signal);
     expect(refreshFooter).toHaveBeenCalledWith();
     expect(result).not.toHaveProperty("isError");
     expect(result.content[0]).toEqual({

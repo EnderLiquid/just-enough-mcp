@@ -27,9 +27,14 @@ export interface ServerRegistry {
   syncConfig(config: PluginConfigLoadResult): Promise<void>;
   getStatus(): ServerRegistryStatus;
   getServerState(name: string): ServerSnapshot | undefined;
-  connectServer(name: string): Promise<ServerSnapshot>;
-  getServerCatalog(name: string): Promise<ServerCatalogResult>;
-  callTool(name: string, toolName: string, args: Record<string, unknown>): Promise<ToolCallExecutionResult>;
+  connectServer(name: string, signal?: AbortSignal): Promise<ServerSnapshot>;
+  getServerCatalog(name: string, signal?: AbortSignal): Promise<ServerCatalogResult>;
+  callTool(
+    name: string,
+    toolName: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<ToolCallExecutionResult>;
   closeAll(): Promise<void>;
 }
 
@@ -134,19 +139,19 @@ export function createServerRegistry(options: ServerRegistryOptions = {}): Serve
       return servers.get(name)?.snapshot();
     },
 
-    async connectServer(name) {
+    async connectServer(name, signal) {
       const server = requireServer(name);
-      const snapshot = await server.connect();
+      const snapshot = await server.connect(signal);
       await emitServerReady(server);
       return snapshot;
     },
 
-    async getServerCatalog(name) {
-      return requireServer(name).getCatalog();
+    async getServerCatalog(name, signal) {
+      return requireServer(name).getCatalog(signal);
     },
 
-    async callTool(name, toolName, args) {
-      return requireServer(name).callTool(toolName, args);
+    async callTool(name, toolName, args, signal) {
+      return requireServer(name).callTool(toolName, args, signal);
     },
 
     async closeAll() {

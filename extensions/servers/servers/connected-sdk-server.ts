@@ -5,7 +5,7 @@ export abstract class ConnectedSdkServer extends SdkBackedServer {
   protected connectState: ServerConnectState = "disconnected";
   private connectPromise: Promise<ServerSnapshot> | undefined;
 
-  async connect(): Promise<ServerSnapshot> {
+  async connect(signal?: AbortSignal): Promise<ServerSnapshot> {
     if (this.client) {
       return this.snapshot();
     }
@@ -14,7 +14,7 @@ export abstract class ConnectedSdkServer extends SdkBackedServer {
       return this.connectPromise;
     }
 
-    this.connectPromise = this.connectFresh();
+    this.connectPromise = this.connectFresh(signal);
     try {
       return await this.connectPromise;
     } finally {
@@ -27,10 +27,10 @@ export abstract class ConnectedSdkServer extends SdkBackedServer {
     this.connectState = "disconnected";
   }
 
-  private async connectFresh(): Promise<ServerSnapshot> {
+  private async connectFresh(signal?: AbortSignal): Promise<ServerSnapshot> {
     this.connectState = "connecting";
     try {
-      await this.openClient();
+      await this.openClient(signal);
       this.connectState = "connected";
       return this.snapshot();
     } catch (error) {

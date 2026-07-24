@@ -6,9 +6,13 @@ export interface McpServer {
   readonly config: ResolvedServerConfig;
 
   snapshot(): ServerSnapshot;
-  connect(): Promise<ServerSnapshot>;
-  getCatalog(): Promise<ServerCatalogResult>;
-  callTool(name: string, args: Record<string, unknown>): Promise<ToolCallExecutionResult>;
+  connect(signal?: AbortSignal): Promise<ServerSnapshot>;
+  getCatalog(signal?: AbortSignal): Promise<ServerCatalogResult>;
+  callTool(
+    name: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<ToolCallExecutionResult>;
   close(): Promise<void>;
   getServerDescription(): string | undefined;
 }

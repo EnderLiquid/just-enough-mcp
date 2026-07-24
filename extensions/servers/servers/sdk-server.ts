@@ -26,24 +26,32 @@ export abstract class SdkBackedServer implements McpServer {
   }
 
   abstract snapshot(): ServerSnapshot;
-  abstract connect(): Promise<ServerSnapshot>;
+  abstract connect(signal?: AbortSignal): Promise<ServerSnapshot>;
 
-  async getCatalog(): Promise<ServerCatalogResult> {
-    await this.connect();
+  async getCatalog(signal?: AbortSignal): Promise<ServerCatalogResult> {
+    await this.connect(signal);
     return {
       server: this.snapshot(),
       tools: this.visibleTools() ?? [],
     };
   }
 
-  async callTool(name: string, args: Record<string, unknown>): Promise<ToolCallExecutionResult> {
-    await this.connect();
+  async callTool(
+    name: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<ToolCallExecutionResult> {
+    await this.connect(signal);
     this.requireAvailableTool(name);
     const client = this.requireClient();
-    const result = await client.callTool({
-      name,
-      arguments: args,
-    }) as CallToolResult;
+    const result = await client.callTool(
+      {
+        name,
+        arguments: args,
+      },
+      undefined,
+      signal ? { signal } : undefined,
+    ) as CallToolResult;
 
     return {
       server: this.snapshot(),
@@ -69,13 +77,14 @@ export abstract class SdkBackedServer implements McpServer {
     return this.client?.getServerVersion()?.description;
   }
 
-  protected async openClient(): Promise<void> {
+  protected async openClient(signal?: AbortSignal): Promise<void> {
     const client = createBaseClient(this.name);
     const transport = this.createTransport();
+    const requestOptions = signal ? { signal } : undefined;
 
     try {
-      await client.connect(transport);
-      const listed = await client.listTools();
+      await client.connect(transport, requestOptions);
+      const listed = await client.listTools(undefined, requestOptions);
       const remoteTools = listed.tools ?? [];
       const previousClient = this.client;
       const previousTransport = this.transport;
