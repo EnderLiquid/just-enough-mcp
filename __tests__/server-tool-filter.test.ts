@@ -276,6 +276,54 @@ describe("SDK-backed server tools", () => {
     expect(mocks.callTool).not.toHaveBeenCalled();
   });
 
+  it("disconnects idempotently and reconnects on the next catalog request", async () => {
+    const registry = createServerRegistry();
+    await registry.syncConfig(makeConfig({}));
+    await registry.getServerCatalog("demo");
+
+    const first = await registry.disconnectServer("demo");
+    const second = await registry.disconnectServer("demo");
+
+    expect(first).toMatchObject({ connectState: "disconnected", tools: undefined });
+    expect(second).toMatchObject({ connectState: "disconnected", tools: undefined });
+
+    await registry.getServerCatalog("demo");
+    expect(mocks.connect).toHaveBeenCalledTimes(2);
+    expect(mocks.listTools).toHaveBeenCalledTimes(2);
+    expect(registry.getServerState("demo")?.connectState).toBe("connected");
+  });
+
+  it("rejects disconnect while the server is connecting", async () => {
+    const registry = createServerRegistry();
+    await registry.syncConfig(makeConfig({}));
+    const controller = new AbortController();
+    const abortReason = new Error("cancelled by user");
+    mocks.connect.mockImplementationOnce((
+      _transport: unknown,
+      options: { signal?: AbortSignal } | undefined,
+    ) => rejectWhenAborted(options));
+
+    const connecting = registry.connectServer("demo", controller.signal);
+    await vi.waitFor(() => {
+      expect(registry.getServerState("demo")?.connectState).toBe("connecting");
+    });
+
+    await expect(registry.disconnectServer("demo")).rejects.toThrow(
+      'Cannot disconnect MCP server "demo" while it is connecting. Cancel the in-flight operation first.',
+    );
+
+    controller.abort(abortReason);
+    await expect(connecting).rejects.toBe(abortReason);
+    expect(registry.getServerState("demo")?.connectState).toBe("disconnected");
+  });
+
+  it("rejects disconnect for an unknown server", async () => {
+    const registry = createServerRegistry();
+    await registry.syncConfig(makeConfig({}));
+
+    await expect(registry.disconnectServer("missing")).rejects.toThrow("Unknown MCP server: missing");
+  });
+
   it("rejects invalid tool filter configuration", async () => {
     const registry = createServerRegistry();
 

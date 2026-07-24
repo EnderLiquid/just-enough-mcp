@@ -1,11 +1,13 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getMcpRuntime } from "./servers/runtime.js";
 import { createServerOverviewPrompt } from "./prompting/system-prompt.js";
+import { registerMcpServerTool } from "./tools/mcp-server-tool.js";
 import { registerMcpTool } from "./tools/mcp-tool.js";
 import { clearFooterStatus, setFooterStatusSink, updateFooterStatus } from "./rendering/footer-status.js";
 import { clearNotifier, notifyError, setNotifier } from "./rendering/notifier.js";
 
 export default function justEnoughMcp(pi: ExtensionAPI): void {
+  registerMcpServerTool(pi);
   registerMcpTool(pi);
 
   pi.on("session_start", async (_event, ctx) => {

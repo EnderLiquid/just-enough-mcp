@@ -8,11 +8,11 @@
 
 可以把它理解为：
 
-> **一个通过单一 `mcp` 工具暴露多 MCP server 的轻量运行时。**
+> **一个通过少量能力域工具暴露多 MCP server 的轻量运行时。**
 
 核心特点：
 
-- 只提供一个统一入口：`mcp`
+- 提供两个职责明确的入口：`mcp_server` 管理 server 状态与生命周期，`mcp_tool` 承载 Tools primitive
 - 支持多 server
 - 采用 **server 级渐进式披露**，而不是把每个 MCP tool 直接注册成 Pi 一等工具
 - 优先优化真实 agent 使用体验，而不是追求协议面完整覆盖
@@ -59,10 +59,11 @@ MVP 主链路已可用：
 - 配置加载
 - overview 注入
 - 多 server 管理
-- `mcp({})`
-- `mcp({ connect })`
-- `mcp({ server })`
-- `mcp({ server, tool, args })`
+- `mcp_server({ action: "list" })`
+- `mcp_server({ action: "connect", server })`
+- `mcp_server({ action: "disconnect", server })`
+- `mcp_tool({ action: "list", server })`
+- `mcp_tool({ action: "call", server, tool, args? })`
 - tool result 物化与预览
 
 它现在已经不是脚手架，但仍然故意保持狭窄范围。

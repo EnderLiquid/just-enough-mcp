@@ -37,6 +37,11 @@ describe("createServerOverviewPrompt", () => {
     expect(prompt).toContain("Connection behavior:");
     expect(prompt).toContain("Overviews:");
     expect(prompt).toContain("Overview maintenance:");
+    expect(prompt).toContain('mcp_tool({ action: "list", server: "<name>" })');
+    expect(prompt).toContain('mcp_tool({ action: "call", server: "<name>", tool: "<tool>", args: { ... } })');
+    expect(prompt).toContain('mcp_server({ action: "disconnect", server: "<name>" })');
+    expect(prompt).toContain("Do not call `mcp_server` connect as a routine prerequisite");
+    expect(prompt).not.toContain("single `mcp` tool");
     expect(prompt).toContain("/reload");
     expect(prompt).toContain("> Overview file: C:/Users/Admin/.pi/agent/mcp-overviews/tavily.md");
     expect(prompt).toContain("# tavily\n\nSearch and extract web content.");

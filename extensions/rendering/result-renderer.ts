@@ -1,22 +1,27 @@
 import type { AgentToolResult, Theme, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { getMcpRuntime } from "../servers/runtime.js";
 import {
   DEFAULT_TUI_RESULT_RENDER_SETTINGS,
   type McpTuiRenderMode,
 } from "../artifacts/types.js";
-import type { McpToolResultDetails } from "../modeling/types.js";
 import { pluralize } from "../formatting/english.js";
-
-type McpToolContentBlock = AgentToolResult<McpToolResultDetails>["content"][number];
+import type { McpServerResultDetails, McpToolResultDetails } from "../modeling/types.js";
+import { getMcpRuntime } from "../servers/runtime.js";
 
 type RenderTheme = Theme;
+type McpResultDetails = McpServerResultDetails | McpToolResultDetails;
+type McpContentBlock = AgentToolResult<McpResultDetails>["content"][number];
+
+export interface McpServerInput {
+  action: "list" | "connect" | "disconnect";
+  server?: string;
+}
 
 export interface McpToolInput {
-  connect?: string;
-  server?: string;
+  action: "list" | "call";
+  server: string;
   tool?: string;
-  args?: string;
+  args?: Record<string, unknown>;
 }
 
 export interface McpToolResultDisplay {
@@ -31,15 +36,7 @@ function truncateText(value: string, maxChars: number): string {
   return `${value.slice(0, Math.max(0, maxChars - 1))}…`;
 }
 
-function formatJsonish(value: unknown, maxChars: number): string {
-  if (typeof value === "string") {
-    try {
-      return truncateText(JSON.stringify(JSON.parse(value), null, 2), maxChars);
-    } catch {
-      return truncateText(value, maxChars);
-    }
-  }
-
+function formatJson(value: unknown, maxChars: number): string {
   try {
     return truncateText(JSON.stringify(value, null, 2), maxChars);
   } catch {
@@ -51,57 +48,35 @@ function emptyText(): Text {
   return new Text("", 0, 0);
 }
 
-function renderCallTitle(args: McpToolInput, theme: RenderTheme): string {
+function renderTitle(
+  tool: "mcp_server" | "mcp_tool",
+  actionName: string,
+  target: string | undefined,
+  secondaryTarget: string | undefined,
+  theme: RenderTheme,
+): string {
   const bold = (value: string) => theme.bold ? theme.bold(value) : value;
-  const toolName = theme.fg("toolTitle", bold("mcp"));
-  const action = (value: string) => bold(value);
-  const accent = (value: string) => theme.fg("accent", value);
-  const muted = (value: string) => theme.fg("muted", value);
-
-  if (args.tool) {
-    const target = args.server
-      ? `${accent(args.tool)} ${muted(`@ ${args.server}`)}`
-      : accent(args.tool);
-    return `${toolName} ${action("call")} ${target}`;
-  }
-
-  if (args.connect) {
-    return `${toolName} ${action("connect")} ${accent(args.connect)}`;
-  }
-
-  if (args.server) {
-    return `${toolName} ${action("list")} ${accent(args.server)}`;
-  }
-
-  return `${toolName} ${action("status")}`;
+  const toolName = theme.fg("toolTitle", bold(tool));
+  const action = bold(actionName);
+  const accent = target ? theme.fg("accent", target) : undefined;
+  const secondary = secondaryTarget ? theme.fg("muted", `@ ${secondaryTarget}`) : undefined;
+  return [toolName, action, accent, secondary].filter(Boolean).join(" ");
 }
 
 function shouldRenderCallDetails(mode: McpTuiRenderMode, expanded: boolean): boolean {
   if (mode === "hidden") {
     return false;
   }
-
   return mode === "expanded" || expanded;
 }
 
-function renderToolCallLines(args: McpToolInput, theme: RenderTheme, expanded: boolean) {
-  const mode = getTuiRenderMode();
-  const lines = [renderCallTitle(args, theme)];
-  if (shouldRenderCallDetails(mode, expanded) && args.args) {
-    lines.push(theme.fg("muted", formatJsonish(args.args, DEFAULT_MAX_CALL_INPUT_CHARS)));
-  }
-  return new Text(lines.join("\n"), 0, 0);
-}
-
-function blockToLines(block: McpToolContentBlock): string[] {
+function blockToLines(block: McpContentBlock): string[] {
   if (block.type === "text") {
     return block.text.split("\n");
   }
-
   if (block.type === "image") {
     return [`[image: ${block.mimeType}]`];
   }
-
   return ["[non-text content]"];
 }
 
@@ -119,22 +94,35 @@ function shouldRenderExpandedResult(mode: McpTuiRenderMode, expanded: boolean): 
   return mode === "expanded" || (mode === "minimal" && expanded);
 }
 
-function formatMinimalResultLine(
+function formatServerMinimalResultLine(
+  details: McpServerResultDetails | undefined,
+  isError: boolean,
+): string | undefined {
+  if (!details) {
+    return isError ? "↳ tool failed • Ctrl+O to expand" : "↳ result available • Ctrl+O to expand";
+  }
+  switch (details.kind) {
+    case "list":
+      return `↳ ${details.connectedCount}/${details.totalCount} ${pluralize(details.totalCount, "server")} connected • Ctrl+O to expand`;
+    case "connect":
+    case "disconnect":
+      return undefined;
+    default: {
+      const unreachable: never = details;
+      return unreachable;
+    }
+  }
+}
+
+function formatToolMinimalResultLine(
   details: McpToolResultDetails | undefined,
   isError: boolean,
 ): string | undefined {
   if (!details) {
-    return isError
-      ? "↳ tool failed • Ctrl+O to expand"
-      : "↳ result available • Ctrl+O to expand";
+    return isError ? "↳ tool failed • Ctrl+O to expand" : "↳ result available • Ctrl+O to expand";
   }
-
   switch (details.kind) {
-    case "status":
-      return `↳ ${details.connectedCount}/${details.totalCount} ${pluralize(details.totalCount, "server")} connected • Ctrl+O to expand`;
-    case "connect":
-      return undefined;
-    case "catalog":
+    case "list":
       return `↳ ${details.toolCount} ${pluralize(details.toolCount, "tool")} available • Ctrl+O to expand`;
     case "call": {
       const payloadSummary = `${details.payloadItemCount} ${pluralize(details.payloadItemCount, "payload item")} returned`;
@@ -150,18 +138,14 @@ function formatMinimalResultLine(
 }
 
 export function formatMcpToolResultLines(
-  result: Pick<AgentToolResult<McpToolResultDetails>, "content">,
+  result: Pick<AgentToolResult<McpResultDetails>, "content">,
   expanded: boolean,
   maxCollapsedLines = getExpandedModeCollapsedLines(),
 ): McpToolResultDisplay {
   const allLines = result.content.flatMap(blockToLines);
   const lines = allLines.length > 0 ? allLines : ["(empty result)"];
 
-  if (expanded) {
-    return { lines, truncated: false };
-  }
-
-  if (lines.length <= maxCollapsedLines) {
+  if (expanded || lines.length <= maxCollapsedLines) {
     return { lines, truncated: false };
   }
 
@@ -171,12 +155,74 @@ export function formatMcpToolResultLines(
   };
 }
 
+function renderResult<TDetails extends McpResultDetails>(
+  result: AgentToolResult<TDetails>,
+  options: ToolRenderResultOptions,
+  theme: RenderTheme,
+  context: { isError?: boolean } | undefined,
+  formatMinimal: (details: TDetails | undefined, isError: boolean) => string | undefined,
+): Text {
+  const mode = getTuiRenderMode();
+  const isError = context?.isError === true;
+
+  if (mode === "hidden") {
+    return emptyText();
+  }
+  if (options.isPartial) {
+    return mode === "minimal"
+      ? new Text(theme.fg("muted", "↳ running..."), 0, 0)
+      : new Text(theme.fg("warning", "Running MCP tool..."), 0, 0);
+  }
+  if (!shouldRenderExpandedResult(mode, options.expanded)) {
+    const line = formatMinimal(result.details, isError);
+    return line ? new Text(theme.fg(isError ? "error" : "muted", line), 0, 0) : emptyText();
+  }
+
+  const display = formatMcpToolResultLines(result, options.expanded);
+  const output = display.lines.map((line) => {
+    if (line === "…" && display.truncated && !options.expanded) {
+      return theme.fg("muted", "… (Ctrl+O to expand)");
+    }
+    return line === "…" ? theme.fg("muted", line) : theme.fg("toolOutput", line);
+  }).join("\n");
+  return new Text(output, 0, 0);
+}
+
+export function renderMcpServerCall(
+  args: McpServerInput,
+  theme: RenderTheme,
+  _context?: { expanded?: boolean },
+): Text {
+  const target = args.action === "list" ? undefined : args.server;
+  return new Text(renderTitle("mcp_server", args.action, target, undefined, theme), 0, 0);
+}
+
 export function renderMcpToolCall(
   args: McpToolInput,
   theme: RenderTheme,
   context?: { expanded?: boolean },
-) {
-  return renderToolCallLines(args, theme, context?.expanded ?? false);
+): Text {
+  const target = args.action === "call" ? args.tool : args.server;
+  const secondary = args.action === "call" ? args.server : undefined;
+  const lines = [renderTitle("mcp_tool", args.action, target, secondary, theme)];
+  if (
+    args.action === "call"
+    && args.args !== undefined
+    && Object.keys(args.args).length > 0
+    && shouldRenderCallDetails(getTuiRenderMode(), context?.expanded ?? false)
+  ) {
+    lines.push(theme.fg("muted", formatJson(args.args, DEFAULT_MAX_CALL_INPUT_CHARS)));
+  }
+  return new Text(lines.join("\n"), 0, 0);
+}
+
+export function renderMcpServerResult(
+  result: AgentToolResult<McpServerResultDetails>,
+  options: ToolRenderResultOptions,
+  theme: RenderTheme,
+  context?: { isError?: boolean },
+): Text {
+  return renderResult(result, options, theme, context, formatServerMinimalResultLine);
 }
 
 export function renderMcpToolResult(
@@ -184,38 +230,6 @@ export function renderMcpToolResult(
   options: ToolRenderResultOptions,
   theme: RenderTheme,
   context?: { isError?: boolean },
-) {
-  const mode = getTuiRenderMode();
-  const isError = context?.isError === true;
-
-  if (mode === "hidden") {
-    return emptyText();
-  }
-
-  if (options.isPartial) {
-    return mode === "minimal"
-      ? new Text(theme.fg("muted", "↳ running..."), 0, 0)
-      : new Text(theme.fg("warning", "Running MCP tool..."), 0, 0);
-  }
-
-  if (!shouldRenderExpandedResult(mode, options.expanded)) {
-    const line = formatMinimalResultLine(result.details, isError);
-    return line
-      ? new Text(theme.fg(isError ? "error" : "muted", line), 0, 0)
-      : emptyText();
-  }
-
-  const display = formatMcpToolResultLines(result, options.expanded);
-  const output = display.lines
-    .map((line) => {
-      if (line === "…" && display.truncated && !options.expanded) {
-        return theme.fg("muted", "… (Ctrl+O to expand)");
-      }
-      return line === "…"
-        ? theme.fg("muted", line)
-        : theme.fg("toolOutput", line);
-    })
-    .join("\n");
-
-  return new Text(output, 0, 0);
+): Text {
+  return renderResult(result, options, theme, context, formatToolMinimalResultLine);
 }

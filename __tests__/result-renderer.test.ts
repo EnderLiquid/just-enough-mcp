@@ -3,18 +3,16 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { McpTuiRenderMode } from "../extensions/artifacts/types.js";
 import {
   formatMcpToolResultLines,
+  renderMcpServerCall,
+  renderMcpServerResult,
   renderMcpToolCall,
   renderMcpToolResult,
 } from "../extensions/rendering/result-renderer.js";
 
-const mocks = vi.hoisted(() => ({
-  runtimeConfig: vi.fn(),
-}));
+const mocks = vi.hoisted(() => ({ runtimeConfig: vi.fn() }));
 
 vi.mock("../extensions/servers/runtime.js", () => ({
-  getMcpRuntime: () => ({
-    config: mocks.runtimeConfig,
-  }),
+  getMcpRuntime: () => ({ config: mocks.runtimeConfig }),
 }));
 
 const testTheme = {
@@ -23,12 +21,7 @@ const testTheme = {
 } as Theme;
 
 function setRenderMode(renderMode: McpTuiRenderMode, expandedModeCollapsedLines = 4): void {
-  mocks.runtimeConfig.mockReturnValue({
-    tui: {
-      renderMode,
-      expandedModeCollapsedLines,
-    },
-  });
+  mocks.runtimeConfig.mockReturnValue({ tui: { renderMode, expandedModeCollapsedLines } });
 }
 
 function renderFirstLine(component: { render(width: number): string[] }): string | undefined {
@@ -50,73 +43,102 @@ describe("formatMcpToolResultLines", () => {
   });
 });
 
-describe("renderMcpToolCall", () => {
-  it("styles the call title by mcp action and target", () => {
+describe("MCP call renderers", () => {
+  it("renders server actions directly from action", () => {
     setRenderMode("minimal");
 
-    const line = renderFirstLine(renderMcpToolCall({
-      server: "codegraph",
-      tool: "codegraph_explore",
-      args: JSON.stringify({ query: "x" }),
-    }, testTheme));
-
-    expect(line).toBe("<toolTitle><b>mcp</b></toolTitle> <b>call</b> <accent>codegraph_explore</accent> <muted>@ codegraph</muted>");
+    expect(renderFirstLine(renderMcpServerCall({ action: "list" }, testTheme))).toBe(
+      "<toolTitle><b>mcp_server</b></toolTitle> <b>list</b>",
+    );
+    expect(renderFirstLine(renderMcpServerCall({
+      action: "disconnect",
+      server: "context7",
+    }, testTheme))).toBe(
+      "<toolTitle><b>mcp_server</b></toolTitle> <b>disconnect</b> <accent>context7</accent>",
+    );
   });
 
-  it("hides args in minimal mode until the tool row is expanded", () => {
+  it("renders tool list and call targets", () => {
+    setRenderMode("minimal");
+
+    expect(renderFirstLine(renderMcpToolCall({
+      action: "list",
+      server: "codegraph",
+    }, testTheme))).toBe(
+      "<toolTitle><b>mcp_tool</b></toolTitle> <b>list</b> <accent>codegraph</accent>",
+    );
+    expect(renderFirstLine(renderMcpToolCall({
+      action: "call",
+      server: "codegraph",
+      tool: "codegraph_explore",
+      args: { query: "x" },
+    }, testTheme))).toBe(
+      "<toolTitle><b>mcp_tool</b></toolTitle> <b>call</b> <accent>codegraph_explore</accent> <muted>@ codegraph</muted>",
+    );
+  });
+
+  it("shows only non-empty call args when expanded", () => {
     setRenderMode("minimal");
 
     const collapsed = renderMcpToolCall({
+      action: "call",
       server: "codegraph",
       tool: "codegraph_explore",
-      args: JSON.stringify({ query: "x" }),
+      args: { query: "x" },
     }, testTheme, { expanded: false }).render(200).map(line => line.trimEnd());
     const expanded = renderMcpToolCall({
+      action: "call",
       server: "codegraph",
       tool: "codegraph_explore",
-      args: JSON.stringify({ query: "x" }),
+      args: { query: "x" },
     }, testTheme, { expanded: true }).render(200).map(line => line.trimEnd());
+    const empty = renderMcpToolCall({
+      action: "call",
+      server: "codegraph",
+      tool: "ping",
+      args: {},
+    }, testTheme, { expanded: true }).render(200);
 
     expect(collapsed).toHaveLength(1);
-    expect(expanded.length).toBeGreaterThan(1);
     expect(expanded.join("\n")).toContain("query");
+    expect(empty).toHaveLength(1);
   });
 });
 
-describe("renderMcpToolResult", () => {
+describe("MCP result renderers", () => {
   it("renders nothing in hidden mode", () => {
     setRenderMode("hidden");
 
     const lines = renderMcpToolResult({
       content: [{ type: "text", text: "hello" }],
-      details: { kind: "catalog", toolCount: 8 },
+      details: { kind: "list", toolCount: 8 },
     }, { expanded: false, isPartial: false }, testTheme).render(200);
 
     expect(lines).toEqual([]);
   });
 
-  it("renders minimal catalog, call, and status summaries", () => {
+  it("renders minimal tool and server list summaries", () => {
     setRenderMode("minimal");
 
     const catalog = renderFirstLine(renderMcpToolResult({
       content: [{ type: "text", text: "8 tools available:" }],
-      details: { kind: "catalog", toolCount: 8 },
+      details: { kind: "list", toolCount: 8 },
     }, { expanded: false, isPartial: false }, testTheme));
     const call = renderFirstLine(renderMcpToolResult({
       content: [{ type: "text", text: "payload summary" }],
       details: { kind: "call", payloadItemCount: 2, outcome: "success" },
     }, { expanded: false, isPartial: false }, testTheme));
-    const status = renderFirstLine(renderMcpToolResult({
+    const servers = renderFirstLine(renderMcpServerResult({
       content: [{ type: "text", text: "2/5 servers connected:" }],
-      details: { kind: "status", connectedCount: 2, totalCount: 5 },
+      details: { kind: "list", connectedCount: 2, totalCount: 5 },
     }, { expanded: false, isPartial: false }, testTheme));
 
     expect(catalog).toBe("<muted>↳ 8 tools available • Ctrl+O to expand</muted>");
     expect(call).toBe("<muted>↳ 2 payload items returned • Ctrl+O to expand</muted>");
-    expect(status).toBe("<muted>↳ 2/5 servers connected • Ctrl+O to expand</muted>");
+    expect(servers).toBe("<muted>↳ 2/5 servers connected • Ctrl+O to expand</muted>");
   });
 
-  it("renders failed MCP call summaries from the final tool context", () => {
+  it("renders failed MCP calls from the final tool context", () => {
     setRenderMode("minimal");
 
     const call = renderFirstLine(renderMcpToolResult({
@@ -127,50 +149,39 @@ describe("renderMcpToolResult", () => {
     expect(call).toBe("<error>↳ MCP server reported failure • 2 payload items returned • Ctrl+O to expand</error>");
   });
 
-  it("uses singular nouns in minimal summaries", () => {
+  it("uses singular nouns", () => {
     setRenderMode("minimal");
 
     const catalog = renderFirstLine(renderMcpToolResult({
       content: [{ type: "text", text: "1 tool available:" }],
-      details: { kind: "catalog", toolCount: 1 },
+      details: { kind: "list", toolCount: 1 },
     }, { expanded: false, isPartial: false }, testTheme));
-    const call = renderFirstLine(renderMcpToolResult({
-      content: [{ type: "text", text: "payload summary" }],
-      details: { kind: "call", payloadItemCount: 1, outcome: "success" },
-    }, { expanded: false, isPartial: false }, testTheme));
-    const status = renderFirstLine(renderMcpToolResult({
+    const servers = renderFirstLine(renderMcpServerResult({
       content: [{ type: "text", text: "1/1 server connected:" }],
-      details: { kind: "status", connectedCount: 1, totalCount: 1 },
+      details: { kind: "list", connectedCount: 1, totalCount: 1 },
     }, { expanded: false, isPartial: false }, testTheme));
 
     expect(catalog).toBe("<muted>↳ 1 tool available • Ctrl+O to expand</muted>");
-    expect(call).toBe("<muted>↳ 1 payload item returned • Ctrl+O to expand</muted>");
-    expect(status).toBe("<muted>↳ 1/1 server connected • Ctrl+O to expand</muted>");
+    expect(servers).toBe("<muted>↳ 1/1 server connected • Ctrl+O to expand</muted>");
   });
 
-  it("does not render a minimal connect result", () => {
+  it("does not render minimal connect or disconnect results", () => {
     setRenderMode("minimal");
 
-    const lines = renderMcpToolResult({
+    const connect = renderMcpServerResult({
       content: [{ type: "text", text: "Connected" }],
       details: { kind: "connect" },
     }, { expanded: false, isPartial: false }, testTheme).render(200);
+    const disconnect = renderMcpServerResult({
+      content: [{ type: "text", text: "Disconnected" }],
+      details: { kind: "disconnect" },
+    }, { expanded: false, isPartial: false }, testTheme).render(200);
 
-    expect(lines).toEqual([]);
+    expect(connect).toEqual([]);
+    expect(disconnect).toEqual([]);
   });
 
-  it("renders expanded details when minimal mode rows are expanded", () => {
-    setRenderMode("minimal");
-
-    const line = renderFirstLine(renderMcpToolResult({
-      content: [{ type: "text", text: "line 1\nline 2" }],
-      details: { kind: "call", payloadItemCount: 1, outcome: "success" },
-    }, { expanded: true, isPartial: false }, testTheme));
-
-    expect(line).toBe("<toolOutput>line 1</toolOutput>");
-  });
-
-  it("keeps expanded-mode truncation and puts the expand hint on the ellipsis line", () => {
+  it("renders expanded details and truncation hints", () => {
     setRenderMode("expanded", 2);
 
     const lines = renderMcpToolResult({

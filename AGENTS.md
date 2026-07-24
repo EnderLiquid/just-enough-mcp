@@ -16,7 +16,7 @@
 - `extensions/config/`：插件配置、overview 加载与 overview bootstrap。
 - `extensions/modeling/`：跨模块共享的核心类型。
 - `extensions/servers/`：MCP server runtime、registry、具体 server 实现。
-- `extensions/tools/`：暴露给 Pi 的 `mcp` 工具入口。
+- `extensions/tools/`：暴露给 Pi 的 `mcp_server` 与 `mcp_tool` 工具入口。
 - `extensions/artifacts/`：工具调用结果物化、payload 提取/归一化、artifact 存储、manifest 与模型 summary 生成。
 - `extensions/rendering/`：TUI 工具调用/结果渲染与 footer status 展示。
 - `extensions/formatting/`：跨模块共享的轻量文本格式化工具，如英文单复数 `pluralize()`。
@@ -26,6 +26,7 @@
 ## 架构约定
 
 - Registry 只管理 `McpServer` 对象并转发调用，不直接理解 SDK transport、鉴权、profile 细节。
+- Pi direct tool 按能力域划分：`mcp_server` 管理 server 状态与生命周期，`mcp_tool` 承载 MCP Tools primitive；不要重新合并为依赖 optional 字段组合分派的单一入口。
 - `createMcpServer()` 是当前唯一 profile 推断与具体 Server 类型分派点。
 - 配置层输出 `ResolvedServerConfig`，只保留通用字段和 `definition`；具体 Server 构造函数负责校验并保存自己需要的配置字段。
 - `ServerOverview` 只表示文档内容与来源，不携带 transport/profile 等 runtime 分类信息。

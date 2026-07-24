@@ -28,6 +28,7 @@ export interface ServerRegistry {
   getStatus(): ServerRegistryStatus;
   getServerState(name: string): ServerSnapshot | undefined;
   connectServer(name: string, signal?: AbortSignal): Promise<ServerSnapshot>;
+  disconnectServer(name: string): Promise<ServerSnapshot>;
   getServerCatalog(name: string, signal?: AbortSignal): Promise<ServerCatalogResult>;
   callTool(
     name: string,
@@ -144,6 +145,17 @@ export function createServerRegistry(options: ServerRegistryOptions = {}): Serve
       const snapshot = await server.connect(signal);
       await emitServerReady(server);
       return snapshot;
+    },
+
+    async disconnectServer(name) {
+      const server = requireServer(name);
+      if (server.snapshot().connectState === "connecting") {
+        throw new Error(
+          `Cannot disconnect MCP server "${name}" while it is connecting. Cancel the in-flight operation first.`,
+        );
+      }
+      await server.close();
+      return server.snapshot();
     },
 
     async getServerCatalog(name, signal) {

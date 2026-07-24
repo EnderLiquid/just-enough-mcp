@@ -86,10 +86,13 @@ export interface ToolCallExecutionResult {
   result: CallToolResult;
 }
 
-export type McpToolResultDetails =
-  | { kind: "status"; connectedCount: number; totalCount: number }
+export type McpServerResultDetails =
+  | { kind: "list"; connectedCount: number; totalCount: number }
   | { kind: "connect" }
-  | { kind: "catalog"; toolCount: number }
+  | { kind: "disconnect" };
+
+export type McpToolResultDetails =
+  | { kind: "list"; toolCount: number }
   | { kind: "call"; payloadItemCount: number; outcome: "success" | "error" };
 
 export const DEFAULT_RUNTIME_CAPABILITIES: McpRuntimeCapabilities = {
