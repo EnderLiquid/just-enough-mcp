@@ -107,6 +107,6 @@ export const DEFAULT_MATERIALIZATION_SETTINGS: MaterializationSettings = {
 };
 
 export const DEFAULT_TUI_RESULT_RENDER_SETTINGS: TuiResultRenderSettings = {
-  renderMode: "minimal",
+  renderMode: "expanded",
   expandedModeCollapsedLines: 4,
 };

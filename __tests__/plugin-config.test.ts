@@ -91,7 +91,7 @@ describe("loadPluginConfigFromPaths", () => {
 
     expect(loaded.materialization.previewFullCharsPerItem).toBe(1500);
     expect(loaded.materialization.previewTruncateToCharsPerItem).toBe(600);
-    expect(loaded.tui.renderMode).toBe("minimal");
+    expect(loaded.tui.renderMode).toBe("expanded");
     expect(loaded.tui.expandedModeCollapsedLines).toBe(4);
     expect(loaded.servers[0]?.definition).toMatchObject({
       command: "npx",
