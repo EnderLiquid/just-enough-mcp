@@ -29,7 +29,7 @@ function makeConfig(overrides: Partial<PluginConfigLoadResult> = {}): PluginConf
 }
 
 describe("createServerOverviewPrompt", () => {
-  it("includes overview guidance, maintenance notes, and resolved overview paths", () => {
+  it("包含 overview 指南、维护说明和已解析的 overview 路径", () => {
     const prompt = createServerOverviewPrompt(makeConfig());
 
     expect(prompt).toContain("Reality:");
@@ -47,7 +47,7 @@ describe("createServerOverviewPrompt", () => {
     expect(prompt).toContain("# tavily\n\nSearch and extract web content.");
   });
 
-  it("adds a synthetic heading when an overview has no markdown heading", () => {
+  it("overview 没有 markdown 标题时添加合成标题", () => {
     const prompt = createServerOverviewPrompt(makeConfig({
       servers: [makeServer({
         name: "demo",
@@ -63,7 +63,7 @@ describe("createServerOverviewPrompt", () => {
     expect(prompt).toContain("# demo\n\nNo overview is available for this server yet.");
   });
 
-  it("recognizes a heading after blank lines and Markdown-legal indentation", () => {
+  it("识别空行后和 Markdown 合法缩进后的标题", () => {
     const prompt = createServerOverviewPrompt(makeConfig({
       servers: [makeServer({
         name: "demo",
@@ -80,7 +80,7 @@ describe("createServerOverviewPrompt", () => {
     expect(prompt).not.toContain("# demo\n\n");
   });
 
-  it("adds a heading when an indented hash is a code block", () => {
+  it("缩进的井号属于代码块时添加标题", () => {
     const prompt = createServerOverviewPrompt(makeConfig({
       servers: [makeServer({
         name: "demo",

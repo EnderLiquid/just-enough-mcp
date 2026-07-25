@@ -61,7 +61,7 @@ describe("createServerRegistry onServerReady", () => {
     mocks.transportClose.mockResolvedValue(undefined);
   });
 
-  it("emits observed server facts on first successful connection", async () => {
+  it("首次成功连接时触发服务器信息事件", async () => {
     const onServerReady = vi.fn();
     const registry = createServerRegistry({ onServerReady });
 
@@ -74,7 +74,7 @@ describe("createServerRegistry onServerReady", () => {
     });
   });
 
-  it("does not fail the connection flow when onServerReady throws", async () => {
+  it("onServerReady 抛出异常时不影响连接流程", async () => {
     const registry = createServerRegistry({
       onServerReady: vi.fn().mockImplementation(() => {
         throw new Error("observer failed");

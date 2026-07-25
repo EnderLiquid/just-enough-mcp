@@ -98,7 +98,7 @@ const remoteTools = [
   { name: "write", description: "Write" },
 ];
 
-describe("SDK-backed server tools", () => {
+describe("基于 SDK 的服务器工具", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.connect.mockResolvedValue(undefined);
@@ -109,7 +109,7 @@ describe("SDK-backed server tools", () => {
     mocks.transportClose.mockResolvedValue(undefined);
   });
 
-  it("creates the configured stdio transport", async () => {
+  it("创建配置的 stdio transport", async () => {
     const registry = createServerRegistry();
     await registry.syncConfig(makeConfig({
       command: "node",
@@ -129,7 +129,7 @@ describe("SDK-backed server tools", () => {
     });
   });
 
-  it("creates an anonymous HTTP transport without request headers", async () => {
+  it("创建不带请求头的匿名 HTTP transport", async () => {
     const registry = createServerRegistry();
     await registry.syncConfig(makeConfig({
       transport: "http",
@@ -144,7 +144,7 @@ describe("SDK-backed server tools", () => {
     );
   });
 
-  it("creates a static-token HTTP transport with merged headers", async () => {
+  it("创建带合并头部的静态令牌 HTTP transport", async () => {
     const registry = createServerRegistry();
     await registry.syncConfig(makeConfig({
       transport: "http",
@@ -168,7 +168,7 @@ describe("SDK-backed server tools", () => {
     );
   });
 
-  it("limits the catalog to includeTools when configured", async () => {
+  it("配置 includeTools 时限制目录范围", async () => {
     const registry = createServerRegistry();
     await registry.syncConfig(makeConfig({ includeTools: ["search", "read"] }));
 
@@ -178,7 +178,7 @@ describe("SDK-backed server tools", () => {
     expect(registry.getServerState("demo")?.tools?.map(tool => tool.name)).toEqual(["search", "read"]);
   });
 
-  it("applies excludeTools after includeTools", async () => {
+  it("includeTools 之后再应用 excludeTools", async () => {
     const registry = createServerRegistry();
     await registry.syncConfig(makeConfig({
       includeTools: ["search", "read"],
@@ -190,7 +190,7 @@ describe("SDK-backed server tools", () => {
     expect(catalog.tools.map(tool => tool.name)).toEqual(["search"]);
   });
 
-  it("forwards AbortSignal while initializing the MCP client", async () => {
+  it("初始化 MCP client 时转发 AbortSignal", async () => {
     const registry = createServerRegistry();
     await registry.syncConfig(makeConfig({}));
     const controller = new AbortController();
@@ -209,7 +209,7 @@ describe("SDK-backed server tools", () => {
     expect(registry.getServerState("demo")?.connectState).toBe("disconnected");
   });
 
-  it("forwards AbortSignal while loading the tools catalog", async () => {
+  it("加载工具目录时转发 AbortSignal", async () => {
     const registry = createServerRegistry();
     await registry.syncConfig(makeConfig({}));
     const controller = new AbortController();
@@ -227,7 +227,7 @@ describe("SDK-backed server tools", () => {
     expect(registry.getServerState("demo")?.connectState).toBe("disconnected");
   });
 
-  it("forwards AbortSignal to the SDK request and propagates cancellation", async () => {
+  it("向 SDK 请求转发 AbortSignal 并传播取消信号", async () => {
     const registry = createServerRegistry();
     await registry.syncConfig(makeConfig({}));
     const controller = new AbortController();
@@ -253,7 +253,7 @@ describe("SDK-backed server tools", () => {
     expect(registry.getServerState("demo")?.connectState).toBe("connected");
   });
 
-  it("invalidates a closed connection and reconnects on the next call", async () => {
+  it("使已关闭连接失效，下次调用时重新连接", async () => {
     const registry = createServerRegistry();
     await registry.syncConfig(makeConfig({}));
     const connectionError = new McpError(ErrorCode.ConnectionClosed, "Connection closed");
@@ -276,7 +276,7 @@ describe("SDK-backed server tools", () => {
     expect(registry.getServerState("demo")?.connectState).toBe("connected");
   });
 
-  it("invalidates the connection when the client transport is already absent", async () => {
+  it("client transport 已不存在时使连接失效", async () => {
     const registry = createServerRegistry();
     await registry.syncConfig(makeConfig({}));
     const notConnectedError = new Error("Not connected");
@@ -297,7 +297,7 @@ describe("SDK-backed server tools", () => {
   it.each([
     ["request timeout", new McpError(ErrorCode.RequestTimeout, "Request timed out")],
     ["invalid params", new McpError(ErrorCode.InvalidParams, "Invalid params")],
-  ])("keeps the connection after a %s error", async (_label, requestError) => {
+  ])("%s 错误后保持连接", async (_label, requestError) => {
     const registry = createServerRegistry();
     await registry.syncConfig(makeConfig({}));
     mocks.callTool.mockRejectedValueOnce(requestError);
@@ -309,7 +309,7 @@ describe("SDK-backed server tools", () => {
     expect(mocks.close).not.toHaveBeenCalled();
   });
 
-  it("keeps the connection for a remote business failure", async () => {
+  it("远程业务失败时保持连接", async () => {
     const registry = createServerRegistry();
     await registry.syncConfig(makeConfig({}));
     mocks.callTool.mockResolvedValueOnce({
@@ -324,7 +324,7 @@ describe("SDK-backed server tools", () => {
     expect(mocks.close).not.toHaveBeenCalled();
   });
 
-  it("rejects direct calls to tools hidden by filters", async () => {
+  it("拒绝直接调用被过滤器隐藏的工具", async () => {
     const registry = createServerRegistry();
     await registry.syncConfig(makeConfig({ excludeTools: ["write"] }));
 
@@ -332,7 +332,7 @@ describe("SDK-backed server tools", () => {
     expect(mocks.callTool).not.toHaveBeenCalled();
   });
 
-  it("keeps a distinct error for unknown remote tools", async () => {
+  it("对未知远程工具保持独立错误信息", async () => {
     const registry = createServerRegistry();
     await registry.syncConfig(makeConfig({ includeTools: ["search"] }));
 
@@ -341,7 +341,7 @@ describe("SDK-backed server tools", () => {
     expect(mocks.callTool).not.toHaveBeenCalled();
   });
 
-  it("disconnects idempotently and reconnects on the next catalog request", async () => {
+  it("幂等断开连接，下次目录请求时重新连接", async () => {
     const registry = createServerRegistry();
     await registry.syncConfig(makeConfig({}));
     await registry.getServerCatalog("demo");
@@ -358,7 +358,7 @@ describe("SDK-backed server tools", () => {
     expect(registry.getServerState("demo")?.connectState).toBe("connected");
   });
 
-  it("rejects disconnect while the server is connecting", async () => {
+  it("服务器正在连接时拒绝断开", async () => {
     const registry = createServerRegistry();
     await registry.syncConfig(makeConfig({}));
     const controller = new AbortController();
@@ -382,14 +382,14 @@ describe("SDK-backed server tools", () => {
     expect(registry.getServerState("demo")?.connectState).toBe("disconnected");
   });
 
-  it("rejects disconnect for an unknown server", async () => {
+  it("拒绝断开未知服务器", async () => {
     const registry = createServerRegistry();
     await registry.syncConfig(makeConfig({}));
 
     await expect(registry.disconnectServer("missing")).rejects.toThrow("Unknown MCP server: missing");
   });
 
-  it("rejects invalid tool filter configuration", async () => {
+  it("拒绝无效的工具过滤器配置", async () => {
     const registry = createServerRegistry();
 
     await expect(registry.syncConfig(makeConfig({ includeTools: ["search", ""] }))).rejects.toThrow(/includeTools/);

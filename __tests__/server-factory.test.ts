@@ -21,7 +21,7 @@ function makeConfig(definition: ServerDefinition, overrides: Partial<ResolvedSer
 }
 
 describe("createMcpServer", () => {
-  it("creates a server from an inferred stdio definition", () => {
+  it("从推断的 stdio 定义创建服务器", () => {
     const server = createMcpServer(makeConfig({ command: "npx" }));
 
     expect(server).toBeInstanceOf(StdioPragmaticServer);
@@ -32,7 +32,7 @@ describe("createMcpServer", () => {
     });
   });
 
-  it("creates a public HTTP server without static authentication", () => {
+  it("创建无静态认证的公共 HTTP 服务器", () => {
     const server = createMcpServer(makeConfig({ url: "https://example.com/mcp" }));
 
     expect(server).toBeInstanceOf(HttpPublicServer);
@@ -41,13 +41,13 @@ describe("createMcpServer", () => {
   it.each([
     { url: "https://example.com/mcp", bearerToken: "token-123" },
     { url: "https://example.com/mcp", headers: { "X-API-Key": "secret" } },
-  ])("creates a static-token HTTP server for %o", definition => {
+  ])("为 %o 创建静态令牌 HTTP 服务器", definition => {
     const server = createMcpServer(makeConfig(definition));
 
     expect(server).toBeInstanceOf(HttpTokenServer);
   });
 
-  it("keeps explicit legacy transport as the primary hint", () => {
+  it("保留显式设置的 legacy transport 为主要依据", () => {
     expect(() => createMcpServer(makeConfig({
       transport: "stdio",
       command: "npx",
@@ -61,7 +61,7 @@ describe("createMcpServer", () => {
     }))).not.toThrow();
   });
 
-  it("validates concrete server fields after transport dispatch", () => {
+  it("transport 分派后验证具体服务器字段", () => {
     expect(() => createMcpServer(makeConfig({ transport: "stdio" }))).toThrow(/demo.*command/);
     expect(() => createMcpServer(makeConfig({ transport: "http" }))).toThrow(/demo.*url/);
     expect(() => createMcpServer(makeConfig({ transport: "websocket" }))).toThrow(/stdio.*http/);

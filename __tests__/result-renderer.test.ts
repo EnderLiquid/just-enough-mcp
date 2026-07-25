@@ -33,7 +33,7 @@ beforeEach(() => {
 });
 
 describe("formatMcpToolResultLines", () => {
-  it("collapses long results uniformly with ellipsis", () => {
+  it("对长结果统一使用省略号折叠", () => {
     const display = formatMcpToolResultLines({
       content: [{ type: "text", text: "line 1\nline 2\nline 3\nline 4\nline 5" }],
     }, false, 4);
@@ -43,8 +43,8 @@ describe("formatMcpToolResultLines", () => {
   });
 });
 
-describe("MCP call renderers", () => {
-  it("renders server actions directly from action", () => {
+describe("MCP 调用渲染器", () => {
+  it("直接根据 action 渲染服务器操作", () => {
     setRenderMode("minimal");
 
     expect(renderFirstLine(renderMcpServerCall({ action: "status" }, testTheme))).toBe(
@@ -64,7 +64,7 @@ describe("MCP call renderers", () => {
     );
   });
 
-  it("renders tool list and call targets", () => {
+  it("渲染工具列表和调用目标", () => {
     setRenderMode("minimal");
 
     expect(renderFirstLine(renderMcpToolCall({
@@ -83,7 +83,7 @@ describe("MCP call renderers", () => {
     );
   });
 
-  it("shows only non-empty call args when expanded", () => {
+  it("展开时仅显示非空调用参数", () => {
     setRenderMode("minimal");
 
     const collapsed = renderMcpToolCall({
@@ -111,8 +111,8 @@ describe("MCP call renderers", () => {
   });
 });
 
-describe("MCP result renderers", () => {
-  it("renders nothing in hidden mode", () => {
+describe("MCP 结果渲染器", () => {
+  it("hidden 模式下不渲染任何内容", () => {
     setRenderMode("hidden");
 
     const lines = renderMcpToolResult({
@@ -123,7 +123,7 @@ describe("MCP result renderers", () => {
     expect(lines).toEqual([]);
   });
 
-  it("renders minimal tool and server status summaries", () => {
+  it("渲染最小化工具和服务器状态摘要", () => {
     setRenderMode("minimal");
 
     const catalog = renderFirstLine(renderMcpToolResult({
@@ -144,7 +144,7 @@ describe("MCP result renderers", () => {
     expect(servers).toBe("<muted>↳ 2/5 servers connected • Ctrl+O to expand</muted>");
   });
 
-  it("renders failed MCP calls from the final tool context", () => {
+  it("从最终工具上下文渲染失败的 MCP 调用", () => {
     setRenderMode("minimal");
 
     const call = renderFirstLine(renderMcpToolResult({
@@ -155,7 +155,7 @@ describe("MCP result renderers", () => {
     expect(call).toBe("<error>↳ MCP server reported failure • 2 payload items returned • Ctrl+O to expand</error>");
   });
 
-  it("uses singular nouns", () => {
+  it("使用英文单数名词", () => {
     setRenderMode("minimal");
 
     const catalog = renderFirstLine(renderMcpToolResult({
@@ -177,7 +177,7 @@ describe("MCP result renderers", () => {
     expect(server).toBe("<muted>↳ context7: connected • Ctrl+O to expand</muted>");
   });
 
-  it("does not render minimal connect or disconnect results", () => {
+  it("不渲染最小化的 connect/disconnect 结果", () => {
     setRenderMode("minimal");
 
     const connect = renderMcpServerResult({
@@ -193,7 +193,7 @@ describe("MCP result renderers", () => {
     expect(disconnect).toEqual([]);
   });
 
-  it("renders expanded details and truncation hints", () => {
+  it("渲染展开的详细内容和截断提示", () => {
     setRenderMode("expanded", 2);
 
     const lines = renderMcpToolResult({

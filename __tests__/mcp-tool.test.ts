@@ -100,8 +100,8 @@ function makeMaterialized(summaryText = "ok"): MaterializedToolCallResult {
   };
 }
 
-describe("mcp_tool schema", () => {
-  it("accepts native nested argument objects without advanced schema keywords", () => {
+describe("mcp_tool 参数 schema", () => {
+  it("接受原生嵌套参数对象，无需高级 schema 关键字", () => {
     const validator = Compile(mcpToolParametersSchema);
     const valid = {
       action: "call",
@@ -130,7 +130,7 @@ describe("mcpTool.execute", () => {
     vi.clearAllMocks();
   });
 
-  it("rejects action-specific invalid field combinations", async () => {
+  it("按 action 类型拒绝无效字段组合", async () => {
     useRuntime();
 
     await expect(executeMcpTool({
@@ -160,7 +160,7 @@ describe("mcpTool.execute", () => {
     } as unknown as Parameters<typeof mcpTool.execute>[1])).rejects.toThrow("unknown field extra");
   });
 
-  it("lists a server catalog and forwards AbortSignal", async () => {
+  it("列出服务器工具目录并转发 AbortSignal", async () => {
     const signal = new AbortController().signal;
     const refreshFooter = vi.fn();
     const getServerCatalog = vi.fn().mockResolvedValue({
@@ -185,7 +185,7 @@ describe("mcpTool.execute", () => {
     expect(result.details).toEqual({ kind: "list", toolCount: 1 });
   });
 
-  it("refreshes the footer when catalog retrieval fails", async () => {
+  it("目录获取失败时刷新 footer", async () => {
     const error = new Error("catalog unavailable");
     const refreshFooter = vi.fn();
     useRuntime({
@@ -197,7 +197,7 @@ describe("mcpTool.execute", () => {
     expect(refreshFooter).toHaveBeenCalledTimes(1);
   });
 
-  it("passes native args to the registry without JSON parsing", async () => {
+  it("将原生参数直接传递给 registry，不经过 JSON 解析", async () => {
     const args = { query: "pi", nested: { values: [1, true, null] } };
     const signal = new AbortController().signal;
     const refreshFooter = vi.fn();
@@ -222,7 +222,7 @@ describe("mcpTool.execute", () => {
     expect(result.details).toEqual({ kind: "call", payloadItemCount: 1, outcome: "success" });
   });
 
-  it("normalizes omitted call args to an empty object", async () => {
+  it("将省略的调用参数归一化为空对象", async () => {
     const callTool = vi.fn().mockResolvedValue({
       server: makeServerSnapshot(),
       toolName: "ping",
@@ -237,7 +237,7 @@ describe("mcpTool.execute", () => {
     expect(callTool).toHaveBeenCalledWith("demo", "ping", {}, undefined);
   });
 
-  it("propagates cancellation without materializing a result", async () => {
+  it("传播取消信号，不进行结果物化", async () => {
     const controller = new AbortController();
     const abortReason = new Error("cancelled by user");
     const callTool = vi.fn().mockRejectedValue(abortReason);
@@ -256,7 +256,7 @@ describe("mcpTool.execute", () => {
     expect(refreshFooter).toHaveBeenCalledTimes(1);
   });
 
-  it("warns against automatic retry when local materialization fails", async () => {
+  it("本地物化失败时警告不要自动重试", async () => {
     const materializationError = new Error("artifact write failed");
     const callTool = vi.fn().mockResolvedValue({
       server: makeServerSnapshot(),
@@ -277,7 +277,7 @@ describe("mcpTool.execute", () => {
     });
   });
 
-  it("preserves remote business failures for the tool_result hook", async () => {
+  it("保留远程业务失败状态供 tool_result 钩子使用", async () => {
     const callTool = vi.fn().mockResolvedValue({
       server: makeServerSnapshot(),
       toolName: "search",
@@ -298,7 +298,7 @@ describe("mcpTool.execute", () => {
 });
 
 describe("registerMcpTool", () => {
-  it("registers mcp_tool and promotes failed remote outcomes", () => {
+  it("注册 mcp_tool 并提升失败的远程结果为错误标志", () => {
     const registerTool = vi.fn();
     const on = vi.fn();
     registerMcpTool({ registerTool, on } as unknown as ExtensionAPI);

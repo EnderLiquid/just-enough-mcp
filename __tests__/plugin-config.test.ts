@@ -11,7 +11,7 @@ describe("loadPluginConfigFromPaths", () => {
     tempDirs.cleanup();
   });
 
-  it("parses server definitions with connection modes, materialization settings, and TUI settings", () => {
+  it("解析带连接模式、物化设置和 TUI 设置的服务器定义", () => {
     const root = tempDirs.create();
     const configPath = join(root, "just-enough-mcp.json");
     const overviewDir = join(root, "mcp-overviews");
@@ -72,7 +72,7 @@ describe("loadPluginConfigFromPaths", () => {
     expect(localTools?.connectionMode).toBe("lazy");
   });
 
-  it("uses default materialization and TUI settings when omitted", () => {
+  it("省略时使用默认物化和 TUI 设置", () => {
     const root = tempDirs.create();
     const configPath = join(root, "just-enough-mcp.json");
     const overviewDir = join(root, "mcp-overviews");
@@ -98,7 +98,7 @@ describe("loadPluginConfigFromPaths", () => {
     });
   });
 
-  it("rejects non-object server configuration", () => {
+  it("拒绝非对象的服务器配置", () => {
     const root = tempDirs.create();
     const configPath = join(root, "just-enough-mcp.json");
     const overviewDir = join(root, "mcp-overviews");
@@ -113,7 +113,7 @@ describe("loadPluginConfigFromPaths", () => {
     expect(() => loadPluginConfigFromPaths(configPath, overviewDir)).toThrow(/broken/);
   });
 
-  it("rejects invalid materialization settings", () => {
+  it("拒绝无效的物化设置", () => {
     const root = tempDirs.create();
     const configPath = join(root, "just-enough-mcp.json");
     const overviewDir = join(root, "mcp-overviews");
@@ -129,7 +129,7 @@ describe("loadPluginConfigFromPaths", () => {
     expect(() => loadPluginConfigFromPaths(configPath, overviewDir)).toThrow(/materialization.summaryItemCount/);
   });
 
-  it("rejects inconsistent materialization preview thresholds", () => {
+  it("拒绝不一致的物化预览阈值", () => {
     const root = tempDirs.create();
     const configPath = join(root, "just-enough-mcp.json");
     const overviewDir = join(root, "mcp-overviews");
@@ -146,7 +146,7 @@ describe("loadPluginConfigFromPaths", () => {
     expect(() => loadPluginConfigFromPaths(configPath, overviewDir)).toThrow(/materialization.previewTruncateToCharsPerItem/);
   });
 
-  it("accepts all TUI render modes", () => {
+  it("接受所有 TUI 渲染模式", () => {
     for (const mode of ["hidden", "minimal", "expanded"] as const) {
       const root = tempDirs.create();
       const configPath = join(root, "just-enough-mcp.json");
@@ -165,7 +165,7 @@ describe("loadPluginConfigFromPaths", () => {
     }
   });
 
-  it("rejects invalid TUI render mode", () => {
+  it("拒绝无效的 TUI 渲染模式", () => {
     const root = tempDirs.create();
     const configPath = join(root, "just-enough-mcp.json");
     const overviewDir = join(root, "mcp-overviews");
@@ -181,7 +181,7 @@ describe("loadPluginConfigFromPaths", () => {
     expect(() => loadPluginConfigFromPaths(configPath, overviewDir)).toThrow(/tui.renderMode/);
   });
 
-  it("rejects invalid expanded-mode collapsed line count", () => {
+  it("拒绝无效的 expanded 模式折叠行数", () => {
     const root = tempDirs.create();
     const configPath = join(root, "just-enough-mcp.json");
     const overviewDir = join(root, "mcp-overviews");

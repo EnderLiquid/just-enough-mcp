@@ -17,7 +17,7 @@ describe("materializeToolCallResult", () => {
     tempDirs.cleanup();
   });
 
-  it("uses a shorter call directory name based on server and compact UTC timestamp", () => {
+  it("基于服务器名和紧凑 UTC 时间戳生成较短的调用目录名", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-23T04:18:22Z"));
 
@@ -40,7 +40,7 @@ describe("materializeToolCallResult", () => {
     expect(readdirSync(`${cwd}/.pi/mcp`)).toEqual([callDirName]);
   });
 
-  it("removes its staging directory without touching unrelated partial directories", () => {
+  it("移除自身 staging 目录，不影响无关的 partial 目录", () => {
     const cwd = tempDirs.create();
     const artifactRoot = `${cwd}/.pi/mcp`;
     mkdirSync(`${artifactRoot}/.partial-existing`, { recursive: true });
@@ -56,7 +56,7 @@ describe("materializeToolCallResult", () => {
     expect(readdirSync(artifactRoot)).toEqual([".partial-existing"]);
   });
 
-  it("preserves the materialization error when staging cleanup also fails", () => {
+  it("staging 清理失败时仍保留物化错误信息", () => {
     const cwd = tempDirs.create();
     const materializationError = new Error("payload write failed");
     const context = createArtifactContext({
@@ -89,7 +89,7 @@ describe("materializeToolCallResult", () => {
     expect(combinedError.message).toContain("additionally failed to clean staging directory");
   });
 
-  it("returns a single text preview without manifest hint while still writing manifest", () => {
+  it("仅返回单条文本预览（不含 manifest 提示），但实际仍写入 manifest", () => {
     const cwd = tempDirs.create();
     const result: CallToolResult = {
       content: [{ type: "text", text: "hello world" }],
@@ -116,7 +116,7 @@ describe("materializeToolCallResult", () => {
     expect(materialized.summaryText).not.toContain(".partial-");
   });
 
-  it("detects JSON text, assigns application/json, and writes a .json file", () => {
+  it("识别 JSON 文本，标记为 application/json，写入 .json 文件", () => {
     const cwd = tempDirs.create();
     const result: CallToolResult = {
       content: [{ type: "text", text: '{"ok":true,"count":2}' }],
@@ -137,7 +137,7 @@ describe("materializeToolCallResult", () => {
     expect(materialized.summaryText).toContain('"ok": true');
   });
 
-  it("marks in-line truncation and reports remaining chars and lines", () => {
+  it("标记行内截断，报告剩余字符数和行数", () => {
     const cwd = tempDirs.create();
     const result: CallToolResult = {
       content: [{ type: "text", text: "abcdefghijklmnopqrstuvwxyz" }],
@@ -160,7 +160,7 @@ describe("materializeToolCallResult", () => {
     expect(materialized.summaryText).toContain("Full output: ");
   });
 
-  it("uses singular nouns in truncation summaries", () => {
+  it("截断摘要中使用英文单数形式", () => {
     const cwd = tempDirs.create();
     const result: CallToolResult = {
       content: [{ type: "text", text: "abcde" }],
@@ -181,7 +181,7 @@ describe("materializeToolCallResult", () => {
     expect(materialized.summaryText).toContain("1 more char across 1 line of remaining text");
   });
 
-  it("shows truncation summary on a new line when truncation happens at a line boundary", () => {
+  it("截断发生在行边界时在新行显示截断摘要", () => {
     const cwd = tempDirs.create();
     const result: CallToolResult = {
       content: [{ type: "text", text: "abc\ndef\nghi" }],
@@ -204,7 +204,7 @@ describe("materializeToolCallResult", () => {
     expect(materialized.summaryText).toContain("Full output: ");
   });
 
-  it("builds lightweight multi-item summary with file and manifest paths", () => {
+  it("构建轻量多条目摘要，包含文件和 manifest 路径", () => {
     const cwd = tempDirs.create();
     const result: CallToolResult = {
       content: [
@@ -246,7 +246,7 @@ describe("materializeToolCallResult", () => {
     expect(manifest).toContain('"manifestPath":');
   });
 
-  it("shortens long resource basenames with a 4-character hash suffix", () => {
+  it("使用 4 字符哈希后缀缩短过长的资源文件名", () => {
     const cwd = tempDirs.create();
     const result: CallToolResult = {
       content: [{
@@ -272,7 +272,7 @@ describe("materializeToolCallResult", () => {
     expect(existsSync(materialized.payloadItems[0]!.path!)).toBe(true);
   });
 
-  it("materializes resource_link as text while preserving target mime type in rawMimeType", () => {
+  it("将 resource_link 物化为纯文本，同时在 rawMimeType 中保留目标 MIME 类型", () => {
     const cwd = tempDirs.create();
     const result: CallToolResult = {
       content: [{
@@ -302,7 +302,7 @@ describe("materializeToolCallResult", () => {
     expect(materialized.summaryText).toContain("Target MIME type: application/pdf");
   });
 
-  it("suppresses duplicate structuredContent when it is semantically equal to a text payload", () => {
+  it("当 structuredContent 与文本 payload 语义相等时抑制重复", () => {
     const cwd = tempDirs.create();
     const result: CallToolResult = {
       content: [{

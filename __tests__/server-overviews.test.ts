@@ -12,7 +12,7 @@ describe("loadServerOverview", () => {
     tempDirs.cleanup();
   });
 
-  it("prefers configured overview path over auto overview", () => {
+  it("显式配置的 overview 路径优先于自动 overview", () => {
     const root = tempDirs.create();
     const configPath = join(root, "just-enough-mcp.json");
     const configOverviewPath = join(root, "explicit.md");
@@ -32,7 +32,7 @@ describe("loadServerOverview", () => {
     expect(overview.path).toBe(configOverviewPath);
   });
 
-  it("returns an explicit fallback when no overview is available", () => {
+  it("无可用 overview 时返回显式兜底文案", () => {
     const root = tempDirs.create();
     const configPath = join(root, "just-enough-mcp.json");
     const overviewDir = join(root, "mcp-overviews");
@@ -46,7 +46,7 @@ describe("loadServerOverview", () => {
     });
   });
 
-  it("falls back to auto overview file by server name", () => {
+  it("按服务器名回退到自动 overview 文件", () => {
     const root = tempDirs.create();
     const configPath = join(root, "just-enough-mcp.json");
     const overviewDir = join(root, "mcp-overviews");

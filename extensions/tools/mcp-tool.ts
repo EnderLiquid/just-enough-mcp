@@ -65,7 +65,7 @@ function validateInvocation(params: {
 
   switch (params.action) {
     case "list":
-      // Some providers serialize optional fields as empty placeholders; treat them as omitted here.
+      // 某些 provider 会将可选字段序列化为空白占位符("" 或 {})；此处将其视为已省略
       if (
         (params.tool !== undefined && params.tool.trim().length > 0)
         || (params.args !== undefined && !isEmptyObject(params.args))

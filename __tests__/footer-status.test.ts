@@ -5,12 +5,12 @@ import {
   updateFooterStatus,
 } from "../extensions/rendering/footer-status.js";
 
-describe("footer status", () => {
+describe("footer 状态", () => {
   afterEach(() => {
     clearFooterStatus();
   });
 
-  it("updates the fixed footer status with connected and total counts", () => {
+  it("更新固定 footer 状态，显示已连接数和总数", () => {
     const setStatus = vi.fn();
     setFooterStatusSink({ setStatus });
 
@@ -19,14 +19,14 @@ describe("footer status", () => {
     expect(setStatus).toHaveBeenCalledWith("just-enough-mcp", "1/4 MCP");
   });
 
-  it("is a no-op when no sink is registered", () => {
+  it("未注册 sink 时无操作", () => {
     setFooterStatusSink(undefined);
 
     expect(() => updateFooterStatus(1, 4)).not.toThrow();
     expect(() => clearFooterStatus()).not.toThrow();
   });
 
-  it("removes the footer status when cleared", () => {
+  it("清除后移除 footer 状态", () => {
     const setStatus = vi.fn();
     setFooterStatusSink({ setStatus });
 
@@ -35,7 +35,7 @@ describe("footer status", () => {
     expect(setStatus).toHaveBeenCalledWith("just-enough-mcp", undefined);
   });
 
-  it("releases the sink after clearing", () => {
+  it("清除后释放 sink 引用", () => {
     const setStatus = vi.fn();
     setFooterStatusSink({ setStatus });
     clearFooterStatus();
@@ -46,7 +46,7 @@ describe("footer status", () => {
     expect(setStatus).toHaveBeenCalledWith("just-enough-mcp", undefined);
   });
 
-  it("publishes updates only to the replacement sink", () => {
+  it("仅向替换后的 sink 发布更新", () => {
     const previousSetStatus = vi.fn();
     const currentSetStatus = vi.fn();
     setFooterStatusSink({ setStatus: previousSetStatus });

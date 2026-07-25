@@ -60,7 +60,7 @@ describe("mcpServerTool.execute", () => {
     vi.clearAllMocks();
   });
 
-  it("rejects action-specific invalid field combinations", async () => {
+  it("按 action 类型拒绝无效字段组合", async () => {
     useRuntime();
 
     await expect(executeMcpServer({ action: "connect" })).rejects.toThrow(
@@ -75,7 +75,7 @@ describe("mcpServerTool.execute", () => {
     } as unknown as Parameters<typeof mcpServerTool.execute>[1])).rejects.toThrow("unknown field extra");
   });
 
-  it("reports all server states with pluralization", async () => {
+  it("报告所有服务器状态，使用英文复数形式", async () => {
     const refreshFooter = vi.fn();
     const status = {
       connectedCount: 1,
@@ -97,7 +97,7 @@ describe("mcpServerTool.execute", () => {
     expect(result.details).toEqual({ kind: "status", connectedCount: 1, totalCount: 2 });
   });
 
-  it("uses singular server in a one-entry status result", async () => {
+  it("单条状态结果中使用英文单数形式", async () => {
     useRuntime({
       getStatus: () => ({
         connectedCount: 1,
@@ -114,7 +114,7 @@ describe("mcpServerTool.execute", () => {
     });
   });
 
-  it("reports one named server state", async () => {
+  it("报告指定名称的服务器状态", async () => {
     const refreshFooter = vi.fn();
     const getServerState = vi.fn().mockReturnValue(
       makeServerSnapshot({ name: "context7", connectState: "connected" }),
@@ -129,7 +129,7 @@ describe("mcpServerTool.execute", () => {
     expect(result.details).toEqual({ kind: "status", serverName: "context7", connectState: "connected" });
   });
 
-  it("rejects status for an unknown server and refreshes the footer", async () => {
+  it("拒绝不存在的服务器状态查询并刷新 footer", async () => {
     const refreshFooter = vi.fn();
     useRuntime({ refreshFooter, registry: { getServerState: () => undefined } });
 
@@ -139,7 +139,7 @@ describe("mcpServerTool.execute", () => {
     expect(refreshFooter).toHaveBeenCalledTimes(1);
   });
 
-  it("connects explicitly and forwards AbortSignal", async () => {
+  it("显式连接并转发 AbortSignal", async () => {
     const signal = new AbortController().signal;
     const refreshFooter = vi.fn();
     const connectServer = vi.fn().mockResolvedValue(makeServerSnapshot());
@@ -153,7 +153,7 @@ describe("mcpServerTool.execute", () => {
     expect(result.details).toEqual({ kind: "connect" });
   });
 
-  it("refreshes the footer after a failed connect", async () => {
+  it("连接失败后刷新 footer", async () => {
     const error = new Error("dial tcp timeout");
     const refreshFooter = vi.fn();
     useRuntime({
@@ -165,7 +165,7 @@ describe("mcpServerTool.execute", () => {
     expect(refreshFooter).toHaveBeenCalledTimes(1);
   });
 
-  it("disconnects explicitly without treating AbortSignal as close cancellation", async () => {
+  it("显式断开连接，不将 AbortSignal 视为关闭取消信号", async () => {
     const signal = new AbortController().signal;
     const refreshFooter = vi.fn();
     const disconnectServer = vi.fn().mockResolvedValue(makeServerSnapshot({ connectState: "disconnected" }));
@@ -179,7 +179,7 @@ describe("mcpServerTool.execute", () => {
     expect(result.details).toEqual({ kind: "disconnect" });
   });
 
-  it("refreshes the footer after a failed disconnect", async () => {
+  it("断开连接失败后刷新 footer", async () => {
     const error = new Error("Unknown MCP server: missing");
     const refreshFooter = vi.fn();
     useRuntime({
@@ -193,7 +193,7 @@ describe("mcpServerTool.execute", () => {
 });
 
 describe("registerMcpServerTool", () => {
-  it("registers mcp_server without a tool_result hook", () => {
+  it("注册 mcp_server，不附带 tool_result 钩子", () => {
     const registerTool = vi.fn();
     const on = vi.fn();
 

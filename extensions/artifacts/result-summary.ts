@@ -11,7 +11,7 @@ function buildTextPreview(
   previewFullChars: number,
   previewTruncateToChars: number,
 ): TextPreviewResult {
-  // `text` is expected to be normalized already (`\r\n` -> `\n`).
+  // 假设 `text` 已经过归一化处理（`\r\n` -> `\n`）
 
   if (text.trimEnd() === "") {
     return { lines: ["(empty text)"], truncated: false };
@@ -35,8 +35,8 @@ function buildTextPreview(
   const truncatedInLine = text[visibleText.length] !== "\n" && text[visibleText.length] !== undefined;
 
   const remainingChars = text.length - visibleText.length;
-  // Counts how many line fragments the remaining text spans.
-  // When truncation happens in-line, the unfinished tail of the current line counts as one remaining line.
+  // 统计剩余文本跨越了多少行片段
+  // 当截断发生在行中间时，当前行未完成的尾部算作一行
   const remainingLines = totalLines - visibleLines + (truncatedInLine ? 1 : 0);
 
   const previewLines = visibleText.split("\n");

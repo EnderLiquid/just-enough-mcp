@@ -29,7 +29,7 @@ describe("tryBootstrapOverviewFromDescription", () => {
     tempDirs.cleanup();
   });
 
-  it("creates a minimal overview stub from server description", () => {
+  it("从服务器描述创建最小化 overview 草稿", () => {
     const root = tempDirs.create();
     const server = makeServer();
 
@@ -47,7 +47,7 @@ describe("tryBootstrapOverviewFromDescription", () => {
     expect(readFileSync(join(root, "tavily.md"), "utf8")).toBe("# tavily\n\nSearch and extract web content.\n");
   });
 
-  it("skips creation when an auto overview file already exists", () => {
+  it("自动 overview 文件已存在时跳过创建", () => {
     const root = tempDirs.create();
     writeFileSync(join(root, "tavily.md"), "# Tavily\n\nManual overview\n", "utf8");
     const server = makeServer();
@@ -65,7 +65,7 @@ describe("tryBootstrapOverviewFromDescription", () => {
     expect(readFileSync(join(root, "tavily.md"), "utf8")).toBe("# Tavily\n\nManual overview\n");
   });
 
-  it("skips creation when server uses explicit overview config or empty description", () => {
+  it("服务器使用显式 overview 配置或描述为空时跳过创建", () => {
     const root = tempDirs.create();
     const explicitServer = makeServer({ hasExplicitOverviewConfig: true });
     const emptyDescriptionServer = makeServer();
