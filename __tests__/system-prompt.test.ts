@@ -54,12 +54,45 @@ describe("createServerOverviewPrompt", () => {
         overviewPath: undefined,
         overview: {
           name: "demo",
-          content: "No overview configured yet.",
+          content: "No overview is available for this server yet.",
           source: "none",
         },
       })],
     }));
 
-    expect(prompt).toContain("# demo\n\nNo overview configured yet.");
+    expect(prompt).toContain("# demo\n\nNo overview is available for this server yet.");
+  });
+
+  it("recognizes a heading after blank lines and Markdown-legal indentation", () => {
+    const prompt = createServerOverviewPrompt(makeConfig({
+      servers: [makeServer({
+        name: "demo",
+        overviewPath: undefined,
+        overview: {
+          name: "demo",
+          content: "\n  ## Existing heading\n\nOverview content.",
+          source: "none",
+        },
+      })],
+    }));
+
+    expect(prompt).toContain("\n  ## Existing heading\n\nOverview content.");
+    expect(prompt).not.toContain("# demo\n\n");
+  });
+
+  it("adds a heading when an indented hash is a code block", () => {
+    const prompt = createServerOverviewPrompt(makeConfig({
+      servers: [makeServer({
+        name: "demo",
+        overviewPath: undefined,
+        overview: {
+          name: "demo",
+          content: "    # Example code",
+          source: "none",
+        },
+      })],
+    }));
+
+    expect(prompt).toContain("# demo\n\n    # Example code");
   });
 });

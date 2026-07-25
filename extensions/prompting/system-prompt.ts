@@ -9,7 +9,7 @@ function normalizePathSlashes(value: string): string {
 }
 
 function ensureOverviewHeading(overview: ServerOverview): string {
-  if (overview.content.startsWith("#")) {
+  if (/^(?:[ \t]*\r?\n)* {0,3}#/.test(overview.content)) {
     return overview.content;
   }
 

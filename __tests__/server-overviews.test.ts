@@ -32,6 +32,20 @@ describe("loadServerOverview", () => {
     expect(overview.path).toBe(configOverviewPath);
   });
 
+  it("returns an explicit fallback when no overview is available", () => {
+    const root = tempDirs.create();
+    const configPath = join(root, "just-enough-mcp.json");
+    const overviewDir = join(root, "mcp-overviews");
+
+    const overview = loadServerOverview("tavily", {}, configPath, overviewDir);
+
+    expect(overview).toEqual({
+      name: "tavily",
+      content: "No overview is available for this server yet.",
+      source: "none",
+    });
+  });
+
   it("falls back to auto overview file by server name", () => {
     const root = tempDirs.create();
     const configPath = join(root, "just-enough-mcp.json");

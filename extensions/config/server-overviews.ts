@@ -52,7 +52,7 @@ export function loadServerOverview(
 
   return {
     name: serverName,
-    content: "No overview configured yet.",
+    content: "No overview is available for this server yet.",
     source: "none",
   };
 }
