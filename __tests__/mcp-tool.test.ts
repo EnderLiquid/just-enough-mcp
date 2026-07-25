@@ -120,6 +120,7 @@ describe("mcp_tool schema", () => {
     expect(mcpToolParametersSchema.properties.args).toMatchObject({
       type: "object",
       properties: {},
+      additionalProperties: true,
     });
   });
 });

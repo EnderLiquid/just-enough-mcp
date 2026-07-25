@@ -9,6 +9,7 @@ import { pluralize } from "../formatting/english.js";
 export const mcpToolArgumentsSchema = Type.Unsafe<Record<string, unknown>>({
   type: "object",
   properties: {},
+  additionalProperties: true,
   description: [
     "Arguments for the selected MCP tool.",
     "Follow the input schema returned by the preceding list action.",
