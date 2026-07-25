@@ -37,7 +37,7 @@ describe("loadPluginConfigFromPaths", () => {
           bearerToken: "token-123",
           connectionMode: "eager",
         },
-        localTools: {
+        "local-tools": {
           command: "npx",
           args: ["-y", "some-server"],
         },
@@ -48,7 +48,7 @@ describe("loadPluginConfigFromPaths", () => {
     expect(loaded.servers).toHaveLength(2);
 
     const tavily = loaded.servers.find(server => server.name === "tavily");
-    const localTools = loaded.servers.find(server => server.name === "localTools");
+    const localTools = loaded.servers.find(server => server.name === "local-tools");
 
     expect(loaded.materialization.summaryItemCount).toBe(3);
     expect(loaded.materialization.previewFullCharsPerItem).toBe(240);
@@ -80,7 +80,7 @@ describe("loadPluginConfigFromPaths", () => {
 
     writeFileSync(configPath, JSON.stringify({
       servers: {
-        localTools: {
+        "local-tools": {
           command: "npx",
           args: ["-y", "some-server"],
         },
@@ -96,6 +96,62 @@ describe("loadPluginConfigFromPaths", () => {
     expect(loaded.servers[0]?.definition).toMatchObject({
       command: "npx",
     });
+  });
+
+  it("校验服务器名称", () => {
+    const validNames = [
+      "a",
+      "a".repeat(32),
+      "cua-driver",
+      "foo--bar",
+      "foo_",
+      "foo.",
+      "github.enterprise",
+    ];
+    const invalidNames = [
+      { name: "a".repeat(33), reason: "1 to 32 lowercase" },
+      { name: "Context7", reason: "1 to 32 lowercase" },
+      { name: "context 7", reason: "1 to 32 lowercase" },
+      { name: "中文", reason: "1 to 32 lowercase" },
+      { name: "context/7", reason: "1 to 32 lowercase" },
+      { name: "context\\7", reason: "1 to 32 lowercase" },
+      { name: "context:7", reason: "1 to 32 lowercase" },
+      { name: ".context7", reason: "1 to 32 lowercase" },
+      { name: "-context7", reason: "1 to 32 lowercase" },
+      { name: "_context7", reason: "1 to 32 lowercase" },
+      { name: "con", reason: "Windows-reserved device name" },
+      { name: "con.docs", reason: "Windows-reserved device name" },
+      { name: "com1", reason: "Windows-reserved device name" },
+      { name: "com9.dev", reason: "Windows-reserved device name" },
+      { name: "lpt9", reason: "Windows-reserved device name" },
+    ];
+
+    for (const serverName of validNames) {
+      const root = tempDirs.create();
+      const configPath = join(root, "just-enough-mcp.json");
+      const overviewDir = join(root, "mcp-overviews");
+      writeFileSync(configPath, JSON.stringify({
+        servers: {
+          [serverName]: { command: "npx" },
+        },
+      }), "utf8");
+
+      expect(loadPluginConfigFromPaths(configPath, overviewDir).servers[0]?.name).toBe(serverName);
+    }
+
+    for (const { name: serverName, reason } of invalidNames) {
+      const root = tempDirs.create();
+      const configPath = join(root, "just-enough-mcp.json");
+      const overviewDir = join(root, "mcp-overviews");
+      writeFileSync(configPath, JSON.stringify({
+        servers: {
+          [serverName]: { command: "npx" },
+        },
+      }), "utf8");
+
+      expect(() => loadPluginConfigFromPaths(configPath, overviewDir)).toThrow(serverName);
+      expect(() => loadPluginConfigFromPaths(configPath, overviewDir)).toThrow(reason);
+    }
   });
 
   it("拒绝非对象的服务器配置", () => {

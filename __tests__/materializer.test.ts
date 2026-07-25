@@ -17,11 +17,12 @@ describe("materializeToolCallResult", () => {
     tempDirs.cleanup();
   });
 
-  it("基于服务器名和紧凑 UTC 时间戳生成较短的调用目录名", () => {
+  it("保留合法服务器名作为调用目录前缀", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-23T04:18:22Z"));
 
     const cwd = tempDirs.create();
+    const serverName = `${"a".repeat(29)}--b`;
     const result: CallToolResult = {
       content: [{ type: "text", text: "hello world" }],
       isError: false,
@@ -29,13 +30,13 @@ describe("materializeToolCallResult", () => {
 
     const materialized = materializeToolCallResult({
       cwd,
-      server: "codegraph",
+      server: serverName,
       tool: "codegraph_explore",
       result,
     });
 
     const callDirName = materialized.callDir.split("/").pop();
-    expect(callDirName).toMatch(/^codegraph-260623-041822-[0-9a-f]{32}$/);
+    expect(callDirName).toMatch(new RegExp(`^${serverName}-260623-041822-[0-9a-f]{32}$`));
     expect(callDirName).not.toContain("codegraph_explore");
     expect(readdirSync(`${cwd}/.pi/mcp`)).toEqual([callDirName]);
   });
@@ -202,6 +203,56 @@ describe("materializeToolCallResult", () => {
     expect(materialized.summaryText).toContain("abc\n… 8 more chars across 2 lines of remaining text");
     expect(materialized.summaryText).not.toContain("⟦TRUNCATED⟧");
     expect(materialized.summaryText).toContain("Full output: ");
+  });
+
+  it("使用 MIME registry 推导扩展名，并将未知类型物化为 bin 文件", () => {
+    const cwd = tempDirs.create();
+    const result: CallToolResult = {
+      content: [
+        { type: "image", mimeType: "image/svg+xml", data: Buffer.from("svg").toString("base64") },
+        { type: "audio", mimeType: "audio/mpeg", data: Buffer.from("mp3").toString("base64") },
+        {
+          type: "resource",
+          resource: {
+            uri: "https://example.com/guide",
+            mimeType: "text/markdown; charset=utf-8",
+            text: "# Guide",
+          },
+        },
+        {
+          type: "resource",
+          resource: {
+            uri: "https://example.com/report",
+            mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            blob: Buffer.from("docx").toString("base64"),
+          },
+        },
+        {
+          type: "resource",
+          resource: {
+            uri: "https://example.com/mystery",
+            mimeType: "application/x-example",
+            blob: Buffer.from("unknown").toString("base64"),
+          },
+        },
+      ],
+      isError: false,
+    };
+
+    const materialized = materializeToolCallResult({
+      cwd,
+      server: "demo",
+      tool: "mime-examples",
+      result,
+    });
+
+    expect(materialized.payloadItems.map(item => item.fileName)).toEqual([
+      "01-image.svg",
+      "02-audio.mp3",
+      "03-guide.md",
+      "04-report.docx",
+      "05-mystery.bin",
+    ]);
   });
 
   it("构建轻量多条目摘要，包含文件和 manifest 路径", () => {

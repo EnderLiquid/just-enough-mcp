@@ -1,3 +1,4 @@
+import { extension as getMimeExtension } from "mime-types";
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path";
@@ -32,7 +33,7 @@ function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function sanitizeSegment(value: string): string {
+function sanitizePayloadFileNameSegment(value: string): string {
   const normalized = value.trim().replace(/[^A-Za-z0-9._-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
   return normalized || "artifact";
 }
@@ -48,9 +49,8 @@ function toCompactUtcTimestamp(date = new Date()): string {
 }
 
 function createCallDirectoryName(server: string): string {
-  const target = sanitizeSegment(server).slice(0, 32);
   const suffix = randomBytes(16).toString("hex");
-  return `${target}-${toCompactUtcTimestamp()}-${suffix}`;
+  return `${server}-${toCompactUtcTimestamp()}-${suffix}`;
 }
 
 export function normalizePathSlashes(value: string): string {
@@ -61,37 +61,17 @@ function resolveArtifactRoot(cwd: string, artifactRoot: string): string {
   return isAbsolute(artifactRoot) ? artifactRoot : resolve(cwd, artifactRoot);
 }
 
+const PREFERRED_MIME_EXTENSIONS: Record<string, string> = {
+  "image/jpg": "jpg",
+  "audio/mpeg": "mp3",
+  "audio/ogg": "ogg",
+  "audio/webm": "webm",
+};
+
 function inferExtensionFromMimeType(mimeType: string): string {
-  const normalized = mimeType.toLowerCase();
-  const mapping: Record<string, string> = {
-    "image/png": ".png",
-    "image/jpeg": ".jpg",
-    "image/jpg": ".jpg",
-    "image/webp": ".webp",
-    "image/gif": ".gif",
-    "audio/mpeg": ".mp3",
-    "audio/mp3": ".mp3",
-    "audio/wav": ".wav",
-    "audio/ogg": ".ogg",
-    "audio/webm": ".webm",
-    "audio/mp4": ".m4a",
-    "application/pdf": ".pdf",
-    "application/json": ".json",
-    "application/octet-stream": ".bin",
-    "text/plain": ".txt",
-    "text/markdown": ".md",
-    "text/html": ".html",
-    "text/csv": ".csv",
-  };
-
-  if (mapping[normalized]) {
-    return mapping[normalized];
-  }
-
-  const subtype = normalized.split("/")[1]?.split(";")[0]?.trim();
-  if (!subtype) return ".bin";
-  if (subtype === "jpeg") return ".jpg";
-  return `.${subtype.replace(/[^A-Za-z0-9]+/g, "") || "bin"}`;
+  const normalized = mimeType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+  const extension = PREFERRED_MIME_EXTENSIONS[normalized] ?? getMimeExtension(normalized);
+  return extension ? `.${extension}` : ".bin";
 }
 
 function inferBaseNameFromUri(uri?: string): string | undefined {
@@ -154,7 +134,7 @@ function buildMainFileName(index: number, item: PayloadDraft): string {
   if (item.source !== "structuredContent" && item.contentType !== "resource_link") {
     const baseName = inferBaseNameFromUri(item.uri);
     if (baseName) {
-      stem = shortenNormalizedBase(sanitizeSegment(baseName.replace(extname(baseName), "")));
+      stem = shortenNormalizedBase(sanitizePayloadFileNameSegment(baseName.replace(extname(baseName), "")));
     }
   }
 

@@ -96,6 +96,29 @@ function parseTui(raw: unknown): TuiResultRenderSettings {
   };
 }
 
+const SERVER_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]{0,31}$/;
+const WINDOWS_RESERVED_DEVICE_NAMES = new Set([
+  "con",
+  "prn",
+  "aux",
+  "nul",
+  ...Array.from({ length: 9 }, (_, index) => `com${index + 1}`),
+  ...Array.from({ length: 9 }, (_, index) => `lpt${index + 1}`),
+]);
+
+function assertValidServerName(serverName: string): void {
+  if (!SERVER_NAME_PATTERN.test(serverName)) {
+    throw new Error(
+      `MCP server name "${serverName}" must be 1 to 32 lowercase ASCII letters, digits, ".", "_" or "-", beginning with a letter or digit.`,
+    );
+  }
+
+  const firstSegment = serverName.split(".", 1)[0]!;
+  if (WINDOWS_RESERVED_DEVICE_NAMES.has(firstSegment)) {
+    throw new Error(`MCP server name "${serverName}" uses the Windows-reserved device name "${firstSegment}".`);
+  }
+}
+
 function parseConnectionMode(value: unknown, serverName: string): ServerConnectionMode {
   if (value === undefined) {
     return DEFAULT_CONNECTION_MODE;
@@ -165,9 +188,10 @@ function parseRawConfig(configPath: string): RawPluginConfig {
 
 function resolveServers(configPath: string, overviewDir: string, raw: RawPluginConfig): ResolvedServerConfig[] {
   const entries = Object.entries(raw.servers ?? {});
-  return entries.map(([serverName, rawServer]) =>
-    parseResolvedServerConfig(serverName, rawServer, configPath, overviewDir),
-  );
+  return entries.map(([serverName, rawServer]) => {
+    assertValidServerName(serverName);
+    return parseResolvedServerConfig(serverName, rawServer, configPath, overviewDir);
+  });
 }
 
 export function loadPluginConfigFromPaths(configPath: string, overviewDir: string): PluginConfigLoadResult {

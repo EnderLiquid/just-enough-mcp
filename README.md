@@ -52,6 +52,18 @@
 
 - `/reload`
 
+### Server 名称
+
+`servers` 对象的 key 是 server 名称，会用于 `mcp_server`、`mcp_tool` 和默认 overview 文件名。名称必须符合：
+
+```txt
+^[a-z0-9][a-z0-9._-]{0,31}$
+```
+
+也就是 1–32 个字符，只允许小写 ASCII 字母、数字、`.`, `_`, `-`，且首字符必须是字母或数字。Windows 保留设备名及其点号扩展形式不可用，例如 `con`、`con.docs`、`com1`。
+
+推荐使用简短、有语义的名称，例如 `context7`、`cua-driver`、`github.enterprise`。
+
 ## 当前状态
 
 MVP 主链路已可用：
