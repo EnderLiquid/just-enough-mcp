@@ -4,11 +4,6 @@ import type { MaterializationSettings, TuiResultRenderSettings } from "../artifa
 export type ServerConnectionMode = "lazy" | "eager";
 export type ServerConnectState = "disconnected" | "connecting" | "connected";
 
-export type CompatibilityProfile =
-  | "stdio-tools-pragmatic"
-  | "http-tools-public"
-  | "http-tools-token";
-
 export type ServerDefinition = Record<string, unknown>;
 
 export interface ServerOverview {
@@ -54,25 +49,11 @@ export interface PluginConfigLoadResult {
   servers: ResolvedServerConfig[];
 }
 
-export type ServerSnapshot =
-  | {
-      name: string;
-      profile: "stdio-tools-pragmatic";
-      connectState: ServerConnectState;
-      tools?: Tool[];
-    }
-  | {
-      name: string;
-      profile: "http-tools-public";
-      connectState: ServerConnectState;
-      tools?: Tool[];
-    }
-  | {
-      name: string;
-      profile: "http-tools-token";
-      connectState: ServerConnectState;
-      tools?: Tool[];
-    };
+export interface ServerSnapshot {
+  name: string;
+  connectState: ServerConnectState;
+  tools?: Tool[];
+}
 
 export interface ServerCatalogResult {
   server: ServerSnapshot;

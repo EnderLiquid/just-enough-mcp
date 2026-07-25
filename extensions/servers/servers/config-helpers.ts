@@ -4,15 +4,10 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function formatProfile(profile: string | undefined): string {
-  return profile ? ` for ${profile} profile` : "";
-}
-
 export function expectOptionalTransport(
   definition: ServerDefinition,
   serverName: string,
   expected: "stdio" | "http",
-  profile?: string,
 ): void {
   const transport = definition.transport;
   if (transport === undefined) {
@@ -20,7 +15,7 @@ export function expectOptionalTransport(
   }
 
   if (transport !== expected) {
-    throw new Error(`Server "${serverName}" transport must be "${expected}"${formatProfile(profile)}.`);
+    throw new Error(`Server "${serverName}" transport must be "${expected}".`);
   }
 }
 
@@ -28,11 +23,10 @@ export function expectNonEmptyString(
   definition: ServerDefinition,
   fieldName: string,
   serverName: string,
-  profile?: string,
 ): string {
   const value = definition[fieldName];
   if (typeof value !== "string" || value.length === 0) {
-    throw new Error(`Server "${serverName}" must provide a non-empty ${fieldName}${formatProfile(profile)}.`);
+    throw new Error(`Server "${serverName}" must provide a non-empty ${fieldName}.`);
   }
   return value;
 }

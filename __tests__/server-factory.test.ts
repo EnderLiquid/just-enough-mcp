@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { ResolvedServerConfig, ServerDefinition } from "../extensions/modeling/types.js";
-import { createMcpServer, resolveCompatibilityProfile } from "../extensions/servers/servers/factory.js";
+import { createMcpServer } from "../extensions/servers/servers/factory.js";
+import { HttpPublicServer } from "../extensions/servers/servers/http-public-server.js";
+import { HttpTokenServer } from "../extensions/servers/servers/http-token-server.js";
+import { StdioPragmaticServer } from "../extensions/servers/servers/stdio-pragmatic-server.js";
 
 function makeConfig(definition: ServerDefinition, overrides: Partial<ResolvedServerConfig> = {}): ResolvedServerConfig {
   return {
@@ -18,55 +21,47 @@ function makeConfig(definition: ServerDefinition, overrides: Partial<ResolvedSer
 }
 
 describe("createMcpServer", () => {
-  it("infers stdio pragmatic profile from command when transport is omitted", () => {
-    const config = makeConfig({ command: "npx" });
+  it("creates a server from an inferred stdio definition", () => {
+    const server = createMcpServer(makeConfig({ command: "npx" }));
 
-    expect(resolveCompatibilityProfile(config)).toBe("stdio-tools-pragmatic");
-    expect(createMcpServer(config).snapshot()).toMatchObject({
+    expect(server).toBeInstanceOf(StdioPragmaticServer);
+    expect(server.snapshot()).toEqual({
       name: "demo",
-      profile: "stdio-tools-pragmatic",
       connectState: "disconnected",
+      tools: undefined,
     });
   });
 
-  it("infers public HTTP profile from url when transport is omitted", () => {
-    const config = makeConfig({ url: "https://example.com/mcp" });
+  it("creates a public HTTP server without static authentication", () => {
+    const server = createMcpServer(makeConfig({ url: "https://example.com/mcp" }));
 
-    expect(resolveCompatibilityProfile(config)).toBe("http-tools-public");
-    expect(createMcpServer(config).snapshot()).toMatchObject({
-      name: "demo",
-      profile: "http-tools-public",
-      connectState: "disconnected",
-    });
+    expect(server).toBeInstanceOf(HttpPublicServer);
+  });
+
+  it.each([
+    { url: "https://example.com/mcp", bearerToken: "token-123" },
+    { url: "https://example.com/mcp", headers: { "X-API-Key": "secret" } },
+  ])("creates a static-token HTTP server for %o", definition => {
+    const server = createMcpServer(makeConfig(definition));
+
+    expect(server).toBeInstanceOf(HttpTokenServer);
   });
 
   it("keeps explicit legacy transport as the primary hint", () => {
-    expect(resolveCompatibilityProfile(makeConfig({
+    expect(() => createMcpServer(makeConfig({
       transport: "stdio",
       command: "npx",
       url: "https://example.com/mcp",
-    }))).toBe("stdio-tools-pragmatic");
+    }))).not.toThrow();
 
-    expect(resolveCompatibilityProfile(makeConfig({
+    expect(() => createMcpServer(makeConfig({
       transport: "http",
       command: "npx",
       url: "https://example.com/mcp",
-    }))).toBe("http-tools-public");
+    }))).not.toThrow();
   });
 
-  it("infers token HTTP profile from bearer token or headers", () => {
-    expect(resolveCompatibilityProfile(makeConfig({
-      url: "https://example.com/mcp",
-      bearerToken: "token-123",
-    }))).toBe("http-tools-token");
-
-    expect(resolveCompatibilityProfile(makeConfig({
-      url: "https://example.com/mcp",
-      headers: { "X-API-Key": "secret" },
-    }))).toBe("http-tools-token");
-  });
-
-  it("validates concrete server fields after profile dispatch", () => {
+  it("validates concrete server fields after transport dispatch", () => {
     expect(() => createMcpServer(makeConfig({ transport: "stdio" }))).toThrow(/demo.*command/);
     expect(() => createMcpServer(makeConfig({ transport: "http" }))).toThrow(/demo.*url/);
     expect(() => createMcpServer(makeConfig({ transport: "websocket" }))).toThrow(/stdio.*http/);

@@ -1,42 +1,71 @@
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import type { ResolvedServerConfig, ServerSnapshot } from "../../modeling/types.js";
-import { ConnectedSdkServer } from "./connected-sdk-server.js";
+import type { ResolvedServerConfig, ServerCatalogResult, ServerSnapshot, ToolCallExecutionResult } from "../../modeling/types.js";
 import { expectNonEmptyString, expectOptionalString, expectOptionalStringArray, expectOptionalStringRecord, expectOptionalTransport } from "./config-helpers.js";
+import { SdkToolSession } from "./sdk-tool-session.js";
+import type { McpServer } from "./types.js";
 
-const PROFILE = "stdio-tools-pragmatic";
+export class StdioPragmaticServer implements McpServer {
+  readonly name: string;
+  private readonly session: SdkToolSession;
 
-export class StdioPragmaticServer extends ConnectedSdkServer {
-  private readonly command: string;
-  private readonly args: string[] | undefined;
-  private readonly cwd: string | undefined;
-  private readonly env: Record<string, string> | undefined;
+  constructor(readonly config: ResolvedServerConfig) {
+    this.name = config.name;
+    expectOptionalTransport(config.definition, config.name, "stdio");
+    const command = expectNonEmptyString(config.definition, "command", config.name);
+    const args = expectOptionalStringArray(config.definition, "args", config.name);
+    const cwd = expectOptionalString(config.definition, "cwd", config.name);
+    const env = expectOptionalStringRecord(config.definition, "env", config.name);
 
-  constructor(config: ResolvedServerConfig) {
-    super(config, PROFILE);
-    expectOptionalTransport(config.definition, config.name, "stdio", PROFILE);
-    this.command = expectNonEmptyString(config.definition, "command", config.name, PROFILE);
-    this.args = expectOptionalStringArray(config.definition, "args", config.name);
-    this.cwd = expectOptionalString(config.definition, "cwd", config.name);
-    this.env = expectOptionalStringRecord(config.definition, "env", config.name);
+    this.session = new SdkToolSession({
+      serverName: this.name,
+      config,
+      createTransport: () => new StdioClientTransport({
+        command,
+        args,
+        cwd,
+        env,
+        stderr: "ignore",
+      }),
+    });
   }
 
   snapshot(): ServerSnapshot {
     return {
       name: this.name,
-      profile: PROFILE,
-      connectState: this.connectState,
-      tools: this.visibleTools(),
+      connectState: this.session.state,
+      tools: this.session.tools,
     };
   }
 
-  protected createTransport(): Transport {
-    return new StdioClientTransport({
-      command: this.command,
-      args: this.args,
-      cwd: this.cwd,
-      env: this.env,
-      stderr: "ignore",
-    });
+  async connect(signal?: AbortSignal): Promise<ServerSnapshot> {
+    await this.session.connect(signal);
+    return this.snapshot();
+  }
+
+  async getCatalog(signal?: AbortSignal): Promise<ServerCatalogResult> {
+    const tools = await this.session.getTools(signal);
+    return { server: this.snapshot(), tools };
+  }
+
+  async callTool(
+    name: string,
+    callArgs: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<ToolCallExecutionResult> {
+    const result = await this.session.callTool(name, callArgs, signal);
+    return {
+      server: this.snapshot(),
+      toolName: name,
+      args: callArgs,
+      result,
+    };
+  }
+
+  close(): Promise<void> {
+    return this.session.close();
+  }
+
+  getServerDescription(): string | undefined {
+    return this.session.getServerDescription();
   }
 }

@@ -87,7 +87,6 @@ describe("createServerRegistry onServerReady", () => {
     const server = registry.getServerState("demo");
     expect(server).toEqual({
       name: "demo",
-      profile: "stdio-tools-pragmatic",
       connectState: "connected",
       tools: [],
     });

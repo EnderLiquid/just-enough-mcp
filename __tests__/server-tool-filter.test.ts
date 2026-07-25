@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   connect: vi.fn(),
   close: vi.fn(),
   transportClose: vi.fn(),
+  createStdioTransport: vi.fn(),
+  createHttpTransport: vi.fn(),
 }));
 
 vi.mock("@modelcontextprotocol/sdk/client/index.js", () => ({
@@ -43,14 +45,18 @@ vi.mock("@modelcontextprotocol/sdk/client/index.js", () => ({
 vi.mock("@modelcontextprotocol/sdk/client/stdio.js", () => ({
   StdioClientTransport: class MockStdioClientTransport {
     close = mocks.transportClose;
-    constructor(_options: unknown) {}
+    constructor(options: unknown) {
+      mocks.createStdioTransport(options);
+    }
   },
 }));
 
 vi.mock("@modelcontextprotocol/sdk/client/streamableHttp.js", () => ({
   StreamableHTTPClientTransport: class MockStreamableHTTPClientTransport {
     close = mocks.transportClose;
-    constructor(_url: URL, _options?: unknown) {}
+    constructor(url: URL, options?: unknown) {
+      mocks.createHttpTransport(url, options);
+    }
   },
 }));
 
@@ -101,6 +107,65 @@ describe("SDK-backed server tools", () => {
     mocks.getServerVersion.mockReturnValue({ name: "demo", version: "1.0.0" });
     mocks.close.mockResolvedValue(undefined);
     mocks.transportClose.mockResolvedValue(undefined);
+  });
+
+  it("creates the configured stdio transport", async () => {
+    const registry = createServerRegistry();
+    await registry.syncConfig(makeConfig({
+      command: "node",
+      args: ["server.js"],
+      cwd: "/workspace",
+      env: { API_KEY: "secret" },
+    }));
+
+    await registry.getServerCatalog("demo");
+
+    expect(mocks.createStdioTransport).toHaveBeenCalledWith({
+      command: "node",
+      args: ["server.js"],
+      cwd: "/workspace",
+      env: { API_KEY: "secret" },
+      stderr: "ignore",
+    });
+  });
+
+  it("creates an anonymous HTTP transport without request headers", async () => {
+    const registry = createServerRegistry();
+    await registry.syncConfig(makeConfig({
+      transport: "http",
+      url: "https://example.com/mcp",
+    }));
+
+    await registry.getServerCatalog("demo");
+
+    expect(mocks.createHttpTransport).toHaveBeenCalledWith(
+      new URL("https://example.com/mcp"),
+      undefined,
+    );
+  });
+
+  it("creates a static-token HTTP transport with merged headers", async () => {
+    const registry = createServerRegistry();
+    await registry.syncConfig(makeConfig({
+      transport: "http",
+      url: "https://example.com/mcp",
+      headers: { "X-API-Key": "secret", Authorization: "Basic ignored" },
+      bearerToken: "token-123",
+    }));
+
+    await registry.getServerCatalog("demo");
+
+    expect(mocks.createHttpTransport).toHaveBeenCalledWith(
+      new URL("https://example.com/mcp"),
+      {
+        requestInit: {
+          headers: {
+            "X-API-Key": "secret",
+            Authorization: "Bearer token-123",
+          },
+        },
+      },
+    );
   });
 
   it("limits the catalog to includeTools when configured", async () => {

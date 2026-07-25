@@ -25,11 +25,11 @@
 
 ## 架构约定
 
-- Registry 只管理 `McpServer` 对象并转发调用，不直接理解 SDK transport、鉴权、profile 细节。
+- Registry 只管理 `McpServer` 对象并转发调用，不直接理解 SDK transport、鉴权或具体 server 组装细节。
 - Pi direct tool 按能力域划分：`mcp_server` 管理 server 状态与生命周期，`mcp_tool` 承载 MCP Tools primitive；不要重新合并为依赖 optional 字段组合分派的单一入口。
-- `createMcpServer()` 是当前唯一 profile 推断与具体 Server 类型分派点。
-- 配置层输出 `ResolvedServerConfig`，只保留通用字段和 `definition`；具体 Server 构造函数负责校验并保存自己需要的配置字段。
-- `ServerOverview` 只表示文档内容与来源，不携带 transport/profile 等 runtime 分类信息。
+- `createMcpServer()` 是当前唯一 transport 推断与具体 server 组装分派点。
+- 配置层输出 `ResolvedServerConfig`，只保留通用字段和 `definition`；具体 server 组装实现负责校验并保存自己需要的配置字段。
+- `ServerOverview` 只表示文档内容与来源，不携带 transport、鉴权等 runtime 分类信息。
 - 当前 `connect` / `connectServer` / `connectState` 是历史命名，实际语义是“让 server 进入可用状态”，不应狭义理解为底层网络连接。
 - 对 HTTP server，`connected` 表示 MCP client/transport 已初始化且 tools catalog 可用，不表示 TCP 连接长期存在。
 - 插件配置顶层按职责拆分为 `materialization` 与 `tui`；`materialization` 控制 artifact 落盘、payload/JSON 归一化和给模型的 summary 预算，`tui` 只控制 TUI 渲染模式与展开模式折叠行数。

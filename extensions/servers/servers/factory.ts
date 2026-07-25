@@ -1,4 +1,4 @@
-import type { CompatibilityProfile, ResolvedServerConfig, ServerDefinition } from "../../modeling/types.js";
+import type { ResolvedServerConfig, ServerDefinition } from "../../modeling/types.js";
 import { HttpPublicServer } from "./http-public-server.js";
 import { HttpTokenServer } from "./http-token-server.js";
 import { StdioPragmaticServer } from "./stdio-pragmatic-server.js";
@@ -57,29 +57,13 @@ function resolveTransportHint(config: ResolvedServerConfig): "stdio" | "http" {
   throw new Error(`Server "${config.name}" must provide command or url, or set transport to "stdio" or "http".`);
 }
 
-export function resolveCompatibilityProfile(config: ResolvedServerConfig): CompatibilityProfile {
-  const transport = resolveTransportHint(config);
-
-  if (transport === "stdio") {
-    return "stdio-tools-pragmatic";
-  }
-
-  return hasStaticAuth(config.definition) ? "http-tools-token" : "http-tools-public";
-}
-
 export function createMcpServer(config: ResolvedServerConfig): McpServer {
-  const profile = resolveCompatibilityProfile(config);
-
-  switch (profile) {
-    case "stdio-tools-pragmatic":
+  switch (resolveTransportHint(config)) {
+    case "stdio":
       return new StdioPragmaticServer(config);
-    case "http-tools-public":
-      return new HttpPublicServer(config);
-    case "http-tools-token":
-      return new HttpTokenServer(config);
-    default: {
-      const exhaustiveCheck: never = profile;
-      throw new Error(`Unsupported compatibility profile: ${exhaustiveCheck}`);
-    }
+    case "http":
+      return hasStaticAuth(config.definition)
+        ? new HttpTokenServer(config)
+        : new HttpPublicServer(config);
   }
 }

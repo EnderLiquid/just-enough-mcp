@@ -1,30 +1,62 @@
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import type { ResolvedServerConfig, ServerSnapshot } from "../../modeling/types.js";
-import { ConnectedSdkServer } from "./connected-sdk-server.js";
+import type { ResolvedServerConfig, ServerCatalogResult, ServerSnapshot, ToolCallExecutionResult } from "../../modeling/types.js";
 import { expectNonEmptyString, expectOptionalTransport } from "./config-helpers.js";
+import { SdkToolSession } from "./sdk-tool-session.js";
+import type { McpServer } from "./types.js";
 
-const PROFILE = "http-tools-public";
+export class HttpPublicServer implements McpServer {
+  readonly name: string;
+  private readonly session: SdkToolSession;
 
-export class HttpPublicServer extends ConnectedSdkServer {
-  private readonly url: string;
+  constructor(readonly config: ResolvedServerConfig) {
+    this.name = config.name;
+    expectOptionalTransport(config.definition, config.name, "http");
+    const url = expectNonEmptyString(config.definition, "url", config.name);
 
-  constructor(config: ResolvedServerConfig) {
-    super(config, PROFILE);
-    expectOptionalTransport(config.definition, config.name, "http", PROFILE);
-    this.url = expectNonEmptyString(config.definition, "url", config.name, PROFILE);
+    this.session = new SdkToolSession({
+      serverName: this.name,
+      config,
+      createTransport: () => new StreamableHTTPClientTransport(new URL(url)),
+    });
   }
 
   snapshot(): ServerSnapshot {
     return {
       name: this.name,
-      profile: PROFILE,
-      connectState: this.connectState,
-      tools: this.visibleTools(),
+      connectState: this.session.state,
+      tools: this.session.tools,
     };
   }
 
-  protected createTransport(): Transport {
-    return new StreamableHTTPClientTransport(new URL(this.url));
+  async connect(signal?: AbortSignal): Promise<ServerSnapshot> {
+    await this.session.connect(signal);
+    return this.snapshot();
+  }
+
+  async getCatalog(signal?: AbortSignal): Promise<ServerCatalogResult> {
+    const tools = await this.session.getTools(signal);
+    return { server: this.snapshot(), tools };
+  }
+
+  async callTool(
+    name: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<ToolCallExecutionResult> {
+    const result = await this.session.callTool(name, args, signal);
+    return {
+      server: this.snapshot(),
+      toolName: name,
+      args,
+      result,
+    };
+  }
+
+  close(): Promise<void> {
+    return this.session.close();
+  }
+
+  getServerDescription(): string | undefined {
+    return this.session.getServerDescription();
   }
 }

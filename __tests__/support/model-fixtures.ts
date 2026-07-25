@@ -54,8 +54,7 @@ export function makeServerSnapshot(
 ): ServerSnapshot {
   return {
     name: "demo",
-    profile: "stdio-tools-pragmatic",
     connectState: "connected",
     ...overrides,
-  } as ServerSnapshot;
+  };
 }

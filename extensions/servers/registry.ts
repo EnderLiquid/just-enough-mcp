@@ -39,20 +39,8 @@ export interface ServerRegistry {
   closeAll(): Promise<void>;
 }
 
-function assertNever(value: never): never {
-  throw new Error(`Unhandled server profile: ${value}`);
-}
-
 function isConnectedSnapshot(snapshot: ServerSnapshot): boolean {
-  const profile = snapshot.profile;
-  switch (profile) {
-    case "stdio-tools-pragmatic":
-    case "http-tools-public":
-    case "http-tools-token":
-      return snapshot.connectState === "connected";
-    default:
-      return assertNever(profile);
-  }
+  return snapshot.connectState === "connected";
 }
 
 function areConfigsEqual(left: ResolvedServerConfig, right: ResolvedServerConfig): boolean {
