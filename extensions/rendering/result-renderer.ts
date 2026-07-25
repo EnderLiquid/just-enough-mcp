@@ -13,7 +13,7 @@ type McpResultDetails = McpServerResultDetails | McpToolResultDetails;
 type McpContentBlock = AgentToolResult<McpResultDetails>["content"][number];
 
 export interface McpServerInput {
-  action: "list" | "connect" | "disconnect";
+  action: "status" | "connect" | "disconnect";
   server?: string;
 }
 
@@ -102,7 +102,10 @@ function formatServerMinimalResultLine(
     return isError ? "↳ tool failed • Ctrl+O to expand" : "↳ result available • Ctrl+O to expand";
   }
   switch (details.kind) {
-    case "list":
+    case "status":
+      if ("serverName" in details) {
+        return `↳ ${details.serverName}: ${details.connectState} • Ctrl+O to expand`;
+      }
       return `↳ ${details.connectedCount}/${details.totalCount} ${pluralize(details.totalCount, "server")} connected • Ctrl+O to expand`;
     case "connect":
     case "disconnect":
@@ -193,7 +196,7 @@ export function renderMcpServerCall(
   theme: RenderTheme,
   _context?: { expanded?: boolean },
 ): Text {
-  const target = args.action === "list" ? undefined : args.server;
+  const target = args.server;
   return new Text(renderTitle("mcp_server", args.action, target, undefined, theme), 0, 0);
 }
 

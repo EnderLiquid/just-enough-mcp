@@ -59,7 +59,8 @@ MVP 主链路已可用：
 - 配置加载
 - overview 注入
 - 多 server 管理
-- `mcp_server({ action: "list" })`
+- `mcp_server({ action: "status" })`
+- `mcp_server({ action: "status", server })`
 - `mcp_server({ action: "connect", server })`
 - `mcp_server({ action: "disconnect", server })`
 - `mcp_tool({ action: "list", server })`

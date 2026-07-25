@@ -87,7 +87,8 @@ export interface ToolCallExecutionResult {
 }
 
 export type McpServerResultDetails =
-  | { kind: "list"; connectedCount: number; totalCount: number }
+  | { kind: "status"; connectedCount: number; totalCount: number }
+  | { kind: "status"; serverName: string; connectState: ServerConnectState }
   | { kind: "connect" }
   | { kind: "disconnect" };
 

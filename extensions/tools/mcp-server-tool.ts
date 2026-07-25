@@ -7,11 +7,11 @@ import { getMcpRuntime } from "../servers/runtime.js";
 import { pluralize } from "../formatting/english.js";
 
 export const mcpServerParametersSchema = Type.Object({
-  action: StringEnum(["list", "connect", "disconnect"] as const, {
-    description: "List configured MCP servers or change one server's availability",
+  action: StringEnum(["status", "connect", "disconnect"] as const, {
+    description: "Inspect configured MCP server state or change one server's availability",
   }),
   server: Type.Optional(Type.String({
-    description: "Server name; required for connect and disconnect, omitted for list",
+    description: "Optional server name for status; required for connect and disconnect",
   })),
 });
 
@@ -30,14 +30,14 @@ function rejectUnknownFields(params: object): void {
 }
 
 function validateInvocation(params: {
-  action: "list" | "connect" | "disconnect";
+  action: "status" | "connect" | "disconnect";
   server?: string;
 }): void {
   rejectUnknownFields(params);
   switch (params.action) {
-    case "list":
+    case "status":
       if (params.server !== undefined) {
-        throw new Error('Invalid mcp_server invocation: action "list" does not accept server.');
+        requireServer(params);
       }
       return;
     case "connect":
@@ -51,7 +51,7 @@ function validateInvocation(params: {
   }
 }
 
-function formatServerList(status: ServerRegistryStatus): string {
+function formatServerStatus(status: ServerRegistryStatus): string {
   const header = `${status.connectedCount}/${status.totalCount} ${pluralize(status.totalCount, "server")} connected:`;
   if (status.servers.length === 0) {
     return header;
@@ -73,7 +73,7 @@ export const mcpServerTool = defineTool<typeof mcpServerParametersSchema, McpSer
     "Inspect and manage configured MCP server state.",
     "Do not connect routinely before using mcp_tool; mcp_tool list and call initialize servers automatically.",
   ].join(" "),
-  promptSnippet: "List configured MCP servers, or explicitly connect or disconnect one server when needed.",
+  promptSnippet: "Inspect configured MCP server status, or explicitly connect or disconnect one server when needed.",
   renderCall: (args, theme, context) => renderMcpServerCall(args, theme, context),
   renderResult: (result, options, theme, context) => renderMcpServerResult(result, options, theme, context),
   parameters: mcpServerParametersSchema,
@@ -81,17 +81,31 @@ export const mcpServerTool = defineTool<typeof mcpServerParametersSchema, McpSer
     validateInvocation(params);
     const runtime = getMcpRuntime();
 
-    if (params.action === "list") {
-      const status = runtime.getStatus();
-      runtime.refreshFooter();
-      return {
-        content: [{ type: "text", text: formatServerList(status) }],
-        details: {
-          kind: "list",
-          connectedCount: status.connectedCount,
-          totalCount: status.totalCount,
-        },
-      };
+    if (params.action === "status") {
+      try {
+        if (params.server !== undefined) {
+          const server = runtime.registry().getServerState(params.server);
+          if (!server) {
+            throw new Error(`Unknown MCP server: ${params.server}`);
+          }
+          return {
+            content: [{ type: "text", text: `${server.name}\n${server.connectState}` }],
+            details: { kind: "status", serverName: server.name, connectState: server.connectState },
+          };
+        }
+
+        const status = runtime.getStatus();
+        return {
+          content: [{ type: "text", text: formatServerStatus(status) }],
+          details: {
+            kind: "status",
+            connectedCount: status.connectedCount,
+            totalCount: status.totalCount,
+          },
+        };
+      } finally {
+        runtime.refreshFooter();
+      }
     }
 
     if (params.action === "connect") {

@@ -63,8 +63,8 @@ describe("mcpServerTool.execute", () => {
   it("rejects action-specific invalid field combinations", async () => {
     useRuntime();
 
-    await expect(executeMcpServer({ action: "list", server: "demo" })).rejects.toThrow(
-      'action "list" does not accept server',
+    await expect(executeMcpServer({ action: "status", server: " " })).rejects.toThrow(
+      'action "status" requires a non-empty server',
     );
     await expect(executeMcpServer({ action: "connect" })).rejects.toThrow(
       'action "connect" requires a non-empty server',
@@ -73,12 +73,12 @@ describe("mcpServerTool.execute", () => {
       'action "disconnect" requires a non-empty server',
     );
     await expect(executeMcpServer({
-      action: "list",
+      action: "status",
       extra: true,
     } as unknown as Parameters<typeof mcpServerTool.execute>[1])).rejects.toThrow("unknown field extra");
   });
 
-  it("lists server states with pluralization", async () => {
+  it("reports all server states with pluralization", async () => {
     const refreshFooter = vi.fn();
     const status = {
       connectedCount: 1,
@@ -90,17 +90,17 @@ describe("mcpServerTool.execute", () => {
     };
     useRuntime({ getStatus: () => status, refreshFooter });
 
-    const result = await executeMcpServer({ action: "list" });
+    const result = await executeMcpServer({ action: "status" });
 
     expect(refreshFooter).toHaveBeenCalledTimes(1);
     expect(result.content[0]).toEqual({
       type: "text",
       text: "1/2 servers connected:\n\n[1] context7\nconnected\n\n[2] tavily\ndisconnected",
     });
-    expect(result.details).toEqual({ kind: "list", connectedCount: 1, totalCount: 2 });
+    expect(result.details).toEqual({ kind: "status", connectedCount: 1, totalCount: 2 });
   });
 
-  it("uses singular server in a one-entry list", async () => {
+  it("uses singular server in a one-entry status result", async () => {
     useRuntime({
       getStatus: () => ({
         connectedCount: 1,
@@ -109,12 +109,37 @@ describe("mcpServerTool.execute", () => {
       }),
     });
 
-    const result = await executeMcpServer({ action: "list" });
+    const result = await executeMcpServer({ action: "status" });
 
     expect(result.content[0]).toMatchObject({
       type: "text",
       text: expect.stringContaining("1/1 server connected:"),
     });
+  });
+
+  it("reports one named server state", async () => {
+    const refreshFooter = vi.fn();
+    const getServerState = vi.fn().mockReturnValue(
+      makeServerSnapshot({ name: "context7", connectState: "connected" }),
+    );
+    useRuntime({ refreshFooter, registry: { getServerState } });
+
+    const result = await executeMcpServer({ action: "status", server: "context7" });
+
+    expect(getServerState).toHaveBeenCalledWith("context7");
+    expect(refreshFooter).toHaveBeenCalledTimes(1);
+    expect(result.content[0]).toEqual({ type: "text", text: "context7\nconnected" });
+    expect(result.details).toEqual({ kind: "status", serverName: "context7", connectState: "connected" });
+  });
+
+  it("rejects status for an unknown server and refreshes the footer", async () => {
+    const refreshFooter = vi.fn();
+    useRuntime({ refreshFooter, registry: { getServerState: () => undefined } });
+
+    await expect(executeMcpServer({ action: "status", server: "missing" })).rejects.toThrow(
+      "Unknown MCP server: missing",
+    );
+    expect(refreshFooter).toHaveBeenCalledTimes(1);
   });
 
   it("connects explicitly and forwards AbortSignal", async () => {

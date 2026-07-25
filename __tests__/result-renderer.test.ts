@@ -47,8 +47,14 @@ describe("MCP call renderers", () => {
   it("renders server actions directly from action", () => {
     setRenderMode("minimal");
 
-    expect(renderFirstLine(renderMcpServerCall({ action: "list" }, testTheme))).toBe(
-      "<toolTitle><b>mcp_server</b></toolTitle> <b>list</b>",
+    expect(renderFirstLine(renderMcpServerCall({ action: "status" }, testTheme))).toBe(
+      "<toolTitle><b>mcp_server</b></toolTitle> <b>status</b>",
+    );
+    expect(renderFirstLine(renderMcpServerCall({
+      action: "status",
+      server: "context7",
+    }, testTheme))).toBe(
+      "<toolTitle><b>mcp_server</b></toolTitle> <b>status</b> <accent>context7</accent>",
     );
     expect(renderFirstLine(renderMcpServerCall({
       action: "disconnect",
@@ -117,7 +123,7 @@ describe("MCP result renderers", () => {
     expect(lines).toEqual([]);
   });
 
-  it("renders minimal tool and server list summaries", () => {
+  it("renders minimal tool and server status summaries", () => {
     setRenderMode("minimal");
 
     const catalog = renderFirstLine(renderMcpToolResult({
@@ -130,7 +136,7 @@ describe("MCP result renderers", () => {
     }, { expanded: false, isPartial: false }, testTheme));
     const servers = renderFirstLine(renderMcpServerResult({
       content: [{ type: "text", text: "2/5 servers connected:" }],
-      details: { kind: "list", connectedCount: 2, totalCount: 5 },
+      details: { kind: "status", connectedCount: 2, totalCount: 5 },
     }, { expanded: false, isPartial: false }, testTheme));
 
     expect(catalog).toBe("<muted>↳ 8 tools available • Ctrl+O to expand</muted>");
@@ -158,11 +164,17 @@ describe("MCP result renderers", () => {
     }, { expanded: false, isPartial: false }, testTheme));
     const servers = renderFirstLine(renderMcpServerResult({
       content: [{ type: "text", text: "1/1 server connected:" }],
-      details: { kind: "list", connectedCount: 1, totalCount: 1 },
+      details: { kind: "status", connectedCount: 1, totalCount: 1 },
     }, { expanded: false, isPartial: false }, testTheme));
 
     expect(catalog).toBe("<muted>↳ 1 tool available • Ctrl+O to expand</muted>");
     expect(servers).toBe("<muted>↳ 1/1 server connected • Ctrl+O to expand</muted>");
+
+    const server = renderFirstLine(renderMcpServerResult({
+      content: [{ type: "text", text: "context7\nconnected" }],
+      details: { kind: "status", serverName: "context7", connectState: "connected" },
+    }, { expanded: false, isPartial: false }, testTheme));
+    expect(server).toBe("<muted>↳ context7: connected • Ctrl+O to expand</muted>");
   });
 
   it("does not render minimal connect or disconnect results", () => {

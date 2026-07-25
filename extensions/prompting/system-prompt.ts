@@ -75,7 +75,7 @@ export function createServerOverviewPrompt(config: PluginConfigLoadResult): stri
     "2. Choose one relevant server.",
     "3. Call `mcp_tool({ action: \"list\", server: \"<name>\" })` to inspect that server's full tool catalog. This initializes the server automatically when needed.",
     "4. Call `mcp_tool({ action: \"call\", server: \"<name>\", tool: \"<tool>\", args: { ... } })` to use a tool. Follow the input schema returned by the list action and omit `args` when the selected tool takes no arguments.",
-    "5. Call `mcp_server({ action: \"list\" })` to inspect configured servers and their states.",
+    "5. Call `mcp_server({ action: \"status\" })` to inspect all configured servers, or `mcp_server({ action: \"status\", server: \"<name>\" })` to inspect one server's state.",
     "6. Use `mcp_server({ action: \"connect\", server: \"<name>\" })` or `mcp_server({ action: \"disconnect\", server: \"<name>\" })` only when explicit lifecycle control is useful.",
     "",
     "Available MCP servers:",
