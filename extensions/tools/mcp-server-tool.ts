@@ -85,7 +85,7 @@ export const mcpServerTool = defineTool<typeof mcpServerParametersSchema, McpSer
             throw new Error(`Unknown MCP server: ${serverName}`);
           }
           return {
-            content: [{ type: "text", text: `${server.name}\n${server.connectState}` }],
+            content: [{ type: "text", text: server.connectState }],
             details: { kind: "status", serverName: server.name, connectState: server.connectState },
           };
         }
@@ -111,7 +111,7 @@ export const mcpServerTool = defineTool<typeof mcpServerParametersSchema, McpSer
         runtime.refreshFooter();
       }
       return {
-        content: [{ type: "text", text: "Connected" }],
+        content: [{ type: "text", text: "connected" }],
         details: { kind: "connect" },
       };
     }
@@ -122,7 +122,7 @@ export const mcpServerTool = defineTool<typeof mcpServerParametersSchema, McpSer
       runtime.refreshFooter();
     }
     return {
-      content: [{ type: "text", text: "Disconnected" }],
+      content: [{ type: "text", text: "disconnected" }],
       details: { kind: "disconnect" },
     };
   },

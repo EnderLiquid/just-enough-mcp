@@ -125,7 +125,7 @@ describe("mcpServerTool.execute", () => {
 
     expect(getServerState).toHaveBeenCalledWith("context7");
     expect(refreshFooter).toHaveBeenCalledTimes(1);
-    expect(result.content[0]).toEqual({ type: "text", text: "context7\nconnected" });
+    expect(result.content[0]).toEqual({ type: "text", text: "connected" });
     expect(result.details).toEqual({ kind: "status", serverName: "context7", connectState: "connected" });
   });
 
@@ -149,7 +149,7 @@ describe("mcpServerTool.execute", () => {
 
     expect(connectServer).toHaveBeenCalledWith("demo", signal);
     expect(refreshFooter).toHaveBeenCalledTimes(1);
-    expect(result.content[0]).toEqual({ type: "text", text: "Connected" });
+    expect(result.content[0]).toEqual({ type: "text", text: "connected" });
     expect(result.details).toEqual({ kind: "connect" });
   });
 
@@ -175,7 +175,7 @@ describe("mcpServerTool.execute", () => {
 
     expect(disconnectServer).toHaveBeenCalledWith("demo");
     expect(refreshFooter).toHaveBeenCalledTimes(1);
-    expect(result.content[0]).toEqual({ type: "text", text: "Disconnected" });
+    expect(result.content[0]).toEqual({ type: "text", text: "disconnected" });
     expect(result.details).toEqual({ kind: "disconnect" });
   });
 
