@@ -135,7 +135,7 @@ describe("mcpTool.execute", () => {
     await expect(executeMcpTool({
       action: "list",
       server: "demo",
-      args: {},
+      args: { query: "pi" },
     })).rejects.toThrow('action "list" does not accept tool or args');
     await expect(executeMcpTool({
       action: "call",
@@ -168,7 +168,12 @@ describe("mcpTool.execute", () => {
     });
     useRuntime({ refreshFooter, registry: { getServerCatalog } });
 
-    const result = await executeMcpTool({ action: "list", server: "codegraph" }, signal);
+    const result = await executeMcpTool({
+      action: "list",
+      server: "codegraph",
+      tool: "",
+      args: {},
+    }, signal);
 
     expect(getServerCatalog).toHaveBeenCalledWith("codegraph", signal);
     expect(refreshFooter).toHaveBeenCalledTimes(1);

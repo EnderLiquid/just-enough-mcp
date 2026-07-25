@@ -63,9 +63,6 @@ describe("mcpServerTool.execute", () => {
   it("rejects action-specific invalid field combinations", async () => {
     useRuntime();
 
-    await expect(executeMcpServer({ action: "status", server: " " })).rejects.toThrow(
-      'action "status" requires a non-empty server',
-    );
     await expect(executeMcpServer({ action: "connect" })).rejects.toThrow(
       'action "connect" requires a non-empty server',
     );
@@ -90,7 +87,7 @@ describe("mcpServerTool.execute", () => {
     };
     useRuntime({ getStatus: () => status, refreshFooter });
 
-    const result = await executeMcpServer({ action: "status" });
+    const result = await executeMcpServer({ action: "status", server: "" });
 
     expect(refreshFooter).toHaveBeenCalledTimes(1);
     expect(result.content[0]).toEqual({

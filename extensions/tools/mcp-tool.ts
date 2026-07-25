@@ -42,6 +42,10 @@ function rejectUnknownFields(params: object, allowed: readonly string[]): void {
   }
 }
 
+function isEmptyObject(value: Record<string, unknown> | undefined): boolean {
+  return value !== undefined && Object.keys(value).length === 0;
+}
+
 function validateInvocation(params: {
   action: "list" | "call";
   server: string;
@@ -60,7 +64,11 @@ function validateInvocation(params: {
 
   switch (params.action) {
     case "list":
-      if (params.tool !== undefined || params.args !== undefined) {
+      // Some providers serialize optional fields as empty placeholders; treat them as omitted here.
+      if (
+        (params.tool !== undefined && params.tool.trim().length > 0)
+        || (params.args !== undefined && !isEmptyObject(params.args))
+      ) {
         throw new Error('Invalid mcp_tool invocation: action "list" does not accept tool or args.');
       }
       return;

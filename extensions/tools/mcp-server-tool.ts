@@ -32,18 +32,14 @@ function rejectUnknownFields(params: object): void {
 function validateInvocation(params: {
   action: "status" | "connect" | "disconnect";
   server?: string;
-}): void {
+}): string | undefined {
   rejectUnknownFields(params);
   switch (params.action) {
     case "status":
-      if (params.server !== undefined) {
-        requireServer(params);
-      }
-      return;
+      return params.server?.trim() || undefined;
     case "connect":
     case "disconnect":
-      requireServer(params);
-      return;
+      return requireServer(params);
     default: {
       const unreachable: never = params.action;
       throw new Error(`Invalid mcp_server action: ${String(unreachable)}`);
@@ -78,15 +74,15 @@ export const mcpServerTool = defineTool<typeof mcpServerParametersSchema, McpSer
   renderResult: (result, options, theme, context) => renderMcpServerResult(result, options, theme, context),
   parameters: mcpServerParametersSchema,
   async execute(_toolCallId, params, signal) {
-    validateInvocation(params);
+    const serverName = validateInvocation(params);
     const runtime = getMcpRuntime();
 
     if (params.action === "status") {
       try {
-        if (params.server !== undefined) {
-          const server = runtime.registry().getServerState(params.server);
+        if (serverName !== undefined) {
+          const server = runtime.registry().getServerState(serverName);
           if (!server) {
-            throw new Error(`Unknown MCP server: ${params.server}`);
+            throw new Error(`Unknown MCP server: ${serverName}`);
           }
           return {
             content: [{ type: "text", text: `${server.name}\n${server.connectState}` }],
@@ -110,7 +106,7 @@ export const mcpServerTool = defineTool<typeof mcpServerParametersSchema, McpSer
 
     if (params.action === "connect") {
       try {
-        await runtime.registry().connectServer(params.server!, signal);
+        await runtime.registry().connectServer(serverName!, signal);
       } finally {
         runtime.refreshFooter();
       }
@@ -121,7 +117,7 @@ export const mcpServerTool = defineTool<typeof mcpServerParametersSchema, McpSer
     }
 
     try {
-      await runtime.registry().disconnectServer(params.server!);
+      await runtime.registry().disconnectServer(serverName!);
     } finally {
       runtime.refreshFooter();
     }
