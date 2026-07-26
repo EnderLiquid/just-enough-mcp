@@ -2,20 +2,21 @@ import { loadPluginConfig } from "../config/plugin-config.js";
 import { tryBootstrapOverviewFromDescription } from "../config/overview-bootstrap.js";
 import type { PluginConfigLoadResult } from "../modeling/types.js";
 import { updateFooterStatus } from "../rendering/footer-status.js";
-import { createServerRegistry, type ServerReadyEvent, type ServerRegistry, type ServerRegistryStatus } from "./registry.js";
+import { AsyncReadWriteLock } from "./async-read-write-lock.js";
+import { createServerRegistry, type ServerReadyEvent, type ServerRegistry } from "./registry.js";
 import { notifyInfo } from "../rendering/notifier.js";
 
 export interface McpRuntime {
-  sync(): Promise<ServerRegistryStatus>;
+  sync(): Promise<void>;
   config: () => PluginConfigLoadResult | undefined;
-  getStatus: () => ServerRegistryStatus;
   registry: () => ServerRegistry;
-  refreshFooter(): void;
+  refreshFooter(): Promise<void>;
   closeAll(): Promise<void>;
 }
 
-function createRuntime(): McpRuntime {
+export function createRuntime(): McpRuntime {
   let loadedConfig: PluginConfigLoadResult | undefined;
+  const lifecycleLock = new AsyncReadWriteLock();
 
   async function handleServerReady(event: ServerReadyEvent): Promise<void> {
     if (!loadedConfig) {
@@ -40,28 +41,24 @@ function createRuntime(): McpRuntime {
     onServerReady: handleServerReady,
   });
 
-  function getStatus(): ServerRegistryStatus {
-    return registry.getStatus();
-  }
-
-  function refreshFooter(): void {
-    const current = getStatus();
-    updateFooterStatus(current.connectedCount, current.totalCount);
-  }
-
   return {
     async sync() {
-      loadedConfig = loadPluginConfig();
-      await registry.syncConfig(loadedConfig);
-      return getStatus();
+      return lifecycleLock.withWrite(async () => {
+        loadedConfig = loadPluginConfig();
+        await registry.syncConfig(loadedConfig);
+      });
     },
     config: () => loadedConfig,
-    getStatus,
     registry: () => registry,
-    refreshFooter,
+    async refreshFooter() {
+      const current = await registry.getStatus();
+      updateFooterStatus(current.connectedCount, current.totalCount);
+    },
     async closeAll() {
-      await registry.closeAll();
-      loadedConfig = undefined;
+      await lifecycleLock.withWrite(async () => {
+        await registry.closeAll();
+        loadedConfig = undefined;
+      });
     },
   };
 }

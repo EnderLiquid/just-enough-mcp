@@ -2,6 +2,7 @@ import { Compile } from "typebox/compile";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { MaterializedToolCallResult } from "../extensions/artifacts/types.js";
+import type { PluginConfigLoadResult } from "../extensions/modeling/types.js";
 import type { McpRuntime } from "../extensions/servers/runtime.js";
 import type { ServerRegistry } from "../extensions/servers/registry.js";
 import { makePluginConfig, makeServerSnapshot } from "./support/model-fixtures.js";
@@ -25,17 +26,27 @@ import {
   registerMcpTool,
 } from "../extensions/tools/mcp-tool.js";
 
-type RuntimeStubOverrides = Partial<Omit<McpRuntime, "registry">> & {
+type RuntimeStubOverrides = {
   registry?: Partial<ServerRegistry>;
+  refreshFooter?: () => Promise<void>;
+  closeAll?: () => Promise<void>;
+  sync?: () => Promise<void>;
+  config?: () => PluginConfigLoadResult | undefined;
 };
 
 function useRuntime(overrides: RuntimeStubOverrides = {}): McpRuntime {
-  const { registry: registryOverrides, ...runtimeOverrides } = overrides;
+  const {
+    registry: registryOverrides,
+    sync,
+    config,
+    refreshFooter,
+    closeAll,
+  } = overrides;
   const emptyStatus = { connectedCount: 0, totalCount: 0, servers: [] };
   const registry: ServerRegistry = {
     syncConfig: async () => {},
-    getStatus: () => emptyStatus,
-    getServerState: () => undefined,
+    getStatus: async () => emptyStatus,
+    getServerSnapshot: async () => undefined,
     connectServer: async () => { throw new Error("Unexpected connectServer call."); },
     disconnectServer: async () => { throw new Error("Unexpected disconnectServer call."); },
     getServerCatalog: async () => { throw new Error("Unexpected getServerCatalog call."); },
@@ -44,13 +55,11 @@ function useRuntime(overrides: RuntimeStubOverrides = {}): McpRuntime {
     ...registryOverrides,
   };
   const runtime: McpRuntime = {
-    sync: async () => emptyStatus,
-    config: () => undefined,
-    getStatus: () => emptyStatus,
+    sync: sync ?? (async () => {}),
+    config: config ?? (() => undefined),
     registry: () => registry,
-    refreshFooter: vi.fn(),
-    closeAll: async () => {},
-    ...runtimeOverrides,
+    refreshFooter: refreshFooter ?? vi.fn(),
+    closeAll: closeAll ?? (async () => {}),
   };
   mocks.getMcpRuntime.mockReturnValue(runtime);
   return runtime;

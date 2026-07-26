@@ -16,7 +16,7 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
     setFooterStatusSink(ctx.hasUI ? { setStatus: ctx.ui.setStatus.bind(ctx.ui) } : undefined);
     try {
       await runtime.sync();
-      runtime.refreshFooter();
+      await runtime.refreshFooter();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       notifyError(`just-enough-mcp config error: ${message}`);

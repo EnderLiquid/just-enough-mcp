@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { PluginConfigLoadResult } from "../extensions/modeling/types.js";
 import type { McpRuntime } from "../extensions/servers/runtime.js";
 import type { ServerRegistry } from "../extensions/servers/registry.js";
 import { makeServerSnapshot } from "./support/model-fixtures.js";
@@ -17,17 +18,27 @@ import {
   registerMcpServerTool,
 } from "../extensions/tools/mcp-server-tool.js";
 
-type RuntimeStubOverrides = Partial<Omit<McpRuntime, "registry">> & {
+type RuntimeStubOverrides = {
   registry?: Partial<ServerRegistry>;
+  refreshFooter?: () => Promise<void>;
+  closeAll?: () => Promise<void>;
+  sync?: () => Promise<void>;
+  config?: () => PluginConfigLoadResult | undefined;
 };
 
 function useRuntime(overrides: RuntimeStubOverrides = {}): McpRuntime {
-  const { registry: registryOverrides, ...runtimeOverrides } = overrides;
+  const {
+    registry: registryOverrides,
+    sync,
+    config,
+    refreshFooter,
+    closeAll,
+  } = overrides;
   const emptyStatus = { connectedCount: 0, totalCount: 0, servers: [] };
   const registry: ServerRegistry = {
     syncConfig: async () => {},
-    getStatus: () => emptyStatus,
-    getServerState: () => undefined,
+    getStatus: async () => emptyStatus,
+    getServerSnapshot: async () => undefined,
     connectServer: async () => { throw new Error("Unexpected connectServer call."); },
     disconnectServer: async () => { throw new Error("Unexpected disconnectServer call."); },
     getServerCatalog: async () => { throw new Error("Unexpected getServerCatalog call."); },
@@ -36,13 +47,11 @@ function useRuntime(overrides: RuntimeStubOverrides = {}): McpRuntime {
     ...registryOverrides,
   };
   const runtime: McpRuntime = {
-    sync: async () => emptyStatus,
-    config: () => undefined,
-    getStatus: () => emptyStatus,
+    sync: sync ?? (async () => {}),
+    config: config ?? (() => undefined),
     registry: () => registry,
-    refreshFooter: vi.fn(),
-    closeAll: async () => {},
-    ...runtimeOverrides,
+    refreshFooter: refreshFooter ?? vi.fn(),
+    closeAll: closeAll ?? (async () => {}),
   };
   mocks.getMcpRuntime.mockReturnValue(runtime);
   return runtime;
@@ -85,7 +94,7 @@ describe("mcpServerTool.execute", () => {
         makeServerSnapshot({ name: "tavily", connectState: "disconnected" }),
       ],
     };
-    useRuntime({ getStatus: () => status, refreshFooter });
+    useRuntime({ refreshFooter, registry: { getStatus: async () => status } });
 
     const result = await executeMcpServer({ action: "status", server: "" });
 
@@ -99,11 +108,13 @@ describe("mcpServerTool.execute", () => {
 
   it("单条状态结果中使用英文单数形式", async () => {
     useRuntime({
-      getStatus: () => ({
-        connectedCount: 1,
-        totalCount: 1,
-        servers: [makeServerSnapshot()],
-      }),
+      registry: {
+        getStatus: async () => ({
+          connectedCount: 1,
+          totalCount: 1,
+          servers: [makeServerSnapshot()],
+        }),
+      },
     });
 
     const result = await executeMcpServer({ action: "status" });
@@ -116,10 +127,10 @@ describe("mcpServerTool.execute", () => {
 
   it("报告指定名称的服务器状态", async () => {
     const refreshFooter = vi.fn();
-    const getServerState = vi.fn().mockReturnValue(
+    const getServerState = vi.fn().mockResolvedValue(
       makeServerSnapshot({ name: "context7", connectState: "connected" }),
     );
-    useRuntime({ refreshFooter, registry: { getServerState } });
+    useRuntime({ refreshFooter, registry: { getServerSnapshot: getServerState } });
 
     const result = await executeMcpServer({ action: "status", server: "context7" });
 
@@ -131,7 +142,7 @@ describe("mcpServerTool.execute", () => {
 
   it("拒绝不存在的服务器状态查询并刷新 footer", async () => {
     const refreshFooter = vi.fn();
-    useRuntime({ refreshFooter, registry: { getServerState: () => undefined } });
+    useRuntime({ refreshFooter, registry: { getServerSnapshot: async () => undefined } });
 
     await expect(executeMcpServer({ action: "status", server: "missing" })).rejects.toThrow(
       "Unknown MCP server: missing",

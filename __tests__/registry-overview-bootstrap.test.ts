@@ -84,7 +84,7 @@ describe("createServerRegistry onServerReady", () => {
     await registry.syncConfig(makeConfig());
     await registry.connectServer("demo");
 
-    const server = registry.getServerState("demo");
+    const server = await registry.getServerSnapshot("demo");
     expect(server).toEqual({
       name: "demo",
       connectState: "connected",

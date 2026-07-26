@@ -2,12 +2,32 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { ErrorCode, McpError, type CallToolResult, type Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { ResolvedServerConfig, ServerConnectState } from "../../modeling/types.js";
+import { AsyncReadWriteLock } from "../async-read-write-lock.js";
 import { applyToolNameFilter, createToolNameFilter, isToolNameFilteredByConfig, type ToolNameFilter } from "./tool-filter.js";
 
 interface SdkToolSessionOptions {
   serverName: string;
   config: ResolvedServerConfig;
   createTransport: () => Transport;
+}
+
+export interface SdkToolSessionSnapshot {
+  connectState: ServerConnectState;
+  tools?: Tool[];
+}
+
+export interface SdkToolSessionCatalogResult {
+  snapshot: SdkToolSessionSnapshot;
+  tools: Tool[];
+}
+
+export interface SdkToolSessionCallResult {
+  snapshot: SdkToolSessionSnapshot;
+  result: CallToolResult;
+}
+
+interface PublishedSessionState extends SdkToolSessionSnapshot {
+  description?: string;
 }
 
 function createBaseClient(serverName: string): Client {
@@ -23,8 +43,8 @@ export class SdkToolSession {
   private client: Client | undefined;
   private transport: Transport | undefined;
   private remoteTools: Tool[] | undefined;
-  private connectState: ServerConnectState = "disconnected";
-  private connectPromise: Promise<void> | undefined;
+  private publishedState: PublishedSessionState = { connectState: "disconnected" };
+  private readonly lifecycleLock = new AsyncReadWriteLock();
   private readonly toolFilter: ToolNameFilter;
 
   constructor(private readonly options: SdkToolSessionOptions) {
@@ -32,101 +52,179 @@ export class SdkToolSession {
   }
 
   get state(): ServerConnectState {
-    return this.connectState;
+    return this.publishedState.connectState;
   }
 
   get tools(): Tool[] | undefined {
-    return this.visibleTools();
+    return this.publishedState.tools ? [...this.publishedState.tools] : undefined;
   }
 
-  async connect(signal?: AbortSignal): Promise<void> {
-    if (this.client) {
-      return;
+  async connect(signal?: AbortSignal): Promise<SdkToolSessionSnapshot> {
+    const connectedSnapshot = await this.lifecycleLock.withRead(() =>
+      this.client ? this.snapshot() : undefined,
+    );
+    if (connectedSnapshot) {
+      return connectedSnapshot;
     }
 
-    if (this.connectPromise) {
-      return this.connectPromise;
-    }
-
-    const connectPromise = this.connectFresh(signal);
-    this.connectPromise = connectPromise;
-    try {
-      await connectPromise;
-    } finally {
-      if (this.connectPromise === connectPromise) {
-        this.connectPromise = undefined;
-      }
-    }
+    return this.lifecycleLock.withWrite(async () => {
+      await this.connectLocked(signal);
+      return this.snapshot();
+    });
   }
 
-  async getTools(signal?: AbortSignal): Promise<Tool[]> {
-    await this.connect(signal);
-    return this.visibleTools() ?? [];
+  async getTools(signal?: AbortSignal): Promise<SdkToolSessionCatalogResult> {
+    return this.withConnectedRead(signal, () => {
+      const tools = this.visibleTools() ?? [];
+      return {
+        snapshot: this.snapshot(),
+        tools,
+      };
+    });
   }
 
   async callTool(
     name: string,
     args: Record<string, unknown>,
     signal?: AbortSignal,
-  ): Promise<CallToolResult> {
-    await this.connect(signal);
-    this.requireAvailableTool(name);
-    const client = this.requireClient();
+  ): Promise<SdkToolSessionCallResult> {
+    let failedClient: Client | undefined;
 
     try {
-      return await client.callTool(
-        {
-          name,
-          arguments: args,
-        },
-        undefined,
-        signal ? { signal } : undefined,
-      ) as CallToolResult;
+      return await this.withConnectedRead(signal, async client => {
+        this.requireAvailableTool(name);
+
+        try {
+          const result = await client.callTool(
+            {
+              name,
+              arguments: args,
+            },
+            undefined,
+            signal ? { signal } : undefined,
+          ) as CallToolResult;
+          return {
+            snapshot: this.snapshot(),
+            result,
+          };
+        } catch (error) {
+          if (isConnectionFailure(error, client)) {
+            failedClient = client;
+          }
+          throw error;
+        }
+      });
     } catch (error) {
-      if (isConnectionFailure(error, client) && this.client === client) {
-        await this.close();
+      const clientToInvalidate = failedClient;
+      if (clientToInvalidate) {
+        await this.lifecycleLock.withWrite(async () => {
+          if (this.client === clientToInvalidate) {
+            await this.closeLocked();
+          }
+        });
       }
       throw error;
     }
   }
 
-  async close(): Promise<void> {
-    const client = this.client;
-    const transport = this.transport;
-
-    this.client = undefined;
-    this.transport = undefined;
-    this.remoteTools = undefined;
-    this.connectState = "disconnected";
-
-    await client?.close().catch(() => {});
-    await transport?.close().catch(() => {});
+  async close(): Promise<SdkToolSessionSnapshot> {
+    return this.lifecycleLock.withWrite(() => this.closeLocked());
   }
 
   getServerDescription(): string | undefined {
-    return this.client?.getServerVersion()?.description;
+    return this.publishedState.description;
   }
 
-  private async connectFresh(signal?: AbortSignal): Promise<void> {
-    this.connectState = "connecting";
-    const client = createBaseClient(this.options.serverName);
-    const transport = this.options.createTransport();
-    const requestOptions = signal ? { signal } : undefined;
+  private snapshot(): SdkToolSessionSnapshot {
+    return {
+      connectState: this.publishedState.connectState,
+      tools: this.tools,
+    };
+  }
 
+  private async withConnectedRead<T>(
+    signal: AbortSignal | undefined,
+    operation: (client: Client) => T | Promise<T>,
+  ): Promise<T> {
+    while (true) {
+      const outcome = await this.lifecycleLock.withRead(async () => {
+        const client = this.client;
+        if (!client) {
+          return { connected: false } as const;
+        }
+
+        return {
+          connected: true,
+          value: await operation(client),
+        } as const;
+      });
+
+      if (outcome.connected) {
+        return outcome.value;
+      }
+
+      await this.lifecycleLock.withWrite(() => this.connectLocked(signal));
+    }
+  }
+
+  private async connectLocked(signal?: AbortSignal): Promise<void> {
+    if (this.client) {
+      return;
+    }
+
+    this.publishedState = {
+      connectState: "connecting",
+      ...(this.publishedState.description ? { description: this.publishedState.description } : {}),
+    };
+
+    let client: Client | undefined;
+    let transport: Transport | undefined;
     try {
+      client = createBaseClient(this.options.serverName);
+      transport = this.options.createTransport();
+      const requestOptions = signal ? { signal } : undefined;
+
       await client.connect(transport, requestOptions);
       const listed = await client.listTools(undefined, requestOptions);
 
       this.client = client;
       this.transport = transport;
       this.remoteTools = listed.tools ?? [];
-      this.connectState = "connected";
+      const description = client.getServerVersion()?.description;
+      this.publishedState = {
+        connectState: "connected",
+        tools: this.visibleTools() ?? [],
+        ...(description ? { description } : {}),
+      };
     } catch (error) {
-      this.connectState = "disconnected";
-      await client.close().catch(() => {});
-      await transport.close().catch(() => {});
+      this.client = undefined;
+      this.transport = undefined;
+      this.remoteTools = undefined;
+      this.publishedState = {
+        connectState: "disconnected",
+        ...(this.publishedState.description ? { description: this.publishedState.description } : {}),
+      };
+      await client?.close().catch(() => {});
+      await transport?.close().catch(() => {});
       throw error;
     }
+  }
+
+  private async closeLocked(): Promise<SdkToolSessionSnapshot> {
+    const client = this.client;
+    const transport = this.transport;
+
+    this.client = undefined;
+    this.transport = undefined;
+    this.remoteTools = undefined;
+    this.publishedState = {
+      connectState: "disconnected",
+      ...(this.publishedState.description ? { description: this.publishedState.description } : {}),
+    };
+
+    await client?.close().catch(() => {});
+    await transport?.close().catch(() => {});
+    return this.snapshot();
   }
 
   private visibleTools(): Tool[] | undefined {
@@ -134,13 +232,6 @@ export class SdkToolSession {
       return undefined;
     }
     return applyToolNameFilter(this.remoteTools, this.toolFilter);
-  }
-
-  private requireClient(): Client {
-    if (!this.client) {
-      throw new Error(`MCP server client is not open: ${this.options.serverName}`);
-    }
-    return this.client;
   }
 
   private requireAvailableTool(toolName: string): void {

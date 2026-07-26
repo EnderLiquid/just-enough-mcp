@@ -12,6 +12,6 @@ export interface McpServer {
     args: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<ToolCallExecutionResult>;
-  close(): Promise<void>;
+  close(): Promise<ServerSnapshot>;
   getServerDescription(): string | undefined;
 }

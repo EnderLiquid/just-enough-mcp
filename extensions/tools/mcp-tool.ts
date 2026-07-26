@@ -151,7 +151,7 @@ export const mcpTool = defineTool<typeof mcpToolParametersSchema, McpToolResultD
           },
         };
       } finally {
-        runtime.refreshFooter();
+        await runtime.refreshFooter();
       }
     }
 
@@ -177,7 +177,7 @@ export const mcpTool = defineTool<typeof mcpToolParametersSchema, McpToolResultD
         },
       };
     } finally {
-      runtime.refreshFooter();
+      await runtime.refreshFooter();
     }
   },
 });

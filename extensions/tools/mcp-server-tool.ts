@@ -80,7 +80,7 @@ export const mcpServerTool = defineTool<typeof mcpServerParametersSchema, McpSer
     if (params.action === "status") {
       try {
         if (serverName !== undefined) {
-          const server = runtime.registry().getServerState(serverName);
+          const server = await runtime.registry().getServerSnapshot(serverName);
           if (!server) {
             throw new Error(`Unknown MCP server: ${serverName}`);
           }
@@ -90,7 +90,7 @@ export const mcpServerTool = defineTool<typeof mcpServerParametersSchema, McpSer
           };
         }
 
-        const status = runtime.getStatus();
+        const status = await runtime.registry().getStatus();
         return {
           content: [{ type: "text", text: formatServerStatus(status) }],
           details: {
@@ -100,7 +100,7 @@ export const mcpServerTool = defineTool<typeof mcpServerParametersSchema, McpSer
           },
         };
       } finally {
-        runtime.refreshFooter();
+        await runtime.refreshFooter();
       }
     }
 
@@ -108,7 +108,7 @@ export const mcpServerTool = defineTool<typeof mcpServerParametersSchema, McpSer
       try {
         await runtime.registry().connectServer(serverName!, signal);
       } finally {
-        runtime.refreshFooter();
+        await runtime.refreshFooter();
       }
       return {
         content: [{ type: "text", text: "connected" }],
@@ -119,7 +119,7 @@ export const mcpServerTool = defineTool<typeof mcpServerParametersSchema, McpSer
     try {
       await runtime.registry().disconnectServer(serverName!);
     } finally {
-      runtime.refreshFooter();
+      await runtime.refreshFooter();
     }
     return {
       content: [{ type: "text", text: "disconnected" }],

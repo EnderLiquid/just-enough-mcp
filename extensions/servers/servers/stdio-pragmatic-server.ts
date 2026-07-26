@@ -38,13 +38,16 @@ export class StdioPragmaticServer implements McpServer {
   }
 
   async connect(signal?: AbortSignal): Promise<ServerSnapshot> {
-    await this.session.connect(signal);
-    return this.snapshot();
+    const snapshot = await this.session.connect(signal);
+    return { name: this.name, ...snapshot };
   }
 
   async getCatalog(signal?: AbortSignal): Promise<ServerCatalogResult> {
-    const tools = await this.session.getTools(signal);
-    return { server: this.snapshot(), tools };
+    const catalog = await this.session.getTools(signal);
+    return {
+      server: { name: this.name, ...catalog.snapshot },
+      tools: catalog.tools,
+    };
   }
 
   async callTool(
@@ -52,17 +55,18 @@ export class StdioPragmaticServer implements McpServer {
     callArgs: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<ToolCallExecutionResult> {
-    const result = await this.session.callTool(name, callArgs, signal);
+    const execution = await this.session.callTool(name, callArgs, signal);
     return {
-      server: this.snapshot(),
+      server: { name: this.name, ...execution.snapshot },
       toolName: name,
       args: callArgs,
-      result,
+      result: execution.result,
     };
   }
 
-  close(): Promise<void> {
-    return this.session.close();
+  async close(): Promise<ServerSnapshot> {
+    const snapshot = await this.session.close();
+    return { name: this.name, ...snapshot };
   }
 
   getServerDescription(): string | undefined {
