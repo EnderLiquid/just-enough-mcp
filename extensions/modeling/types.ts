@@ -53,6 +53,7 @@ export interface ServerSnapshot {
   name: string;
   connectState: ServerConnectState;
   tools?: Tool[];
+  description?: string;
 }
 
 export interface ServerCatalogResult {

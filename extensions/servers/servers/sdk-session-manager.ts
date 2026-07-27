@@ -14,6 +14,7 @@ interface SdkSessionOptions {
 export interface SdkSessionSnapshot {
   connectState: ServerConnectState;
   tools?: Tool[];
+  description?: string;
 }
 
 export interface SdkSessionToolCatalogResult {
@@ -24,10 +25,6 @@ export interface SdkSessionToolCatalogResult {
 export interface SdkSessionToolCallResult {
   snapshot: SdkSessionSnapshot;
   result: CallToolResult;
-}
-
-interface PublishedSessionState extends SdkSessionSnapshot {
-  description?: string;
 }
 
 function createBaseClient(serverName: string): Client {
@@ -43,20 +40,12 @@ export class SdkSessionManager {
   private client: Client | undefined;
   private transport: Transport | undefined;
   private remoteTools: Tool[] | undefined;
-  private publishedState: PublishedSessionState = { connectState: "disconnected" };
+  private publishedState: SdkSessionSnapshot = { connectState: "disconnected" };
   private readonly lifecycleLock = new AsyncReadWriteLock();
   private readonly toolFilter: ToolNameFilter;
 
   constructor(private readonly options: SdkSessionOptions) {
     this.toolFilter = createToolNameFilter(options.config);
-  }
-
-  get state(): ServerConnectState {
-    return this.publishedState.connectState;
-  }
-
-  get tools(): Tool[] | undefined {
-    return this.publishedState.tools ? [...this.publishedState.tools] : undefined;
   }
 
   async connect(signal?: AbortSignal): Promise<SdkSessionSnapshot> {
@@ -131,14 +120,10 @@ export class SdkSessionManager {
     return this.lifecycleLock.withWrite(() => this.closeLocked());
   }
 
-  getServerDescription(): string | undefined {
-    return this.publishedState.description;
-  }
-
-  private snapshot(): SdkSessionSnapshot {
+  snapshot(): SdkSessionSnapshot {
     return {
-      connectState: this.publishedState.connectState,
-      tools: this.tools,
+      ...this.publishedState,
+      tools: this.publishedState.tools ? [...this.publishedState.tools] : undefined,
     };
   }
 

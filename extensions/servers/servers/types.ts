@@ -13,5 +13,4 @@ export interface McpServer {
     signal?: AbortSignal,
   ): Promise<ToolCallExecutionResult>;
   close(): Promise<ServerSnapshot>;
-  getServerDescription(): string | undefined;
 }

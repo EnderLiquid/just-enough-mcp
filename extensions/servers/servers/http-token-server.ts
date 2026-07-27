@@ -29,11 +29,7 @@ export class HttpTokenServer implements McpServer {
   }
 
   snapshot(): ServerSnapshot {
-    return {
-      name: this.name,
-      connectState: this.session.state,
-      tools: this.session.tools,
-    };
+    return { name: this.name, ...this.session.snapshot() };
   }
 
   async connect(signal?: AbortSignal): Promise<ServerSnapshot> {
@@ -68,7 +64,4 @@ export class HttpTokenServer implements McpServer {
     return { name: this.name, ...snapshot };
   }
 
-  getServerDescription(): string | undefined {
-    return this.session.getServerDescription();
-  }
 }

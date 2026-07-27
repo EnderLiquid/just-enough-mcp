@@ -89,6 +89,7 @@ describe("createServerRegistry onServerReady", () => {
       name: "demo",
       connectState: "connected",
       tools: [],
+      description: "Demo MCP server",
     });
   });
 });

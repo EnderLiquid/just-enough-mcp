@@ -52,7 +52,7 @@ export function createServerRegistry(options: ServerRegistryOptions = {}): Serve
   const servers = new Map<string, McpServer>();
   const lifecycleLock = new AsyncReadWriteLock();
 
-  async function emitServerReady(server: McpServer): Promise<void> {
+  async function emitServerReady(server: McpServer, snapshot: ServerSnapshot): Promise<void> {
     if (!options.onServerReady) {
       return;
     }
@@ -60,7 +60,7 @@ export function createServerRegistry(options: ServerRegistryOptions = {}): Serve
     try {
       await options.onServerReady({
         config: server.config,
-        description: server.getServerDescription(),
+        description: snapshot.description,
       });
     } catch {
     }
@@ -110,8 +110,8 @@ export function createServerRegistry(options: ServerRegistryOptions = {}): Serve
         for (const serverConfig of config.servers) {
           if (serverConfig.connectionMode === "eager") {
             const server = requireServer(serverConfig.name);
-            await server.connect();
-            await emitServerReady(server);
+            const snapshot = await server.connect();
+            await emitServerReady(server, snapshot);
           }
         }
       });
@@ -140,7 +140,7 @@ export function createServerRegistry(options: ServerRegistryOptions = {}): Serve
       return lifecycleLock.withRead(async () => {
         const server = requireServer(name);
         const snapshot = await server.connect(signal);
-        await emitServerReady(server);
+        await emitServerReady(server, snapshot);
         return snapshot;
       });
     },
