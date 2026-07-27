@@ -1,12 +1,12 @@
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { ResolvedServerConfig, ServerCatalogResult, ServerSnapshot, ToolCallExecutionResult } from "../../modeling/types.js";
 import { expectNonEmptyString, expectOptionalString, expectOptionalStringArray, expectOptionalStringRecord, expectOptionalTransport } from "./config-helpers.js";
-import { SdkToolSession } from "./sdk-tool-session.js";
+import { SdkSessionManager } from "./sdk-session-manager.js";
 import type { McpServer } from "./types.js";
 
 export class StdioPragmaticServer implements McpServer {
   readonly name: string;
-  private readonly session: SdkToolSession;
+  private readonly session: SdkSessionManager;
 
   constructor(readonly config: ResolvedServerConfig) {
     this.name = config.name;
@@ -16,7 +16,7 @@ export class StdioPragmaticServer implements McpServer {
     const cwd = expectOptionalString(config.definition, "cwd", config.name);
     const env = expectOptionalStringRecord(config.definition, "env", config.name);
 
-    this.session = new SdkToolSession({
+    this.session = new SdkSessionManager({
       serverName: this.name,
       config,
       createTransport: () => new StdioClientTransport({

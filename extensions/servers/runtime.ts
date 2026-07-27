@@ -2,7 +2,7 @@ import { loadPluginConfig } from "../config/plugin-config.js";
 import { tryBootstrapOverviewFromDescription } from "../config/overview-bootstrap.js";
 import type { PluginConfigLoadResult } from "../modeling/types.js";
 import { updateFooterStatus } from "../rendering/footer-status.js";
-import { AsyncReadWriteLock } from "./async-read-write-lock.js";
+import { AsyncReadWriteLock } from "../concurrency/async-read-write-lock.js";
 import { createServerRegistry, type ServerReadyEvent, type ServerRegistry } from "./registry.js";
 import { notifyInfo } from "../rendering/notifier.js";
 

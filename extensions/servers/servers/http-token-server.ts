@@ -1,12 +1,12 @@
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { ResolvedServerConfig, ServerCatalogResult, ServerSnapshot, ToolCallExecutionResult } from "../../modeling/types.js";
 import { expectNonEmptyString, expectOptionalString, expectOptionalStringRecord, expectOptionalTransport } from "./config-helpers.js";
-import { SdkToolSession } from "./sdk-tool-session.js";
+import { SdkSessionManager } from "./sdk-session-manager.js";
 import type { McpServer } from "./types.js";
 
 export class HttpTokenServer implements McpServer {
   readonly name: string;
-  private readonly session: SdkToolSession;
+  private readonly session: SdkSessionManager;
 
   constructor(readonly config: ResolvedServerConfig) {
     this.name = config.name;
@@ -19,7 +19,7 @@ export class HttpTokenServer implements McpServer {
       headers.Authorization = `Bearer ${bearerToken}`;
     }
 
-    this.session = new SdkToolSession({
+    this.session = new SdkSessionManager({
       serverName: this.name,
       config,
       createTransport: () => new StreamableHTTPClientTransport(new URL(url), {

@@ -2,31 +2,31 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { ErrorCode, McpError, type CallToolResult, type Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { ResolvedServerConfig, ServerConnectState } from "../../modeling/types.js";
-import { AsyncReadWriteLock } from "../async-read-write-lock.js";
+import { AsyncReadWriteLock } from "../../concurrency/async-read-write-lock.js";
 import { applyToolNameFilter, createToolNameFilter, isToolNameFilteredByConfig, type ToolNameFilter } from "./tool-filter.js";
 
-interface SdkToolSessionOptions {
+interface SdkSessionOptions {
   serverName: string;
   config: ResolvedServerConfig;
   createTransport: () => Transport;
 }
 
-export interface SdkToolSessionSnapshot {
+export interface SdkSessionSnapshot {
   connectState: ServerConnectState;
   tools?: Tool[];
 }
 
-export interface SdkToolSessionCatalogResult {
-  snapshot: SdkToolSessionSnapshot;
+export interface SdkSessionToolCatalogResult {
+  snapshot: SdkSessionSnapshot;
   tools: Tool[];
 }
 
-export interface SdkToolSessionCallResult {
-  snapshot: SdkToolSessionSnapshot;
+export interface SdkSessionToolCallResult {
+  snapshot: SdkSessionSnapshot;
   result: CallToolResult;
 }
 
-interface PublishedSessionState extends SdkToolSessionSnapshot {
+interface PublishedSessionState extends SdkSessionSnapshot {
   description?: string;
 }
 
@@ -39,7 +39,7 @@ function isConnectionFailure(error: unknown, client: Client): boolean {
     || client.transport === undefined;
 }
 
-export class SdkToolSession {
+export class SdkSessionManager {
   private client: Client | undefined;
   private transport: Transport | undefined;
   private remoteTools: Tool[] | undefined;
@@ -47,7 +47,7 @@ export class SdkToolSession {
   private readonly lifecycleLock = new AsyncReadWriteLock();
   private readonly toolFilter: ToolNameFilter;
 
-  constructor(private readonly options: SdkToolSessionOptions) {
+  constructor(private readonly options: SdkSessionOptions) {
     this.toolFilter = createToolNameFilter(options.config);
   }
 
@@ -59,7 +59,7 @@ export class SdkToolSession {
     return this.publishedState.tools ? [...this.publishedState.tools] : undefined;
   }
 
-  async connect(signal?: AbortSignal): Promise<SdkToolSessionSnapshot> {
+  async connect(signal?: AbortSignal): Promise<SdkSessionSnapshot> {
     const connectedSnapshot = await this.lifecycleLock.withRead(() =>
       this.client ? this.snapshot() : undefined,
     );
@@ -73,7 +73,7 @@ export class SdkToolSession {
     });
   }
 
-  async getTools(signal?: AbortSignal): Promise<SdkToolSessionCatalogResult> {
+  async getTools(signal?: AbortSignal): Promise<SdkSessionToolCatalogResult> {
     return this.withConnectedRead(signal, () => {
       const tools = this.visibleTools() ?? [];
       return {
@@ -87,7 +87,7 @@ export class SdkToolSession {
     name: string,
     args: Record<string, unknown>,
     signal?: AbortSignal,
-  ): Promise<SdkToolSessionCallResult> {
+  ): Promise<SdkSessionToolCallResult> {
     let failedClient: Client | undefined;
 
     try {
@@ -127,7 +127,7 @@ export class SdkToolSession {
     }
   }
 
-  async close(): Promise<SdkToolSessionSnapshot> {
+  async close(): Promise<SdkSessionSnapshot> {
     return this.lifecycleLock.withWrite(() => this.closeLocked());
   }
 
@@ -135,7 +135,7 @@ export class SdkToolSession {
     return this.publishedState.description;
   }
 
-  private snapshot(): SdkToolSessionSnapshot {
+  private snapshot(): SdkSessionSnapshot {
     return {
       connectState: this.publishedState.connectState,
       tools: this.tools,
@@ -210,7 +210,7 @@ export class SdkToolSession {
     }
   }
 
-  private async closeLocked(): Promise<SdkToolSessionSnapshot> {
+  private async closeLocked(): Promise<SdkSessionSnapshot> {
     const client = this.client;
     const transport = this.transport;
 

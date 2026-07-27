@@ -1,19 +1,19 @@
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { ResolvedServerConfig, ServerCatalogResult, ServerSnapshot, ToolCallExecutionResult } from "../../modeling/types.js";
 import { expectNonEmptyString, expectOptionalTransport } from "./config-helpers.js";
-import { SdkToolSession } from "./sdk-tool-session.js";
+import { SdkSessionManager } from "./sdk-session-manager.js";
 import type { McpServer } from "./types.js";
 
 export class HttpPublicServer implements McpServer {
   readonly name: string;
-  private readonly session: SdkToolSession;
+  private readonly session: SdkSessionManager;
 
   constructor(readonly config: ResolvedServerConfig) {
     this.name = config.name;
     expectOptionalTransport(config.definition, config.name, "http");
     const url = expectNonEmptyString(config.definition, "url", config.name);
 
-    this.session = new SdkToolSession({
+    this.session = new SdkSessionManager({
       serverName: this.name,
       config,
       createTransport: () => new StreamableHTTPClientTransport(new URL(url)),

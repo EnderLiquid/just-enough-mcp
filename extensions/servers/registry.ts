@@ -5,7 +5,7 @@ import type {
   ServerSnapshot,
   ToolCallExecutionResult,
 } from "../modeling/types.js";
-import { AsyncReadWriteLock } from "./async-read-write-lock.js";
+import { AsyncReadWriteLock } from "../concurrency/async-read-write-lock.js";
 import { createMcpServer } from "./servers/factory.js";
 import type { McpServer } from "./servers/types.js";
 
