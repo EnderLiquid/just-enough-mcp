@@ -15,15 +15,6 @@ export interface ServerRegistryStatus {
   totalCount: number;
 }
 
-export interface ServerReadyEvent {
-  config: ResolvedServerConfig;
-  description?: string;
-}
-
-export interface ServerRegistryOptions {
-  onServerReady?: (event: ServerReadyEvent) => void | Promise<void>;
-}
-
 export interface ServerRegistry {
   syncConfig(config: PluginConfigLoadResult): Promise<void>;
   getStatus(): Promise<ServerRegistryStatus>;
@@ -48,23 +39,9 @@ function areConfigsEqual(left: ResolvedServerConfig, right: ResolvedServerConfig
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-export function createServerRegistry(options: ServerRegistryOptions = {}): ServerRegistry {
+export function createServerRegistry(): ServerRegistry {
   const servers = new Map<string, McpServer>();
   const lifecycleLock = new AsyncReadWriteLock();
-
-  async function emitServerReady(server: McpServer, snapshot: ServerSnapshot): Promise<void> {
-    if (!options.onServerReady) {
-      return;
-    }
-
-    try {
-      await options.onServerReady({
-        config: server.config,
-        description: snapshot.description,
-      });
-    } catch {
-    }
-  }
 
   function requireServer(name: string): McpServer {
     const server = servers.get(name);
@@ -110,8 +87,7 @@ export function createServerRegistry(options: ServerRegistryOptions = {}): Serve
         for (const serverConfig of config.servers) {
           if (serverConfig.connectionMode === "eager") {
             const server = requireServer(serverConfig.name);
-            const snapshot = await server.connect();
-            await emitServerReady(server, snapshot);
+            await server.connect();
           }
         }
       });
@@ -139,9 +115,7 @@ export function createServerRegistry(options: ServerRegistryOptions = {}): Serve
     async connectServer(name, signal) {
       return lifecycleLock.withRead(async () => {
         const server = requireServer(name);
-        const snapshot = await server.connect(signal);
-        await emitServerReady(server, snapshot);
-        return snapshot;
+        return server.connect(signal);
       });
     },
 

@@ -6,12 +6,14 @@ export interface NotifierSink {
 
 let currentNotifier: NotifierSink | undefined;
 
-export function setNotifier(notifier?: NotifierSink): void {
+export function installNotifierSink(notifier?: NotifierSink): () => void {
   currentNotifier = notifier;
-}
 
-export function clearNotifier(): void {
-  currentNotifier = undefined;
+  return () => {
+    if (currentNotifier === notifier) {
+      currentNotifier = undefined;
+    }
+  };
 }
 
 export function notify(message: string, type: NotifyType = "info"): void {

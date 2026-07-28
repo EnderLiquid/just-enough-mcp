@@ -4,6 +4,7 @@ import { ErrorCode, McpError, type CallToolResult, type Tool } from "@modelconte
 import type { ResolvedServerConfig, ServerConnectState } from "../../modeling/types.js";
 import { AsyncReadWriteLock } from "../../concurrency/async-read-write-lock.js";
 import { applyToolNameFilter, createToolNameFilter, isToolNameFilteredByConfig, type ToolNameFilter } from "./tool-filter.js";
+import { notifyServerDescriptionReady } from "../../config/overview-bootstrapper.js";
 
 interface SdkSessionOptions {
   serverName: string;
@@ -181,6 +182,12 @@ export class SdkSessionManager {
         tools: this.visibleTools() ?? [],
         ...(description ? { description } : {}),
       };
+      if (typeof description === "string" && description.trim().length > 0) {
+        notifyServerDescriptionReady({
+          config: this.options.config,
+          description,
+        });
+      }
     } catch (error) {
       this.client = undefined;
       this.transport = undefined;

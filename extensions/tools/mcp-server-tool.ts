@@ -1,9 +1,10 @@
 import { StringEnum, Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { McpServerResultDetails } from "../modeling/types.js";
+import { refreshFooterStatus } from "../rendering/footer-status.js";
 import { renderMcpServerCall, renderMcpServerResult } from "../rendering/result-renderer.js";
+import { requireCurrentServerRegistry } from "../servers/current-registry.js";
 import type { ServerRegistryStatus } from "../servers/registry.js";
-import { getMcpRuntime } from "../servers/runtime.js";
 import { pluralize } from "../formatting/english.js";
 
 export const mcpServerParametersSchema = Type.Object({
@@ -75,12 +76,12 @@ export const mcpServerTool = defineTool<typeof mcpServerParametersSchema, McpSer
   parameters: mcpServerParametersSchema,
   async execute(_toolCallId, params, signal) {
     const serverName = validateInvocation(params);
-    const runtime = getMcpRuntime();
+    const registry = requireCurrentServerRegistry();
 
     if (params.action === "status") {
       try {
         if (serverName !== undefined) {
-          const server = await runtime.registry().getServerSnapshot(serverName);
+          const server = await registry.getServerSnapshot(serverName);
           if (!server) {
             throw new Error(`Unknown MCP server: ${serverName}`);
           }
@@ -90,7 +91,7 @@ export const mcpServerTool = defineTool<typeof mcpServerParametersSchema, McpSer
           };
         }
 
-        const status = await runtime.registry().getStatus();
+        const status = await registry.getStatus();
         return {
           content: [{ type: "text", text: formatServerStatus(status) }],
           details: {
@@ -100,15 +101,15 @@ export const mcpServerTool = defineTool<typeof mcpServerParametersSchema, McpSer
           },
         };
       } finally {
-        await runtime.refreshFooter();
+        await refreshFooterStatus(registry);
       }
     }
 
     if (params.action === "connect") {
       try {
-        await runtime.registry().connectServer(serverName!, signal);
+        await registry.connectServer(serverName!, signal);
       } finally {
-        await runtime.refreshFooter();
+        await refreshFooterStatus(registry);
       }
       return {
         content: [{ type: "text", text: "connected" }],
@@ -117,9 +118,9 @@ export const mcpServerTool = defineTool<typeof mcpServerParametersSchema, McpSer
     }
 
     try {
-      await runtime.registry().disconnectServer(serverName!);
+      await registry.disconnectServer(serverName!);
     } finally {
-      await runtime.refreshFooter();
+      await refreshFooterStatus(registry);
     }
     return {
       content: [{ type: "text", text: "disconnected" }],

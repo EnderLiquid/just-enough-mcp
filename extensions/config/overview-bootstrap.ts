@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { ResolvedServerConfig } from "../modeling/types.js";
 
@@ -15,11 +15,11 @@ function buildOverviewStub(serverName: string, description: string): string {
   return `# ${serverName}\n\n${normalizeDescription(description)}\n`;
 }
 
-export function tryBootstrapOverviewFromDescription(
+export async function tryBootstrapOverviewFromDescription(
   server: ResolvedServerConfig,
   overviewDirectoryPath: string,
   description: string | undefined,
-): OverviewBootstrapResult | undefined {
+): Promise<OverviewBootstrapResult | undefined> {
   if (server.hasExplicitOverviewConfig) {
     return undefined;
   }
@@ -44,10 +44,10 @@ export function tryBootstrapOverviewFromDescription(
   const overviewPath = join(overviewDirectoryPath, `${server.name}.md`);
   const content = buildOverviewStub(server.name, normalizedDescription);
 
-  mkdirSync(dirname(overviewPath), { recursive: true });
+  await mkdir(dirname(overviewPath), { recursive: true });
 
   try {
-    writeFileSync(overviewPath, content, { encoding: "utf8", flag: "wx" });
+    await writeFile(overviewPath, content, { encoding: "utf8", flag: "wx" });
     return {
       created: true,
       path: overviewPath,

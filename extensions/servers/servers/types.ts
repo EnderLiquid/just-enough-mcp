@@ -1,5 +1,10 @@
 import type { ResolvedServerConfig, ServerCatalogResult, ServerSnapshot, ToolCallExecutionResult } from "../../modeling/types.js";
 
+export interface ServerDescriptionReadyEvent {
+  config: ResolvedServerConfig;
+  description: string;
+}
+
 export interface McpServer {
   readonly name: string;
   readonly config: ResolvedServerConfig;

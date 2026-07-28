@@ -1,16 +1,15 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { PluginConfigLoadResult } from "../extensions/modeling/types.js";
-import type { McpRuntime } from "../extensions/servers/runtime.js";
+import { installCurrentServerRegistry } from "../extensions/servers/current-registry.js";
 import type { ServerRegistry } from "../extensions/servers/registry.js";
 import { makeServerSnapshot } from "./support/model-fixtures.js";
 
 const mocks = vi.hoisted(() => ({
-  getMcpRuntime: vi.fn(),
+  refreshFooterStatus: vi.fn(),
 }));
 
-vi.mock("../extensions/servers/runtime.js", () => ({
-  getMcpRuntime: mocks.getMcpRuntime,
+vi.mock("../extensions/rendering/footer-status.js", () => ({
+  refreshFooterStatus: mocks.refreshFooterStatus,
 }));
 
 import {
@@ -18,22 +17,14 @@ import {
   registerMcpServerTool,
 } from "../extensions/tools/mcp-server-tool.js";
 
-type RuntimeStubOverrides = {
+type RegistryStubOverrides = {
   registry?: Partial<ServerRegistry>;
   refreshFooter?: () => Promise<void>;
-  closeAll?: () => Promise<void>;
-  sync?: () => Promise<void>;
-  config?: () => PluginConfigLoadResult | undefined;
 };
 
-function useRuntime(overrides: RuntimeStubOverrides = {}): McpRuntime {
-  const {
-    registry: registryOverrides,
-    sync,
-    config,
-    refreshFooter,
-    closeAll,
-  } = overrides;
+let disposeRegistry: (() => void) | undefined;
+
+function useRuntime(overrides: RegistryStubOverrides = {}): ServerRegistry {
   const emptyStatus = { connectedCount: 0, totalCount: 0, servers: [] };
   const registry: ServerRegistry = {
     syncConfig: async () => {},
@@ -44,17 +35,12 @@ function useRuntime(overrides: RuntimeStubOverrides = {}): McpRuntime {
     getServerCatalog: async () => { throw new Error("Unexpected getServerCatalog call."); },
     callTool: async () => { throw new Error("Unexpected callTool call."); },
     closeAll: async () => {},
-    ...registryOverrides,
+    ...overrides.registry,
   };
-  const runtime: McpRuntime = {
-    sync: sync ?? (async () => {}),
-    config: config ?? (() => undefined),
-    registry: () => registry,
-    refreshFooter: refreshFooter ?? vi.fn(),
-    closeAll: closeAll ?? (async () => {}),
-  };
-  mocks.getMcpRuntime.mockReturnValue(runtime);
-  return runtime;
+  disposeRegistry?.();
+  disposeRegistry = installCurrentServerRegistry(registry);
+  mocks.refreshFooterStatus.mockImplementation(overrides.refreshFooter ?? (async () => {}));
+  return registry;
 }
 
 function executeMcpServer(
@@ -64,9 +50,20 @@ function executeMcpServer(
   return mcpServerTool.execute("tool-call", params, signal, vi.fn(), {} as Parameters<typeof mcpServerTool.execute>[4]);
 }
 
+afterEach(() => {
+  disposeRegistry?.();
+  disposeRegistry = undefined;
+});
+
 describe("mcpServerTool.execute", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("插件未初始化时拒绝执行", async () => {
+    await expect(executeMcpServer({ action: "status" })).rejects.toThrow(
+      "just-enough-mcp is not initialized for the current session",
+    );
   });
 
   it("按 action 类型拒绝无效字段组合", async () => {

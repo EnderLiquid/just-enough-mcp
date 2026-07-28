@@ -13,9 +13,9 @@
 
 ## 代码结构
 
-- `extensions/config/`：插件配置、overview 加载与 overview bootstrap。
+- `extensions/config/`：插件配置、current config snapshot、overview 加载与异步 overview bootstrap。
 - `extensions/modeling/`：跨模块共享的核心类型。
-- `extensions/servers/`：MCP server runtime、registry、具体 server 实现。
+- `extensions/servers/`：MCP server registry、current registry reference 与具体 server 实现。
 - `extensions/tools/`：暴露给 Pi 的 `mcp_server` 与 `mcp_tool` 工具入口。
 - `extensions/artifacts/`：工具调用结果物化、payload 提取/归一化、artifact 存储、manifest 与模型 summary 生成。
 - `extensions/rendering/`：TUI 工具调用/结果渲染与 footer status 展示。
@@ -25,6 +25,8 @@
 
 ## 架构约定
 
+- `extensions/just-enough-mcp.ts` 是插件 session 生命周期的唯一 composition root：config 是整体替换的 value snapshot，Registry/OverviewBootstrapper 是由 root 显式构造和关闭的 owned resource，Notifier/FooterStatusSink 是只在 Pi session 有效期内借用的 capability。
+- module-level `currentXxx` 只作为非拥有型访问槽；只有插件 root 可以安装/卸载引用，资源销毁必须使用 root 自己持有的实例，旧 disposer 必须按对象身份清理，不能影响后安装的新引用。
 - Registry 只管理 `McpServer` 对象并转发调用，不直接理解 SDK transport、鉴权或具体 server 组装细节。
 - Pi direct tool 按能力域划分：`mcp_server` 管理 server 状态与生命周期，`mcp_tool` 承载 MCP Tools primitive；不要重新合并为依赖 optional 字段组合分派的单一入口。
 - `createMcpServer()` 是当前唯一 transport 推断与具体 server 组装分派点。

@@ -6,7 +6,7 @@ import {
 } from "../artifacts/types.js";
 import { pluralize } from "../formatting/english.js";
 import type { McpServerResultDetails, McpToolResultDetails } from "../modeling/types.js";
-import { getMcpRuntime } from "../servers/runtime.js";
+import { getCurrentPluginConfig } from "../config/current-config.js";
 
 type RenderTheme = Theme;
 type McpResultDetails = McpServerResultDetails | McpToolResultDetails;
@@ -81,12 +81,12 @@ function blockToLines(block: McpContentBlock): string[] {
 }
 
 function getExpandedModeCollapsedLines(): number {
-  return getMcpRuntime().config()?.tui.expandedModeCollapsedLines
+  return getCurrentPluginConfig()?.tui.expandedModeCollapsedLines
     ?? DEFAULT_TUI_RESULT_RENDER_SETTINGS.expandedModeCollapsedLines;
 }
 
 function getTuiRenderMode(): McpTuiRenderMode {
-  return getMcpRuntime().config()?.tui.renderMode
+  return getCurrentPluginConfig()?.tui.renderMode
     ?? DEFAULT_TUI_RESULT_RENDER_SETTINGS.renderMode;
 }
 

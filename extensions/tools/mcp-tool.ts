@@ -1,9 +1,11 @@
 import { StringEnum, Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { materializeToolCallResult, type MaterializeCallToolResultInput } from "../artifacts/materializer.js";
+import { getCurrentPluginConfig } from "../config/current-config.js";
 import type { McpToolResultDetails, ServerCatalogResult } from "../modeling/types.js";
+import { refreshFooterStatus } from "../rendering/footer-status.js";
 import { renderMcpToolCall, renderMcpToolResult } from "../rendering/result-renderer.js";
-import { getMcpRuntime } from "../servers/runtime.js";
+import { requireCurrentServerRegistry } from "../servers/current-registry.js";
 import { pluralize } from "../formatting/english.js";
 
 export const mcpToolArgumentsSchema = Type.Unsafe<Record<string, unknown>>({
@@ -135,11 +137,12 @@ export const mcpTool = defineTool<typeof mcpToolParametersSchema, McpToolResultD
   parameters: mcpToolParametersSchema,
   async execute(_toolCallId, params, signal, _onUpdate, ctx) {
     validateInvocation(params);
-    const runtime = getMcpRuntime();
+    const registry = requireCurrentServerRegistry();
+    const config = getCurrentPluginConfig();
 
     if (params.action === "list") {
       try {
-        const catalog = await runtime.registry().getServerCatalog(params.server, signal);
+        const catalog = await registry.getServerCatalog(params.server, signal);
         return {
           content: [{
             type: "text",
@@ -151,19 +154,19 @@ export const mcpTool = defineTool<typeof mcpToolParametersSchema, McpToolResultD
           },
         };
       } finally {
-        await runtime.refreshFooter();
+        await refreshFooterStatus(registry);
       }
     }
 
     try {
       const args = params.args ?? {};
-      const execution = await runtime.registry().callTool(params.server, params.tool!, args, signal);
+      const execution = await registry.callTool(params.server, params.tool!, args, signal);
       const materialized = materializeMcpToolResult({
         cwd: ctx.cwd,
         server: execution.server.name,
         tool: execution.toolName,
         result: execution.result,
-        settings: runtime.config()?.materialization,
+        settings: config?.materialization,
       });
       return {
         content: [{
@@ -177,7 +180,7 @@ export const mcpTool = defineTool<typeof mcpToolParametersSchema, McpToolResultD
         },
       };
     } finally {
-      await runtime.refreshFooter();
+      await refreshFooterStatus(registry);
     }
   },
 });

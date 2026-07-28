@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { McpTuiRenderMode } from "../extensions/artifacts/types.js";
+import { installCurrentPluginConfig } from "../extensions/config/current-config.js";
 import {
   formatMcpToolResultLines,
   renderMcpServerCall,
@@ -8,28 +9,29 @@ import {
   renderMcpToolCall,
   renderMcpToolResult,
 } from "../extensions/rendering/result-renderer.js";
-
-const mocks = vi.hoisted(() => ({ runtimeConfig: vi.fn() }));
-
-vi.mock("../extensions/servers/runtime.js", () => ({
-  getMcpRuntime: () => ({ config: mocks.runtimeConfig }),
-}));
+import { makePluginConfig } from "./support/model-fixtures.js";
 
 const testTheme = {
   fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
   bold: (text: string) => `<b>${text}</b>`,
 } as Theme;
 
+let disposeConfig: (() => void) | undefined;
+
 function setRenderMode(renderMode: McpTuiRenderMode, expandedModeCollapsedLines = 4): void {
-  mocks.runtimeConfig.mockReturnValue({ tui: { renderMode, expandedModeCollapsedLines } });
+  disposeConfig?.();
+  disposeConfig = installCurrentPluginConfig(makePluginConfig({
+    tui: { renderMode, expandedModeCollapsedLines },
+  }));
 }
 
 function renderFirstLine(component: { render(width: number): string[] }): string | undefined {
   return component.render(200)[0]?.trimEnd();
 }
 
-beforeEach(() => {
-  mocks.runtimeConfig.mockReset();
+afterEach(() => {
+  disposeConfig?.();
+  disposeConfig = undefined;
 });
 
 describe("formatMcpToolResultLines", () => {

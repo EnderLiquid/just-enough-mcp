@@ -1,22 +1,92 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { getMcpRuntime } from "./servers/runtime.js";
+import { getCurrentPluginConfig, installCurrentPluginConfig } from "./config/current-config.js";
+import {
+  createOverviewBootstrapper,
+  installCurrentOverviewBootstrapper,
+  type OverviewBootstrapper,
+} from "./config/overview-bootstrapper.js";
+import { loadPluginConfig } from "./config/plugin-config.js";
+import type { PluginConfigLoadResult } from "./modeling/types.js";
 import { createServerOverviewPrompt } from "./prompting/system-prompt.js";
+import { installFooterStatusSink, refreshFooterStatus, updateFooterStatus } from "./rendering/footer-status.js";
+import { installNotifierSink, notifyError, type NotifierSink } from "./rendering/notifier.js";
+import { installCurrentServerRegistry } from "./servers/current-registry.js";
+import { createServerRegistry, type ServerRegistry } from "./servers/registry.js";
 import { registerMcpServerTool } from "./tools/mcp-server-tool.js";
 import { registerMcpTool } from "./tools/mcp-tool.js";
-import { clearFooterStatus, setFooterStatusSink, updateFooterStatus } from "./rendering/footer-status.js";
-import { clearNotifier, notifyError, setNotifier } from "./rendering/notifier.js";
+
+interface ActivePluginSession {
+  config: PluginConfigLoadResult;
+  registry: ServerRegistry;
+  bootstrapper: OverviewBootstrapper;
+  disposeConfig: () => void;
+  disposeRegistry: () => void;
+  disposeBootstrapper: () => void;
+}
 
 export default function justEnoughMcp(pi: ExtensionAPI): void {
+  let activeSession: ActivePluginSession | undefined;
+  let disposeNotifier: (() => void) | undefined;
+  let disposeFooter: (() => void) | undefined;
+
   registerMcpServerTool(pi);
   registerMcpTool(pi);
 
   pi.on("session_start", async (_event, ctx) => {
-    const runtime = getMcpRuntime();
-    setNotifier(ctx.hasUI ? { notify: ctx.ui.notify.bind(ctx.ui) } : undefined);
-    setFooterStatusSink(ctx.hasUI ? { setStatus: ctx.ui.setStatus.bind(ctx.ui) } : undefined);
+    const notifier: NotifierSink | undefined = ctx.hasUI
+      ? { notify: ctx.ui.notify.bind(ctx.ui) }
+      : undefined;
+    const footer = ctx.hasUI
+      ? { setStatus: ctx.ui.setStatus.bind(ctx.ui) }
+      : undefined;
+
+    disposeNotifier = installNotifierSink(notifier);
+    disposeFooter = installFooterStatusSink(footer);
+
+    let config: PluginConfigLoadResult | undefined;
+    let registry: ServerRegistry | undefined;
+    let bootstrapper: OverviewBootstrapper | undefined;
+    let disposeBootstrapper: (() => void) | undefined;
+    let disposeConfig: (() => void) | undefined;
+    let disposeRegistry: (() => void) | undefined;
+
     try {
-      await runtime.sync();
-      await runtime.refreshFooter();
+      config = loadPluginConfig();
+      bootstrapper = createOverviewBootstrapper({
+        overviewDir: config.overviewDir,
+        onCreated: serverName => notifier?.notify(`Created MCP overview stub: ${serverName}`, "info"),
+      });
+      disposeBootstrapper = installCurrentOverviewBootstrapper(bootstrapper);
+
+      registry = createServerRegistry();
+      await registry.syncConfig(config);
+
+      disposeConfig = installCurrentPluginConfig(config);
+      disposeRegistry = installCurrentServerRegistry(registry);
+      activeSession = {
+        config,
+        registry,
+        bootstrapper,
+        disposeConfig,
+        disposeRegistry,
+        disposeBootstrapper,
+      };
+    } catch (error) {
+      activeSession = undefined;
+      disposeRegistry?.();
+      disposeConfig?.();
+      await registry?.closeAll().catch(() => undefined);
+      disposeBootstrapper?.();
+      await bootstrapper?.close().catch(() => undefined);
+
+      const message = error instanceof Error ? error.message : String(error);
+      notifyError(`just-enough-mcp config error: ${message}`);
+      updateFooterStatus(0, 0);
+      return;
+    }
+
+    try {
+      await refreshFooterStatus(registry);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       notifyError(`just-enough-mcp config error: ${message}`);
@@ -25,8 +95,7 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
   });
 
   pi.on("before_agent_start", async (event) => {
-    const runtime = getMcpRuntime();
-    const config = runtime.config();
+    const config = getCurrentPluginConfig();
 
     if (!config) {
       return {
@@ -43,12 +112,25 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
   });
 
   pi.on("session_shutdown", async () => {
-    const runtime = getMcpRuntime();
-    clearNotifier();
+    const session = activeSession;
+    activeSession = undefined;
+
     try {
-      await runtime.closeAll();
+      if (session) {
+        session.disposeRegistry();
+        session.disposeConfig();
+        try {
+          await session.registry.closeAll();
+        } finally {
+          session.disposeBootstrapper();
+          await session.bootstrapper.close();
+        }
+      }
     } finally {
-      clearFooterStatus();
+      disposeFooter?.();
+      disposeFooter = undefined;
+      disposeNotifier?.();
+      disposeNotifier = undefined;
     }
   });
 }
