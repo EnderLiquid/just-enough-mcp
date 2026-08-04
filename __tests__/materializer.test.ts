@@ -36,7 +36,7 @@ describe("materializeToolCallResult", () => {
     });
 
     const callDirName = materialized.callDir.split("/").pop();
-    expect(callDirName).toMatch(new RegExp(`^${serverName}-260623-041822-[0-9a-f]{32}$`));
+    expect(callDirName).toMatch(new RegExp(`^${serverName}-260623-041822-[0-9a-f]{4}$`));
     expect(callDirName).not.toContain("codegraph_explore");
     expect(readdirSync(`${cwd}/.pi/mcp`)).toEqual([callDirName]);
   });

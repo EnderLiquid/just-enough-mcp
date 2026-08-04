@@ -49,7 +49,7 @@ function toCompactUtcTimestamp(date = new Date()): string {
 }
 
 function createCallDirectoryName(server: string): string {
-  const suffix = randomBytes(16).toString("hex");
+  const suffix = randomBytes(2).toString("hex");
   return `${server}-${toCompactUtcTimestamp()}-${suffix}`;
 }
 
