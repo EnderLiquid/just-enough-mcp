@@ -1,82 +1,80 @@
 # just-enough-mcp
 
-`just-enough-mcp` 是一个为 Pi 提供多 MCP server 接入能力的**现实主义工具运行时插件**。
+`just-enough-mcp` 是一个 Pi 插件，为多个 MCP server 提供按需访问的 Tools 运行时。它聚焦 server 发现、工具目录读取与工具调用，不试图覆盖完整 MCP 协议。
 
-它的目标不是完整实现 MCP 协议，也不是做透明代理或协议展示器；它只聚焦当前社区里最常见、最实用的主路径：**把 MCP 当作跨 agent 的外部工具注册与调用层来使用**。
+## 工作方式
 
-## 产品定位
+会话启动时，插件只将各个 server 的 overview 注入系统提示词。Agent 先选择合适的 server，再读取该 server 的工具目录；`mcp_tool` 的 `list` 和 `call` 会在需要时初始化目标 server。这样无需在启动时连接所有 server，也不会提前注入全部工具 schema。
 
-可以把它理解为：
+工具调用结果会物化为本地文件，并向模型返回带有 manifest 路径和有限预览的摘要。默认物化目录为当前工作目录下的 `.pi/mcp/`，可通过配置调整。
 
-> **一个通过少量能力域工具暴露多 MCP server 的轻量运行时。**
+## 支持范围
 
-核心特点：
+当前支持 `stdio`、Streamable HTTP（可使用静态 `headers` 或 `bearerToken`），以及 Tools primitive：`tools/list` 和 `tools/call`。同时提供 lazy / eager 初始化、server overview 与结果物化、TUI 渲染。
 
-- 提供两个职责明确的入口：`mcp_server` 管理 server 状态与生命周期，`mcp_tool` 承载 Tools primitive
-- 支持多 server
-- 采用 **server 级渐进式披露**，而不是把每个 MCP tool 直接注册成 Pi 一等工具
-- 优先优化真实 agent 使用体验，而不是追求协议面完整覆盖
-
-## 当前范围
-
-当前版本支持：
-
-- `stdio`
-- `Streamable HTTP`
-- Tools primitive（`tools/list` / `tools/call`）
-- eager / lazy 连接模式
-- tool result 本地物化
-- 物化结果的紧凑 TUI 展示
-
-当前版本明确不支持：
-
-- Resources
-- Prompts
-- Sampling
-- Elicitation
-- direct tool registration
-- OAuth
-- 全量 MCP 协议能力
+Resources、Prompts、Sampling、Elicitation、OAuth 和将每个 MCP tool 直接注册为 Pi 工具，均不在当前范围内。
 
 ## 配置
 
-全局配置文件：
+配置文件位于 `~/.pi/agent/just-enough-mcp.json`，默认 overview 目录为 `~/.pi/agent/mcp-overviews/`。它们在会话启动时读取；修改配置或 overview 后，请在 Pi 中执行 `/reload`。
 
-- `~/.pi/agent/just-enough-mcp.json`
+下面的配置同时展示一个 stdio server 和一个 HTTP server：
 
-可选的 server overview 目录：
-
-- `~/.pi/agent/mcp-overviews/`
-
-配置在 `session_start` 时加载。修改配置或 overview 后，需要在 Pi 中执行：
-
-- `/reload`
-
-### Server 名称
-
-`servers` 对象的 key 是 server 名称，会用于 `mcp_server`、`mcp_tool` 和默认 overview 文件名。名称必须符合：
-
-```txt
-^[a-z0-9][a-z0-9._-]{0,31}$
+```json
+{
+  "servers": {
+    "local-tools": {
+      "command": "node",
+      "args": ["C:/path/to/server.mjs"]
+    },
+    "search": {
+      "url": "https://example.com/mcp",
+      "bearerToken": "<token>"
+    }
+  }
+}
 ```
 
-也就是 1–32 个字符，只允许小写 ASCII 字母、数字、`.`, `_`, `-`，且首字符必须是字母或数字。Windows 保留设备名及其点号扩展形式不可用，例如 `con`、`con.docs`、`com1`。
+`command` 用于 stdio server；`url` 用于 HTTP server，transport 会据此自动判断。stdio 配置还可包含 `cwd`、`env` 和 `args`，HTTP 配置可使用 `headers` 或 `bearerToken`。
 
-推荐使用简短、有语义的名称，例如 `context7`、`cua-driver`、`github.enterprise`。
+每个 server 还可设置：
 
-## 当前状态
+- `connectionMode`：`lazy`（默认）或 `eager`。
+- `overview`：显式指定 overview Markdown 文件；未指定时使用 `~/.pi/agent/mcp-overviews/<serverName>.md`。
 
-MVP 主链路已可用：
+顶层的 `materialization` 和 `tui` 分别用于调整结果物化与 TUI 展示。没有 overview 时，插件会在首次成功初始化后尝试依据 server 描述创建最小草稿。
 
-- 配置加载
-- overview 注入
-- 多 server 管理
-- `mcp_server({ action: "status" })`
-- `mcp_server({ action: "status", server })`
-- `mcp_server({ action: "connect", server })`
-- `mcp_server({ action: "disconnect", server })`
-- `mcp_tool({ action: "list", server })`
-- `mcp_tool({ action: "call", server, tool, args? })`
-- tool result 物化与预览
+server 名称同时用于工具调用、overview 文件名和物化目录，必须匹配 `^[a-z0-9][a-z0-9._-]{0,31}$`；Windows 保留设备名（如 `con`、`com1`）不可用。
 
-它现在已经不是脚手架，但仍然故意保持狭窄范围。
+## 工具入口
+
+| 工具 | action | 用途 |
+| --- | --- | --- |
+| `mcp_server` | `status`、`connect`、`disconnect` | 查看状态或显式控制某个 server 的可用性。 |
+| `mcp_tool` | `list`、`call` | 读取一个 server 的工具目录，并调用其中的工具。 |
+
+通常先读取目录，再按照返回的输入 schema 调用工具：
+
+```ts
+mcp_tool({ action: "list", server: "search" })
+
+mcp_tool({
+  action: "call",
+  server: "search",
+  tool: "search_web",
+  args: { query: "MCP specification" }
+})
+```
+
+无需把 `mcp_server({ action: "connect" })` 作为常规前置步骤；`mcp_tool` 会自行初始化目标 server。只有需要主动检查状态、预热或断开连接时，才使用 `mcp_server`。
+
+## 开发
+
+```bash
+npm test
+npm run test:types
+```
+
+## 许可证
+
+[MIT](LICENSE)
