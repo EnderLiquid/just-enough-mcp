@@ -71,20 +71,22 @@ function makeServer(definition: Record<string, unknown>): ResolvedServerConfig {
   });
 }
 
-function makeConfig(definition: Record<string, unknown>) {
+function makeConfig(definition: Record<string, unknown> = {}) {
   return makePluginConfig({
     servers: [makeServer(definition)],
   });
 }
 
+function createRegistry(definition: Record<string, unknown> = {}) {
+  return createServerRegistry(makeConfig(definition).servers);
+}
+
 function createDeferred<T = void>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+  const promise = new Promise<T>(resolvePromise => {
     resolve = resolvePromise;
-    reject = rejectPromise;
   });
-  return { promise, resolve, reject };
+  return { promise, resolve };
 }
 
 function rejectWhenAborted(options: { signal?: AbortSignal } | undefined): Promise<never> {
@@ -119,14 +121,93 @@ describe("基于 SDK 的服务器工具", () => {
     mocks.transportClose.mockResolvedValue(undefined);
   });
 
+  it("构造 Registry 只装配静态成员，不自动预热 eager server", async () => {
+    const config = makePluginConfig({
+      servers: [
+        makeResolvedServerConfig({ name: "zeta", definition: { command: "npx" } }),
+        makeResolvedServerConfig({
+          name: "alpha",
+          connectionMode: "eager",
+          definition: { command: "npx" },
+        }),
+      ],
+    });
+
+    const registry = createServerRegistry(config.servers);
+
+    expect(mocks.connect).not.toHaveBeenCalled();
+    expect(mocks.listTools).not.toHaveBeenCalled();
+    await expect(registry.getStatus()).resolves.toMatchObject({
+      connectedCount: 0,
+      totalCount: 2,
+      servers: [
+        { name: "alpha", connectState: "disconnected" },
+        { name: "zeta", connectState: "disconnected" },
+      ],
+    });
+  });
+
+  it("按配置顺序尽力预热 eager server，并缓存初始化结果", async () => {
+    const config = makePluginConfig({
+      servers: [
+        makeResolvedServerConfig({ name: "lazy", definition: { command: "npx" } }),
+        makeResolvedServerConfig({
+          name: "failed",
+          connectionMode: "eager",
+          definition: { command: "npx" },
+        }),
+        makeResolvedServerConfig({
+          name: "ready",
+          connectionMode: "eager",
+          definition: { command: "npx" },
+        }),
+      ],
+    });
+    const registry = createServerRegistry(config.servers);
+    const failure = new Error("failed eager connection");
+    mocks.connect.mockRejectedValueOnce(failure);
+
+    const first = await registry.initialize();
+    const second = await registry.initialize();
+
+    expect(first).toEqual({
+      eagerFailures: [{ serverName: "failed", error: failure }],
+    });
+    expect(second).toBe(first);
+    expect(mocks.connect).toHaveBeenCalledTimes(2);
+    expect((await registry.getServerSnapshot("lazy"))?.connectState).toBe("disconnected");
+    expect((await registry.getServerSnapshot("failed"))?.connectState).toBe("disconnected");
+    expect((await registry.getServerSnapshot("ready"))?.connectState).toBe("connected");
+  });
+
+  it("eager 预热失败后允许按需重新连接", async () => {
+    const config = makePluginConfig({
+      servers: [makeResolvedServerConfig({
+        connectionMode: "eager",
+        definition: { command: "npx" },
+      })],
+    });
+    const registry = createServerRegistry(config.servers);
+    const failure = new Error("failed eager connection");
+    mocks.connect.mockRejectedValueOnce(failure);
+
+    await expect(registry.initialize()).resolves.toEqual({
+      eagerFailures: [{ serverName: "demo", error: failure }],
+    });
+    await expect(registry.getServerCatalog("demo")).resolves.toMatchObject({
+      server: { connectState: "connected" },
+    });
+
+    expect(mocks.connect).toHaveBeenCalledTimes(2);
+  });
+
   it("创建配置的 stdio transport", async () => {
-    const registry = createServerRegistry();
-    await registry.syncConfig(makeConfig({
+    const registry = createRegistry({
       command: "node",
       args: ["server.js"],
       cwd: "/workspace",
       env: { API_KEY: "secret" },
-    }));
+    });
 
     await registry.getServerCatalog("demo");
 
@@ -140,11 +221,10 @@ describe("基于 SDK 的服务器工具", () => {
   });
 
   it("创建不带请求头的匿名 HTTP transport", async () => {
-    const registry = createServerRegistry();
-    await registry.syncConfig(makeConfig({
+    const registry = createRegistry({
       transport: "http",
       url: "https://example.com/mcp",
-    }));
+    });
 
     await registry.getServerCatalog("demo");
 
@@ -155,13 +235,12 @@ describe("基于 SDK 的服务器工具", () => {
   });
 
   it("创建带合并头部的静态令牌 HTTP transport", async () => {
-    const registry = createServerRegistry();
-    await registry.syncConfig(makeConfig({
+    const registry = createRegistry({
       transport: "http",
       url: "https://example.com/mcp",
       headers: { "X-API-Key": "secret", Authorization: "Basic ignored" },
       bearerToken: "token-123",
-    }));
+    });
 
     await registry.getServerCatalog("demo");
 
@@ -179,8 +258,7 @@ describe("基于 SDK 的服务器工具", () => {
   });
 
   it("配置 includeTools 时限制目录范围", async () => {
-    const registry = createServerRegistry();
-    await registry.syncConfig(makeConfig({ includeTools: ["search", "read"] }));
+    const registry = createRegistry({ includeTools: ["search", "read"] });
 
     const catalog = await registry.getServerCatalog("demo");
 
@@ -189,11 +267,10 @@ describe("基于 SDK 的服务器工具", () => {
   });
 
   it("includeTools 之后再应用 excludeTools", async () => {
-    const registry = createServerRegistry();
-    await registry.syncConfig(makeConfig({
+    const registry = createRegistry({
       includeTools: ["search", "read"],
       excludeTools: ["read", "write"],
-    }));
+    });
 
     const catalog = await registry.getServerCatalog("demo");
 
@@ -201,8 +278,7 @@ describe("基于 SDK 的服务器工具", () => {
   });
 
   it("初始化 MCP client 时转发 AbortSignal", async () => {
-    const registry = createServerRegistry();
-    await registry.syncConfig(makeConfig({}));
+    const registry = createRegistry();
     const controller = new AbortController();
     const abortReason = new Error("cancelled during initialization");
     mocks.connect.mockImplementationOnce((
@@ -220,8 +296,7 @@ describe("基于 SDK 的服务器工具", () => {
   });
 
   it("加载工具目录时转发 AbortSignal", async () => {
-    const registry = createServerRegistry();
-    await registry.syncConfig(makeConfig({}));
+    const registry = createRegistry();
     const controller = new AbortController();
     const abortReason = new Error("cancelled while loading tools");
     mocks.listTools.mockImplementationOnce((
@@ -238,8 +313,7 @@ describe("基于 SDK 的服务器工具", () => {
   });
 
   it("向 SDK 请求转发 AbortSignal 并传播取消信号", async () => {
-    const registry = createServerRegistry();
-    await registry.syncConfig(makeConfig({}));
+    const registry = createRegistry();
     const controller = new AbortController();
     const abortReason = new Error("cancelled by user");
     mocks.callTool.mockImplementationOnce((
@@ -264,8 +338,7 @@ describe("基于 SDK 的服务器工具", () => {
   });
 
   it("使已关闭连接失效，下次调用时重新连接", async () => {
-    const registry = createServerRegistry();
-    await registry.syncConfig(makeConfig({}));
+    const registry = createRegistry();
     const connectionError = new McpError(ErrorCode.ConnectionClosed, "Connection closed");
     mocks.callTool.mockRejectedValueOnce(connectionError);
 
@@ -287,8 +360,7 @@ describe("基于 SDK 的服务器工具", () => {
   });
 
   it("client transport 已不存在时使连接失效", async () => {
-    const registry = createServerRegistry();
-    await registry.syncConfig(makeConfig({}));
+    const registry = createRegistry();
     const notConnectedError = new Error("Not connected");
     mocks.callTool.mockImplementationOnce(function (this: { transport: unknown }) {
       this.transport = undefined;
@@ -305,8 +377,7 @@ describe("基于 SDK 的服务器工具", () => {
   });
 
   it("连接失效清理等待其他在途工具调用自然完成", async () => {
-    const registry = createServerRegistry();
-    await registry.syncConfig(makeConfig({}));
+    const registry = createRegistry();
     await registry.getServerCatalog("demo");
     const successfulCall = createDeferred<{ content: Array<{ type: "text"; text: string }> }>();
     const connectionError = new McpError(ErrorCode.ConnectionClosed, "Connection closed");
@@ -338,8 +409,7 @@ describe("基于 SDK 的服务器工具", () => {
     ["request timeout", new McpError(ErrorCode.RequestTimeout, "Request timed out")],
     ["invalid params", new McpError(ErrorCode.InvalidParams, "Invalid params")],
   ])("%s 错误后保持连接", async (_label, requestError) => {
-    const registry = createServerRegistry();
-    await registry.syncConfig(makeConfig({}));
+    const registry = createRegistry();
     mocks.callTool.mockRejectedValueOnce(requestError);
 
     await expect(registry.callTool("demo", "search", {})).rejects.toBe(requestError);
@@ -351,8 +421,7 @@ describe("基于 SDK 的服务器工具", () => {
   });
 
   it("远程业务失败时保持连接", async () => {
-    const registry = createServerRegistry();
-    await registry.syncConfig(makeConfig({}));
+    const registry = createRegistry();
     mocks.callTool.mockResolvedValueOnce({
       content: [{ type: "text", text: "remote failure" }],
       isError: true,
@@ -366,16 +435,14 @@ describe("基于 SDK 的服务器工具", () => {
   });
 
   it("拒绝直接调用被过滤器隐藏的工具", async () => {
-    const registry = createServerRegistry();
-    await registry.syncConfig(makeConfig({ excludeTools: ["write"] }));
+    const registry = createRegistry({ excludeTools: ["write"] });
 
     await expect(registry.callTool("demo", "write", {})).rejects.toThrow(/Tool "write" is excluded by configuration/);
     expect(mocks.callTool).not.toHaveBeenCalled();
   });
 
   it("对未知远程工具保持独立错误信息", async () => {
-    const registry = createServerRegistry();
-    await registry.syncConfig(makeConfig({ includeTools: ["search"] }));
+    const registry = createRegistry({ includeTools: ["search"] });
 
     await expect(registry.callTool("demo", "read", {})).rejects.toThrow(/Tool "read" is excluded by configuration/);
     await expect(registry.callTool("demo", "missing", {})).rejects.toThrow(/Tool "missing" is not available/);
@@ -383,8 +450,7 @@ describe("基于 SDK 的服务器工具", () => {
   });
 
   it("幂等断开连接，下次目录请求时重新连接", async () => {
-    const registry = createServerRegistry();
-    await registry.syncConfig(makeConfig({}));
+    const registry = createRegistry();
     await registry.getServerCatalog("demo");
 
     const first = await registry.disconnectServer("demo");
@@ -400,8 +466,7 @@ describe("基于 SDK 的服务器工具", () => {
   });
 
   it("服务器正在连接时等待连接结束再断开", async () => {
-    const registry = createServerRegistry();
-    await registry.syncConfig(makeConfig({}));
+    const registry = createRegistry();
     let finishConnect!: () => void;
     mocks.connect.mockImplementationOnce(() => new Promise<void>(resolve => {
       finishConnect = resolve;
@@ -426,8 +491,7 @@ describe("基于 SDK 的服务器工具", () => {
   });
 
   it("closeAll 等待连接完成后关闭并移除服务器", async () => {
-    const registry = createServerRegistry();
-    await registry.syncConfig(makeConfig({}));
+    const registry = createRegistry();
     const connectGate = createDeferred();
     mocks.connect.mockImplementationOnce(() => connectGate.promise);
 
@@ -454,8 +518,7 @@ describe("基于 SDK 的服务器工具", () => {
   });
 
   it("closeAll 等待并发工具调用自然完成", async () => {
-    const registry = createServerRegistry();
-    await registry.syncConfig(makeConfig({}));
+    const registry = createRegistry();
     await registry.getServerCatalog("demo");
     const callGate = createDeferred();
     mocks.callTool.mockImplementation(() => callGate.promise.then(() => ({
@@ -482,103 +545,8 @@ describe("基于 SDK 的服务器工具", () => {
     expect(mocks.close).toHaveBeenCalledTimes(1);
   });
 
-  it("closeAll 与后续配置同步串行，且不遗漏新实例", async () => {
-    const registry = createServerRegistry();
-    await registry.syncConfig(makeConfig({}));
-    await registry.getServerCatalog("demo");
-    const closeGate = createDeferred();
-    mocks.close.mockImplementationOnce(() => closeGate.promise);
-
-    const closing = registry.closeAll();
-    await vi.waitFor(() => expect(mocks.close).toHaveBeenCalledTimes(1));
-    const nextConfig = makePluginConfig({
-      servers: [makeResolvedServerConfig({
-        name: "next",
-        definition: { command: "npx" },
-      })],
-    });
-    let syncSettled = false;
-    const syncing = registry.syncConfig(nextConfig).finally(() => {
-      syncSettled = true;
-    });
-    await Promise.resolve();
-    expect(syncSettled).toBe(false);
-
-    closeGate.resolve();
-    await Promise.all([closing, syncing]);
-
-    const status = await registry.getStatus();
-    expect(status.servers.map(server => server.name)).toEqual(["next"]);
-  });
-
-  it("配置替换等待在途工具调用并关闭旧实例", async () => {
-    const registry = createServerRegistry();
-    await registry.syncConfig(makeConfig({}));
-    await registry.getServerCatalog("demo");
-    const callGate = createDeferred();
-    mocks.callTool.mockImplementationOnce(() => callGate.promise.then(() => ({
-      content: [{ type: "text", text: "ok" }],
-    })));
-
-    const calling = registry.callTool("demo", "search", {});
-    await vi.waitFor(() => expect(mocks.callTool).toHaveBeenCalledTimes(1));
-
-    let syncSettled = false;
-    const syncing = registry.syncConfig(makeConfig({ args: ["replacement"] })).finally(() => {
-      syncSettled = true;
-    });
-    await Promise.resolve();
-    expect(syncSettled).toBe(false);
-    expect(mocks.close).not.toHaveBeenCalled();
-
-    callGate.resolve();
-    await calling;
-    await syncing;
-
-    expect(await registry.getServerSnapshot("demo")).toMatchObject({
-      connectState: "disconnected",
-      tools: undefined,
-    });
-    expect(mocks.close).toHaveBeenCalledTimes(1);
-  });
-
-  it("串行执行并发配置同步并保留后一次配置", async () => {
-    const registry = createServerRegistry();
-    const connectGate = createDeferred();
-    mocks.connect.mockImplementationOnce(() => connectGate.promise);
-    const firstConfig = makePluginConfig({
-      servers: [makeResolvedServerConfig({
-        name: "first",
-        connectionMode: "eager",
-        definition: { command: "npx" },
-      })],
-    });
-    const secondConfig = makePluginConfig({
-      servers: [makeResolvedServerConfig({
-        name: "second",
-        definition: { command: "npx" },
-      })],
-    });
-
-    const firstSync = registry.syncConfig(firstConfig);
-    await vi.waitFor(() => expect(mocks.connect).toHaveBeenCalledTimes(1));
-    let secondSettled = false;
-    const secondSync = registry.syncConfig(secondConfig).finally(() => {
-      secondSettled = true;
-    });
-    await Promise.resolve();
-    expect(secondSettled).toBe(false);
-
-    connectGate.resolve();
-    await Promise.all([firstSync, secondSync]);
-
-    const status = await registry.getStatus();
-    expect(status.servers.map(server => server.name)).toEqual(["second"]);
-  });
-
   it("并发连接在前一次失败后独立重试", async () => {
-    const registry = createServerRegistry();
-    await registry.syncConfig(makeConfig({}));
+    const registry = createRegistry();
     const firstError = new Error("first connection failed");
     mocks.connect.mockRejectedValueOnce(firstError).mockResolvedValueOnce(undefined);
 
@@ -591,16 +559,13 @@ describe("基于 SDK 的服务器工具", () => {
   });
 
   it("拒绝断开未知服务器", async () => {
-    const registry = createServerRegistry();
-    await registry.syncConfig(makeConfig({}));
+    const registry = createRegistry();
 
     await expect(registry.disconnectServer("missing")).rejects.toThrow("Unknown MCP server: missing");
   });
 
-  it("拒绝无效的工具过滤器配置", async () => {
-    const registry = createServerRegistry();
-
-    await expect(registry.syncConfig(makeConfig({ includeTools: ["search", ""] }))).rejects.toThrow(/includeTools/);
-    await expect(registry.syncConfig(makeConfig({ excludeTools: "write" }))).rejects.toThrow(/excludeTools/);
+  it("构造时拒绝无效的工具过滤器配置", () => {
+    expect(() => createRegistry({ includeTools: ["search", ""] })).toThrow(/includeTools/);
+    expect(() => createRegistry({ excludeTools: "write" })).toThrow(/excludeTools/);
   });
 });

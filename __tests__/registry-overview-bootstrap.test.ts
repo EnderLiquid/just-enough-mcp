@@ -101,9 +101,8 @@ describe("Server description ready overview 通知", () => {
   it("首次成功初始化时向当前 Bootstrapper 入队描述", async () => {
     const { bootstrapper, bootstrap } = useBootstrapper();
     const config = makeConfig();
-    const registry = createServerRegistry();
+    const registry = createServerRegistry(config.servers);
 
-    await registry.syncConfig(config);
     await registry.connectServer("demo");
     await bootstrapper.close();
 
@@ -115,9 +114,10 @@ describe("Server description ready overview 通知", () => {
 
   it("eager 初始化时触发描述通知", async () => {
     const { bootstrapper, bootstrap } = useBootstrapper();
-    const registry = createServerRegistry();
+    const config = makeConfig({ connectionMode: "eager" });
+    const registry = createServerRegistry(config.servers);
 
-    await registry.syncConfig(makeConfig({ connectionMode: "eager" }));
+    await registry.initialize();
     await bootstrapper.close();
 
     expect(bootstrap).toHaveBeenCalledTimes(1);
@@ -125,9 +125,9 @@ describe("Server description ready overview 通知", () => {
 
   it("lazy 获取目录时触发描述通知", async () => {
     const { bootstrapper, bootstrap } = useBootstrapper();
-    const registry = createServerRegistry();
+    const config = makeConfig();
+    const registry = createServerRegistry(config.servers);
 
-    await registry.syncConfig(makeConfig());
     await registry.getServerCatalog("demo");
     await bootstrapper.close();
 
@@ -139,9 +139,9 @@ describe("Server description ready overview 通知", () => {
       tools: [{ name: "search", inputSchema: { type: "object" } }],
     });
     const { bootstrapper, bootstrap } = useBootstrapper();
-    const registry = createServerRegistry();
+    const config = makeConfig();
+    const registry = createServerRegistry(config.servers);
 
-    await registry.syncConfig(makeConfig());
     await registry.callTool("demo", "search", { query: "pi" });
     await bootstrapper.close();
 
@@ -150,9 +150,9 @@ describe("Server description ready overview 通知", () => {
 
   it("保持连接时不重复通知，重连后再次通知", async () => {
     const { bootstrapper, bootstrap } = useBootstrapper();
-    const registry = createServerRegistry();
+    const config = makeConfig();
+    const registry = createServerRegistry(config.servers);
 
-    await registry.syncConfig(makeConfig());
     await registry.connectServer("demo");
     await registry.connectServer("demo");
     await registry.disconnectServer("demo");
@@ -172,9 +172,9 @@ describe("Server description ready overview 通知", () => {
       description,
     });
     const { bootstrapper, bootstrap } = useBootstrapper();
-    const registry = createServerRegistry();
+    const config = makeConfig();
+    const registry = createServerRegistry(config.servers);
 
-    await registry.syncConfig(makeConfig());
     await registry.getServerCatalog("demo");
     await bootstrapper.close();
 
@@ -184,8 +184,8 @@ describe("Server description ready overview 通知", () => {
   it("overview 写入未完成时连接已经返回", async () => {
     const gate = createDeferred();
     const { bootstrapper, bootstrap } = useBootstrapper(vi.fn().mockReturnValue(gate.promise));
-    const registry = createServerRegistry();
-    await registry.syncConfig(makeConfig());
+    const config = makeConfig();
+    const registry = createServerRegistry(config.servers);
 
     await registry.connectServer("demo");
 
@@ -203,9 +203,9 @@ describe("Server description ready overview 通知", () => {
       close: vi.fn().mockResolvedValue(undefined),
     };
     disposeBootstrapper = installCurrentOverviewBootstrapper(currentBootstrapper);
-    const registry = createServerRegistry();
+    const config = makeConfig();
+    const registry = createServerRegistry(config.servers);
 
-    await registry.syncConfig(makeConfig());
     await registry.connectServer("demo");
 
     const server = await registry.getServerSnapshot("demo");
@@ -214,9 +214,9 @@ describe("Server description ready overview 通知", () => {
 
   it("overview 任务失败时不影响连接流程", async () => {
     const { bootstrapper } = useBootstrapper(vi.fn().mockRejectedValue(new Error("disk full")));
-    const registry = createServerRegistry();
+    const config = makeConfig();
+    const registry = createServerRegistry(config.servers);
 
-    await registry.syncConfig(makeConfig());
     await registry.connectServer("demo");
     await bootstrapper.close();
 

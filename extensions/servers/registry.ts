@@ -1,5 +1,4 @@
 import type {
-  PluginConfigLoadResult,
   ResolvedServerConfig,
   ServerCatalogResult,
   ServerSnapshot,
@@ -15,8 +14,17 @@ export interface ServerRegistryStatus {
   totalCount: number;
 }
 
+export interface EagerServerInitializationFailure {
+  serverName: string;
+  error: unknown;
+}
+
+export interface ServerRegistryInitializationResult {
+  eagerFailures: EagerServerInitializationFailure[];
+}
+
 export interface ServerRegistry {
-  syncConfig(config: PluginConfigLoadResult): Promise<void>;
+  initialize(): Promise<ServerRegistryInitializationResult>;
   getStatus(): Promise<ServerRegistryStatus>;
   getServerSnapshot(name: string): Promise<ServerSnapshot | undefined>;
   connectServer(name: string, signal?: AbortSignal): Promise<ServerSnapshot>;
@@ -35,13 +43,10 @@ function isConnectedSnapshot(snapshot: ServerSnapshot): boolean {
   return snapshot.connectState === "connected";
 }
 
-function areConfigsEqual(left: ResolvedServerConfig, right: ResolvedServerConfig): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
-
-export function createServerRegistry(): ServerRegistry {
-  const servers = new Map<string, McpServer>();
+export function createServerRegistry(serverConfigs: readonly ResolvedServerConfig[]): ServerRegistry {
+  const servers = new Map(serverConfigs.map(config => [config.name, createMcpServer(config)]));
   const lifecycleLock = new AsyncReadWriteLock();
+  let initializationPromise: Promise<ServerRegistryInitializationResult> | undefined;
 
   function requireServer(name: string): McpServer {
     const server = servers.get(name);
@@ -51,46 +56,26 @@ export function createServerRegistry(): ServerRegistry {
     return server;
   }
 
-  async function removeMissingServers(nextNames: Set<string>): Promise<void> {
-    const removedNames = [...servers.keys()].filter(name => !nextNames.has(name));
-    for (const name of removedNames) {
-      const server = servers.get(name);
-      servers.delete(name);
-      await server?.close().catch(() => {});
-    }
-  }
-
-  async function upsertServer(config: ResolvedServerConfig): Promise<void> {
-    const existing = servers.get(config.name);
-    if (existing && areConfigsEqual(existing.config, config)) {
-      return;
-    }
-
-    if (existing) {
-      servers.delete(config.name);
-      await existing.close().catch(() => {});
-    }
-
-    servers.set(config.name, createMcpServer(config));
-  }
-
   return {
-    async syncConfig(config) {
-      await lifecycleLock.withWrite(async () => {
-        const nextNames = new Set(config.servers.map(server => server.name));
-        await removeMissingServers(nextNames);
+    initialize() {
+      initializationPromise ??= lifecycleLock.withWrite(async () => {
+        const eagerFailures: EagerServerInitializationFailure[] = [];
 
-        for (const serverConfig of config.servers) {
-          await upsertServer(serverConfig);
-        }
+        for (const server of servers.values()) {
+          if (server.config.connectionMode !== "eager") {
+            continue;
+          }
 
-        for (const serverConfig of config.servers) {
-          if (serverConfig.connectionMode === "eager") {
-            const server = requireServer(serverConfig.name);
+          try {
             await server.connect();
+          } catch (error) {
+            eagerFailures.push({ serverName: server.name, error });
           }
         }
+
+        return { eagerFailures };
       });
+      return initializationPromise;
     },
 
     async getStatus() {

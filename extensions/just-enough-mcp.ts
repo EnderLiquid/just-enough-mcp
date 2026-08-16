@@ -8,6 +8,7 @@ import {
 import { loadPluginConfig } from "./config/plugin-config.js";
 import type { PluginConfigLoadResult } from "./modeling/types.js";
 import { createServerOverviewPrompt } from "./prompting/system-prompt.js";
+import { pluralize } from "./formatting/english.js";
 import { installFooterStatusSink, refreshFooterStatus, updateFooterStatus } from "./rendering/footer-status.js";
 import { installNotifierSink, notifyError, type NotifierSink } from "./rendering/notifier.js";
 import { installCurrentServerRegistry } from "./servers/current-registry.js";
@@ -49,6 +50,7 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
     let disposeBootstrapper: (() => void) | undefined;
     let disposeConfig: (() => void) | undefined;
     let disposeRegistry: (() => void) | undefined;
+    let eagerFailureNames: string[] = [];
 
     try {
       config = loadPluginConfig();
@@ -58,8 +60,9 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
       });
       disposeBootstrapper = installCurrentOverviewBootstrapper(bootstrapper);
 
-      registry = createServerRegistry();
-      await registry.syncConfig(config);
+      registry = createServerRegistry(config.servers);
+      const initialization = await registry.initialize();
+      eagerFailureNames = initialization.eagerFailures.map(failure => failure.serverName);
 
       disposeConfig = installCurrentPluginConfig(config);
       disposeRegistry = installCurrentServerRegistry(registry);
@@ -91,6 +94,16 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
       const message = error instanceof Error ? error.message : String(error);
       notifyError(`just-enough-mcp config error: ${message}`);
       updateFooterStatus(0, 0);
+    }
+
+    if (eagerFailureNames.length > 0) {
+      try {
+        notifier?.notify(
+          `${eagerFailureNames.length} ${pluralize(eagerFailureNames.length, "eager MCP server")} could not be initialized: ` +
+          `${eagerFailureNames.join(", ")}. Use mcp_server or mcp_tool to retry on demand.`,
+          "warning",
+        );
+      } catch {}
     }
   });
 

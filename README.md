@@ -39,7 +39,7 @@ Resources、Prompts、Sampling、Elicitation、OAuth 和将每个 MCP tool 直�
 
 每个 server 还可设置：
 
-- `connectionMode`：`lazy`（默认）或 `eager`。
+- `connectionMode`：`lazy`（默认）或 `eager`。`eager` 会在会话启动时尽力预热；预热失败不会阻止插件启动，后续显式连接或 `mcp_tool` 调用仍会重试。
 - `overview`：显式指定 overview Markdown 文件；未指定时使用 `~/.pi/agent/mcp-overviews/<serverName>.md`。
 
 顶层的 `materialization` 和 `tui` 分别用于调整结果物化与 TUI 展示。没有 overview 时，插件会在首次成功初始化后尝试依据 server 描述创建最小草稿。

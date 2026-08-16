@@ -5,7 +5,7 @@ import { makePluginConfig } from "./support/model-fixtures.js";
 const mocks = vi.hoisted(() => ({
   loadPluginConfig: vi.fn(),
   createServerRegistry: vi.fn(),
-  syncConfig: vi.fn(),
+  initialize: vi.fn(),
   getStatus: vi.fn(),
   closeAll: vi.fn(),
   createOverviewBootstrapper: vi.fn(),
@@ -130,12 +130,12 @@ describe("justEnoughMcp root 生命周期", () => {
     vi.clearAllMocks();
     const config = makePluginConfig();
     mocks.loadPluginConfig.mockReturnValue(config);
-    mocks.syncConfig.mockResolvedValue(undefined);
+    mocks.initialize.mockResolvedValue({ eagerFailures: [] });
     mocks.getStatus.mockResolvedValue({ servers: [], connectedCount: 0, totalCount: 0 });
     mocks.closeAll.mockResolvedValue(undefined);
     mocks.bootstrapperClose.mockResolvedValue(undefined);
     mocks.createServerRegistry.mockReturnValue({
-      syncConfig: mocks.syncConfig,
+      initialize: mocks.initialize,
       getStatus: mocks.getStatus,
       closeAll: mocks.closeAll,
     });
@@ -164,7 +164,7 @@ describe("justEnoughMcp root 生命周期", () => {
     expect(mocks.createOverviewBootstrapper).not.toHaveBeenCalled();
   });
 
-  it("session start 先安装 Bootstrapper 并同步 Registry，再发布 config 和 Registry", async () => {
+  it("session start 先安装 Bootstrapper 并初始化 Registry，再发布 config 和 Registry", async () => {
     const config = makePluginConfig();
     mocks.loadPluginConfig.mockReturnValue(config);
     const { pi, handler } = createFakePi();
@@ -177,19 +177,60 @@ describe("justEnoughMcp root 生命周期", () => {
       overviewDir: config.overviewDir,
       onCreated: expect.any(Function),
     });
-    expect(mocks.syncConfig).toHaveBeenCalledWith(config);
+    expect(mocks.createServerRegistry).toHaveBeenCalledWith(config.servers);
+    expect(mocks.initialize).toHaveBeenCalledTimes(1);
     expect(mocks.installCurrentPluginConfig).toHaveBeenCalledWith(config);
     expect(mocks.installCurrentServerRegistry).toHaveBeenCalledWith(
       mocks.createServerRegistry.mock.results[0]?.value,
     );
-    expectCalledBefore(mocks.installCurrentOverviewBootstrapper, mocks.syncConfig);
-    expectCalledBefore(mocks.syncConfig, mocks.installCurrentPluginConfig);
-    expectCalledBefore(mocks.syncConfig, mocks.installCurrentServerRegistry);
+    expectCalledBefore(mocks.installCurrentOverviewBootstrapper, mocks.createServerRegistry);
+    expectCalledBefore(mocks.createServerRegistry, mocks.initialize);
+    expectCalledBefore(mocks.initialize, mocks.installCurrentPluginConfig);
+    expectCalledBefore(mocks.initialize, mocks.installCurrentServerRegistry);
     expectCalledBefore(mocks.installCurrentServerRegistry, mocks.refreshFooterStatus);
 
     const onCreated = mocks.createOverviewBootstrapper.mock.calls[0]?.[0]?.onCreated;
     onCreated("demo");
     expect(ctx.ui.notify).toHaveBeenCalledWith("Created MCP overview stub: demo", "info");
+  });
+
+  it("eager 预热失败时仍提交 Registry、刷新 footer 并发出 warning", async () => {
+    mocks.initialize.mockResolvedValueOnce({
+      eagerFailures: [
+        { serverName: "alpha", error: new Error("offline") },
+        { serverName: "beta", error: new Error("offline") },
+      ],
+    });
+    const { pi, handler } = createFakePi();
+    const ctx = createContext();
+    justEnoughMcp(pi);
+
+    await handler("session_start")({}, ctx);
+
+    expect(mocks.installCurrentPluginConfig).toHaveBeenCalledTimes(1);
+    expect(mocks.installCurrentServerRegistry).toHaveBeenCalledTimes(1);
+    expect(mocks.refreshFooterStatus).toHaveBeenCalledTimes(1);
+    expect(mocks.closeAll).not.toHaveBeenCalled();
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      "2 eager MCP servers could not be initialized: alpha, beta. Use mcp_server or mcp_tool to retry on demand.",
+      "warning",
+    );
+  });
+
+  it("warning notifier 失败时保留已提交的 config 和 Registry", async () => {
+    mocks.initialize.mockResolvedValueOnce({
+      eagerFailures: [{ serverName: "alpha", error: new Error("offline") }],
+    });
+    const { pi, handler } = createFakePi();
+    const ctx = createContext();
+    ctx.ui.notify.mockImplementation(() => { throw new Error("notification unavailable"); });
+    justEnoughMcp(pi);
+
+    await handler("session_start")({}, ctx);
+
+    expect(mocks.installCurrentPluginConfig).toHaveBeenCalledTimes(1);
+    expect(mocks.installCurrentServerRegistry).toHaveBeenCalledTimes(1);
+    expect(mocks.closeAll).not.toHaveBeenCalled();
   });
 
   it("footer 初始化失败时保留已提交的 config 和 Registry", async () => {
@@ -209,9 +250,29 @@ describe("justEnoughMcp root 生命周期", () => {
     expect(mocks.updateFooterStatus).toHaveBeenCalledWith(0, 0);
   });
 
-  it("初始化失败时关闭候选 Registry 和 Bootstrapper，不发布 current 状态", async () => {
-    const failure = new Error("eager server failed");
-    mocks.syncConfig.mockRejectedValue(failure);
+  it("factory 失败时只关闭候选 Bootstrapper，不发布 current 状态", async () => {
+    const failure = new Error("invalid server config");
+    mocks.createServerRegistry.mockImplementationOnce(() => { throw failure; });
+    const { pi, handler } = createFakePi();
+    justEnoughMcp(pi);
+
+    await handler("session_start")({}, createContext());
+
+    expect(mocks.installCurrentPluginConfig).not.toHaveBeenCalled();
+    expect(mocks.installCurrentServerRegistry).not.toHaveBeenCalled();
+    expect(mocks.closeAll).not.toHaveBeenCalled();
+    expect(mocks.disposeBootstrapper).toHaveBeenCalledTimes(1);
+    expect(mocks.bootstrapperClose).toHaveBeenCalledTimes(1);
+    expectCalledBefore(mocks.disposeBootstrapper, mocks.bootstrapperClose);
+    expect(mocks.notifyError).toHaveBeenCalledWith(
+      "just-enough-mcp config error: invalid server config",
+    );
+    expect(mocks.updateFooterStatus).toHaveBeenCalledWith(0, 0);
+  });
+
+  it("Registry 初始化意外失败时关闭候选资源，不发布 current 状态", async () => {
+    const failure = new Error("registry initialization failed");
+    mocks.initialize.mockRejectedValueOnce(failure);
     const { pi, handler } = createFakePi();
     justEnoughMcp(pi);
 
@@ -225,7 +286,7 @@ describe("justEnoughMcp root 生命周期", () => {
     expectCalledBefore(mocks.closeAll, mocks.disposeBootstrapper);
     expectCalledBefore(mocks.disposeBootstrapper, mocks.bootstrapperClose);
     expect(mocks.notifyError).toHaveBeenCalledWith(
-      "just-enough-mcp config error: eager server failed",
+      "just-enough-mcp config error: registry initialization failed",
     );
     expect(mocks.updateFooterStatus).toHaveBeenCalledWith(0, 0);
   });
