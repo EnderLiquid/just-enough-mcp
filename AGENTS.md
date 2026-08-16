@@ -28,7 +28,8 @@
 - `extensions/just-enough-mcp.ts` 是插件 session 生命周期的唯一 composition root：config 是整体替换的 value snapshot，Registry/OverviewBootstrapper 是由 root 显式构造和关闭的 owned resource，Notifier/FooterStatusSink 是只在 Pi session 有效期内借用的 capability。
 - module-level `currentXxx` 只作为非拥有型访问槽；只有插件 root 可以安装/卸载引用，资源销毁必须使用 root 自己持有的实例，旧 disposer 必须按对象身份清理，不能影响后安装的新引用。
 - Registry 只管理 `McpServer` 对象并转发调用，不直接理解 SDK transport、鉴权或具体 server 组装细节。
-- Registry 按当前 session 的 `ResolvedServerConfig[]` 一次性装配，不支持原地配置同步；其 `initialize()` 自行尽力预热 eager server，root 只驱动初始化、处理结果并负责关闭。
+- Registry 按当前 session 的 `ResolvedServerConfig[]` 一次性装配，不支持原地配置同步；其 `initialize()` 自行尽力预热 eager server，并就地发送一条汇总失败 warning，root 只驱动初始化与关闭。
+- `NotifierSink` 是 session 内借用的用户可见 logger；root 负责安装/卸载它，其他模块通过 `extensions/rendering/notifier.ts` 的 `notifyInfo()`、`notifyWarning()`、`notifyError()` 发布 best-effort 通知，不直接持有或传递 sink。
 - Pi direct tool 按能力域划分：`mcp_server` 管理 server 状态与生命周期，`mcp_tool` 承载 MCP Tools primitive；不要重新合并为依赖 optional 字段组合分派的单一入口。
 - `createMcpServer()` 是当前唯一 transport 推断与具体 server 组装分派点。
 - 配置层输出 `ResolvedServerConfig`，只保留通用字段和 `definition`；具体 server 组装实现负责校验并保存自己需要的配置字段。

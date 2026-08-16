@@ -17,7 +17,9 @@ export function installNotifierSink(notifier?: NotifierSink): () => void {
 }
 
 export function notify(message: string, type: NotifyType = "info"): void {
-  currentNotifier?.notify(message, type);
+  try {
+    currentNotifier?.notify(message, type);
+  } catch {}
 }
 
 export function notifyInfo(message: string): void {

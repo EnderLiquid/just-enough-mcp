@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   transportClose: vi.fn(),
   createStdioTransport: vi.fn(),
   createHttpTransport: vi.fn(),
+  notifyWarning: vi.fn(),
 }));
 
 vi.mock("@modelcontextprotocol/sdk/client/index.js", () => ({
@@ -58,6 +59,10 @@ vi.mock("@modelcontextprotocol/sdk/client/streamableHttp.js", () => ({
       mocks.createHttpTransport(url, options);
     }
   },
+}));
+
+vi.mock("../extensions/rendering/notifier.js", () => ({
+  notifyWarning: mocks.notifyWarning,
 }));
 
 import { createServerRegistry } from "../extensions/servers/registry.js";
@@ -147,12 +152,17 @@ describe("基于 SDK 的服务器工具", () => {
     });
   });
 
-  it("按配置顺序尽力预热 eager server，并缓存初始化结果", async () => {
+  it("按配置顺序尽力预热 eager server，并汇总失败 warning", async () => {
     const config = makePluginConfig({
       servers: [
         makeResolvedServerConfig({ name: "lazy", definition: { command: "npx" } }),
         makeResolvedServerConfig({
           name: "failed",
+          connectionMode: "eager",
+          definition: { command: "npx" },
+        }),
+        makeResolvedServerConfig({
+          name: "also-failed",
           connectionMode: "eager",
           definition: { command: "npx" },
         }),
@@ -165,18 +175,23 @@ describe("基于 SDK 的服务器工具", () => {
     });
     const registry = createServerRegistry(config.servers);
     const failure = new Error("failed eager connection");
-    mocks.connect.mockRejectedValueOnce(failure);
+    const secondFailure = new Error("another eager connection failed");
+    mocks.connect.mockRejectedValueOnce(failure).mockRejectedValueOnce(secondFailure);
 
-    const first = await registry.initialize();
-    const second = await registry.initialize();
+    const first = registry.initialize();
+    const second = registry.initialize();
 
-    expect(first).toEqual({
-      eagerFailures: [{ serverName: "failed", error: failure }],
-    });
     expect(second).toBe(first);
-    expect(mocks.connect).toHaveBeenCalledTimes(2);
+    await expect(first).resolves.toBeUndefined();
+    await expect(second).resolves.toBeUndefined();
+    expect(mocks.notifyWarning).toHaveBeenCalledTimes(1);
+    expect(mocks.notifyWarning).toHaveBeenCalledWith(
+      "2 eager MCP servers could not be initialized: failed, also-failed. Use mcp_server or mcp_tool to retry on demand.",
+    );
+    expect(mocks.connect).toHaveBeenCalledTimes(3);
     expect((await registry.getServerSnapshot("lazy"))?.connectState).toBe("disconnected");
     expect((await registry.getServerSnapshot("failed"))?.connectState).toBe("disconnected");
+    expect((await registry.getServerSnapshot("also-failed"))?.connectState).toBe("disconnected");
     expect((await registry.getServerSnapshot("ready"))?.connectState).toBe("connected");
   });
 
@@ -191,9 +206,10 @@ describe("基于 SDK 的服务器工具", () => {
     const failure = new Error("failed eager connection");
     mocks.connect.mockRejectedValueOnce(failure);
 
-    await expect(registry.initialize()).resolves.toEqual({
-      eagerFailures: [{ serverName: "demo", error: failure }],
-    });
+    await expect(registry.initialize()).resolves.toBeUndefined();
+    expect(mocks.notifyWarning).toHaveBeenCalledWith(
+      "1 eager MCP server could not be initialized: demo. Use mcp_server or mcp_tool to retry on demand.",
+    );
     await expect(registry.getServerCatalog("demo")).resolves.toMatchObject({
       server: { connectState: "connected" },
     });

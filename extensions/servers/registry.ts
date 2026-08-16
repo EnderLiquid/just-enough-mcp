@@ -5,6 +5,8 @@ import type {
   ToolCallExecutionResult,
 } from "../modeling/types.js";
 import { AsyncReadWriteLock } from "../concurrency/async-read-write-lock.js";
+import { pluralize } from "../formatting/english.js";
+import { notifyWarning } from "../rendering/notifier.js";
 import { createMcpServer } from "./servers/factory.js";
 import type { McpServer } from "./servers/types.js";
 
@@ -14,17 +16,8 @@ export interface ServerRegistryStatus {
   totalCount: number;
 }
 
-export interface EagerServerInitializationFailure {
-  serverName: string;
-  error: unknown;
-}
-
-export interface ServerRegistryInitializationResult {
-  eagerFailures: EagerServerInitializationFailure[];
-}
-
 export interface ServerRegistry {
-  initialize(): Promise<ServerRegistryInitializationResult>;
+  initialize(): Promise<void>;
   getStatus(): Promise<ServerRegistryStatus>;
   getServerSnapshot(name: string): Promise<ServerSnapshot | undefined>;
   connectServer(name: string, signal?: AbortSignal): Promise<ServerSnapshot>;
@@ -46,7 +39,7 @@ function isConnectedSnapshot(snapshot: ServerSnapshot): boolean {
 export function createServerRegistry(serverConfigs: readonly ResolvedServerConfig[]): ServerRegistry {
   const servers = new Map(serverConfigs.map(config => [config.name, createMcpServer(config)]));
   const lifecycleLock = new AsyncReadWriteLock();
-  let initializationPromise: Promise<ServerRegistryInitializationResult> | undefined;
+  let initializationPromise: Promise<void> | undefined;
 
   function requireServer(name: string): McpServer {
     const server = servers.get(name);
@@ -59,7 +52,7 @@ export function createServerRegistry(serverConfigs: readonly ResolvedServerConfi
   return {
     initialize() {
       initializationPromise ??= lifecycleLock.withWrite(async () => {
-        const eagerFailures: EagerServerInitializationFailure[] = [];
+        const failedServerNames: string[] = [];
 
         for (const server of servers.values()) {
           if (server.config.connectionMode !== "eager") {
@@ -68,12 +61,17 @@ export function createServerRegistry(serverConfigs: readonly ResolvedServerConfi
 
           try {
             await server.connect();
-          } catch (error) {
-            eagerFailures.push({ serverName: server.name, error });
+          } catch {
+            failedServerNames.push(server.name);
           }
         }
 
-        return { eagerFailures };
+        if (failedServerNames.length > 0) {
+          notifyWarning(
+            `${failedServerNames.length} ${pluralize(failedServerNames.length, "eager MCP server")} could not be initialized: ` +
+            `${failedServerNames.join(", ")}. Use mcp_server or mcp_tool to retry on demand.`,
+          );
+        }
       });
       return initializationPromise;
     },

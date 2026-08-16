@@ -8,9 +8,8 @@ import {
 import { loadPluginConfig } from "./config/plugin-config.js";
 import type { PluginConfigLoadResult } from "./modeling/types.js";
 import { createServerOverviewPrompt } from "./prompting/system-prompt.js";
-import { pluralize } from "./formatting/english.js";
 import { installFooterStatusSink, refreshFooterStatus, updateFooterStatus } from "./rendering/footer-status.js";
-import { installNotifierSink, notifyError, type NotifierSink } from "./rendering/notifier.js";
+import { installNotifierSink, notifyError, notifyInfo } from "./rendering/notifier.js";
 import { installCurrentServerRegistry } from "./servers/current-registry.js";
 import { createServerRegistry, type ServerRegistry } from "./servers/registry.js";
 import { registerMcpServerTool } from "./tools/mcp-server-tool.js";
@@ -34,14 +33,13 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
   registerMcpTool(pi);
 
   pi.on("session_start", async (_event, ctx) => {
-    const notifier: NotifierSink | undefined = ctx.hasUI
-      ? { notify: ctx.ui.notify.bind(ctx.ui) }
-      : undefined;
+    disposeNotifier = installNotifierSink(
+      ctx.hasUI ? { notify: ctx.ui.notify.bind(ctx.ui) } : undefined,
+    );
     const footer = ctx.hasUI
       ? { setStatus: ctx.ui.setStatus.bind(ctx.ui) }
       : undefined;
 
-    disposeNotifier = installNotifierSink(notifier);
     disposeFooter = installFooterStatusSink(footer);
 
     let config: PluginConfigLoadResult | undefined;
@@ -50,19 +48,17 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
     let disposeBootstrapper: (() => void) | undefined;
     let disposeConfig: (() => void) | undefined;
     let disposeRegistry: (() => void) | undefined;
-    let eagerFailureNames: string[] = [];
 
     try {
       config = loadPluginConfig();
       bootstrapper = createOverviewBootstrapper({
         overviewDir: config.overviewDir,
-        onCreated: serverName => notifier?.notify(`Created MCP overview stub: ${serverName}`, "info"),
+        onCreated: serverName => notifyInfo(`Created MCP overview stub: ${serverName}`),
       });
       disposeBootstrapper = installCurrentOverviewBootstrapper(bootstrapper);
 
       registry = createServerRegistry(config.servers);
-      const initialization = await registry.initialize();
-      eagerFailureNames = initialization.eagerFailures.map(failure => failure.serverName);
+      await registry.initialize();
 
       disposeConfig = installCurrentPluginConfig(config);
       disposeRegistry = installCurrentServerRegistry(registry);
@@ -94,16 +90,6 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
       const message = error instanceof Error ? error.message : String(error);
       notifyError(`just-enough-mcp config error: ${message}`);
       updateFooterStatus(0, 0);
-    }
-
-    if (eagerFailureNames.length > 0) {
-      try {
-        notifier?.notify(
-          `${eagerFailureNames.length} ${pluralize(eagerFailureNames.length, "eager MCP server")} could not be initialized: ` +
-          `${eagerFailureNames.join(", ")}. Use mcp_server or mcp_tool to retry on demand.`,
-          "warning",
-        );
-      } catch {}
     }
   });
 

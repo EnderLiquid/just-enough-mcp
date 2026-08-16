@@ -3,6 +3,7 @@ import {
   installNotifierSink,
   notifyError,
   notifyInfo,
+  notifyWarning,
 } from "../extensions/rendering/notifier.js";
 
 const disposers: Array<() => void> = [];
@@ -25,6 +26,14 @@ describe("notifier borrowed sink", () => {
 
     expect(notify).toHaveBeenCalledTimes(1);
     expect(notify).toHaveBeenCalledWith("created", "info");
+  });
+
+  it("吞掉 sink 的通知异常", () => {
+    const notify = vi.fn(() => { throw new Error("UI unavailable"); });
+    disposers.push(installNotifierSink({ notify }));
+
+    expect(() => notifyWarning("retry later")).not.toThrow();
+    expect(notify).toHaveBeenCalledWith("retry later", "warning");
   });
 
   it("旧 disposer 不清除替换后的 sink", () => {

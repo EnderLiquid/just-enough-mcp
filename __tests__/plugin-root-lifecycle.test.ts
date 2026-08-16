@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   disposeRegistry: vi.fn(),
   installNotifierSink: vi.fn(),
   disposeNotifier: vi.fn(),
+  notifyInfo: vi.fn(),
   notifyError: vi.fn(),
   installFooterStatusSink: vi.fn(),
   disposeFooter: vi.fn(),
@@ -53,6 +54,7 @@ vi.mock("../extensions/servers/registry.js", () => ({
 
 vi.mock("../extensions/rendering/notifier.js", () => ({
   installNotifierSink: mocks.installNotifierSink,
+  notifyInfo: mocks.notifyInfo,
   notifyError: mocks.notifyError,
 }));
 
@@ -130,7 +132,7 @@ describe("justEnoughMcp root 生命周期", () => {
     vi.clearAllMocks();
     const config = makePluginConfig();
     mocks.loadPluginConfig.mockReturnValue(config);
-    mocks.initialize.mockResolvedValue({ eagerFailures: [] });
+    mocks.initialize.mockResolvedValue(undefined);
     mocks.getStatus.mockResolvedValue({ servers: [], connectedCount: 0, totalCount: 0 });
     mocks.closeAll.mockResolvedValue(undefined);
     mocks.bootstrapperClose.mockResolvedValue(undefined);
@@ -191,46 +193,8 @@ describe("justEnoughMcp root 生命周期", () => {
 
     const onCreated = mocks.createOverviewBootstrapper.mock.calls[0]?.[0]?.onCreated;
     onCreated("demo");
-    expect(ctx.ui.notify).toHaveBeenCalledWith("Created MCP overview stub: demo", "info");
-  });
-
-  it("eager 预热失败时仍提交 Registry、刷新 footer 并发出 warning", async () => {
-    mocks.initialize.mockResolvedValueOnce({
-      eagerFailures: [
-        { serverName: "alpha", error: new Error("offline") },
-        { serverName: "beta", error: new Error("offline") },
-      ],
-    });
-    const { pi, handler } = createFakePi();
-    const ctx = createContext();
-    justEnoughMcp(pi);
-
-    await handler("session_start")({}, ctx);
-
-    expect(mocks.installCurrentPluginConfig).toHaveBeenCalledTimes(1);
-    expect(mocks.installCurrentServerRegistry).toHaveBeenCalledTimes(1);
-    expect(mocks.refreshFooterStatus).toHaveBeenCalledTimes(1);
-    expect(mocks.closeAll).not.toHaveBeenCalled();
-    expect(ctx.ui.notify).toHaveBeenCalledWith(
-      "2 eager MCP servers could not be initialized: alpha, beta. Use mcp_server or mcp_tool to retry on demand.",
-      "warning",
-    );
-  });
-
-  it("warning notifier 失败时保留已提交的 config 和 Registry", async () => {
-    mocks.initialize.mockResolvedValueOnce({
-      eagerFailures: [{ serverName: "alpha", error: new Error("offline") }],
-    });
-    const { pi, handler } = createFakePi();
-    const ctx = createContext();
-    ctx.ui.notify.mockImplementation(() => { throw new Error("notification unavailable"); });
-    justEnoughMcp(pi);
-
-    await handler("session_start")({}, ctx);
-
-    expect(mocks.installCurrentPluginConfig).toHaveBeenCalledTimes(1);
-    expect(mocks.installCurrentServerRegistry).toHaveBeenCalledTimes(1);
-    expect(mocks.closeAll).not.toHaveBeenCalled();
+    expect(mocks.notifyInfo).toHaveBeenCalledWith("Created MCP overview stub: demo");
+    expect(ctx.ui.notify).not.toHaveBeenCalled();
   });
 
   it("footer 初始化失败时保留已提交的 config 和 Registry", async () => {
