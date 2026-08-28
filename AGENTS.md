@@ -35,7 +35,8 @@
 - 配置层输出 `ResolvedServerConfig`，只保留通用字段和 `definition`；具体 server 组装实现负责校验并保存自己需要的配置字段。
 - `ServerOverview` 只表示文档内容与来源，不携带 transport、鉴权等 runtime 分类信息。
 - 当前 `connect` / `connectServer` / `connectState` 是历史命名，实际语义是“让 server 进入可用状态”，不应狭义理解为底层网络连接。
-- 对 HTTP server，`connected` 表示 MCP client/transport 已初始化且 tools catalog 可用，不表示 TCP 连接长期存在。
+- `connected` 表示 manager 当前持有已初始化且 tools catalog 可用、尚未收到 SDK `Client.onclose` 的 Client 实例；一次 tool call 报错不改变该状态。对 HTTP server，它不表示 TCP 连接长期存在。
+- `disconnecting` 表示显式关闭已撤销当前 Client 的可用性，正在等待 `Client.close()` 完成；完成后才进入 `disconnected`。
 - 插件配置顶层按职责拆分为 `materialization` 与 `tui`；`materialization` 控制 artifact 落盘、payload/JSON 归一化和给模型的 summary 预算，`tui` 只控制 TUI 渲染模式与展开模式折叠行数。
 - TUI 渲染模式为 `hidden` / `minimal` / `expanded`，默认 `expanded`；不要把 TUI 展示配置混入 materialization 或模型 summary 配置。
 - 用户可见英文数量文案应使用 `extensions/formatting/english.ts` 的 `pluralize()` 处理单复数，避免写出 `1 tools`、`1 payload items` 等文本。

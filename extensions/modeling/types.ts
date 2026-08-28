@@ -2,7 +2,7 @@ import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { MaterializationSettings, TuiResultRenderSettings } from "../artifacts/types.js";
 
 export type ServerConnectionMode = "lazy" | "eager";
-export type ServerConnectState = "disconnected" | "connecting" | "connected";
+export type ServerConnectState = "disconnected" | "connecting" | "connected" | "disconnecting";
 
 export type ServerDefinition = Record<string, unknown>;
 

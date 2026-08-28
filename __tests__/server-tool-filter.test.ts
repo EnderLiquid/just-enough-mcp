@@ -13,15 +13,34 @@ const mocks = vi.hoisted(() => ({
   createStdioTransport: vi.fn(),
   createHttpTransport: vi.fn(),
   notifyWarning: vi.fn(),
+  clients: [] as Array<{ onclose?: () => void }>,
 }));
+
+interface MockTransport {
+  close: () => Promise<void>;
+  onclose?: () => void;
+  onerror?: (error: Error) => void;
+  onmessage?: (...args: unknown[]) => void;
+}
 
 vi.mock("@modelcontextprotocol/sdk/client/index.js", () => ({
   Client: class MockClient {
-    transport: unknown = undefined;
+    transport: MockTransport | undefined;
+    onclose: (() => void) | undefined;
 
-    async connect(transport: unknown, options?: unknown) {
-      await mocks.connect.call(this, transport, options);
+    constructor() {
+      mocks.clients.push(this);
+    }
+
+    async connect(transport: MockTransport, options?: unknown) {
       this.transport = transport;
+      const previousOnclose = transport.onclose;
+      transport.onclose = () => {
+        previousOnclose?.();
+        this.transport = undefined;
+        this.onclose?.();
+      };
+      await mocks.connect.call(this, transport, options);
     }
 
     listTools(params?: unknown, options?: unknown) {
@@ -37,7 +56,7 @@ vi.mock("@modelcontextprotocol/sdk/client/index.js", () => ({
     }
 
     async close() {
-      this.transport = undefined;
+      await this.transport?.close();
       await mocks.close.call(this);
     }
   },
@@ -45,7 +64,12 @@ vi.mock("@modelcontextprotocol/sdk/client/index.js", () => ({
 
 vi.mock("@modelcontextprotocol/sdk/client/stdio.js", () => ({
   StdioClientTransport: class MockStdioClientTransport {
-    close = mocks.transportClose;
+    onclose?: () => void;
+    close = async () => {
+      await mocks.transportClose();
+      this.onclose?.();
+    };
+
     constructor(options: unknown) {
       mocks.createStdioTransport(options);
     }
@@ -54,7 +78,12 @@ vi.mock("@modelcontextprotocol/sdk/client/stdio.js", () => ({
 
 vi.mock("@modelcontextprotocol/sdk/client/streamableHttp.js", () => ({
   StreamableHTTPClientTransport: class MockStreamableHTTPClientTransport {
-    close = mocks.transportClose;
+    onclose?: () => void;
+    close = async () => {
+      await mocks.transportClose();
+      this.onclose?.();
+    };
+
     constructor(url: URL, options?: unknown) {
       mocks.createHttpTransport(url, options);
     }
@@ -124,6 +153,7 @@ describe("基于 SDK 的服务器工具", () => {
     mocks.getServerVersion.mockReturnValue({ name: "demo", version: "1.0.0" });
     mocks.close.mockResolvedValue(undefined);
     mocks.transportClose.mockResolvedValue(undefined);
+    mocks.clients.length = 0;
   });
 
   it("构造 Registry 只装配静态成员，不自动预热 eager server", async () => {
@@ -353,7 +383,7 @@ describe("基于 SDK 的服务器工具", () => {
     expect((await registry.getServerSnapshot("demo"))?.connectState).toBe("connected");
   });
 
-  it("使已关闭连接失效，下次调用时重新连接", async () => {
+  it("一次连接关闭错误不会主动使已发布 client 失效", async () => {
     const registry = createRegistry();
     const connectionError = new McpError(ErrorCode.ConnectionClosed, "Connection closed");
     mocks.callTool.mockRejectedValueOnce(connectionError);
@@ -361,6 +391,43 @@ describe("基于 SDK 的服务器工具", () => {
     await expect(registry.callTool("demo", "search", {})).rejects.toBe(connectionError);
 
     expect(mocks.callTool).toHaveBeenCalledTimes(1);
+    expect(await registry.getServerSnapshot("demo")).toMatchObject({
+      connectState: "connected",
+      tools: remoteTools,
+    });
+    expect(mocks.close).not.toHaveBeenCalled();
+    expect(mocks.transportClose).not.toHaveBeenCalled();
+
+    await expect(registry.callTool("demo", "search", {})).resolves.toMatchObject({
+      toolName: "search",
+    });
+    expect(mocks.connect).toHaveBeenCalledTimes(1);
+    expect(mocks.listTools).toHaveBeenCalledTimes(1);
+    expect(mocks.callTool).toHaveBeenCalledTimes(2);
+  });
+
+  it("请求抛错但 SDK 未关闭 client 时保持连接", async () => {
+    const registry = createRegistry();
+    const requestError = new Error("Not connected");
+    mocks.callTool.mockRejectedValueOnce(requestError);
+
+    await expect(registry.callTool("demo", "search", {})).rejects.toBe(requestError);
+
+    expect(mocks.callTool).toHaveBeenCalledTimes(1);
+    expect(await registry.getServerSnapshot("demo")).toMatchObject({
+      connectState: "connected",
+      tools: remoteTools,
+    });
+    expect(mocks.close).not.toHaveBeenCalled();
+  });
+
+  it("被动关闭当前 transport 时使 client 失效并允许按需重连", async () => {
+    const registry = createRegistry();
+    await registry.getServerCatalog("demo");
+    const firstTransport = mocks.connect.mock.calls[0]?.[0] as { onclose?: () => void };
+
+    firstTransport.onclose?.();
+
     expect(await registry.getServerSnapshot("demo")).toMatchObject({
       connectState: "disconnected",
       tools: undefined,
@@ -371,28 +438,46 @@ describe("基于 SDK 的服务器工具", () => {
     });
     expect(mocks.connect).toHaveBeenCalledTimes(2);
     expect(mocks.listTools).toHaveBeenCalledTimes(2);
-    expect(mocks.callTool).toHaveBeenCalledTimes(2);
     expect((await registry.getServerSnapshot("demo"))?.connectState).toBe("connected");
   });
 
-  it("client transport 已不存在时使连接失效", async () => {
+  it("旧 client 的延迟关闭不会使重连后的 client 失效", async () => {
     const registry = createRegistry();
-    const notConnectedError = new Error("Not connected");
-    mocks.callTool.mockImplementationOnce(function (this: { transport: unknown }) {
-      this.transport = undefined;
-      throw notConnectedError;
+    await registry.getServerCatalog("demo");
+    const firstTransport = mocks.connect.mock.calls[0]?.[0] as { onclose?: () => void };
+    const firstClient = mocks.clients[0]!;
+
+    firstTransport.onclose?.();
+    await registry.getServerCatalog("demo");
+
+    firstClient.onclose?.();
+
+    expect(await registry.getServerSnapshot("demo")).toMatchObject({
+      connectState: "connected",
+      tools: remoteTools,
+    });
+    expect(mocks.clients).toHaveLength(2);
+  });
+
+  it("连接期间被动关闭时不会发布失效 client", async () => {
+    const registry = createRegistry();
+    mocks.listTools.mockImplementationOnce(function (this: { transport?: { onclose?: () => void } }) {
+      this.transport?.onclose?.();
+      return { tools: remoteTools };
     });
 
-    await expect(registry.callTool("demo", "search", {})).rejects.toBe(notConnectedError);
+    await expect(registry.getServerCatalog("demo")).rejects.toThrow(
+      'MCP client for server "demo" closed during initialization.',
+    );
 
-    expect(mocks.callTool).toHaveBeenCalledTimes(1);
     expect(await registry.getServerSnapshot("demo")).toMatchObject({
       connectState: "disconnected",
       tools: undefined,
     });
+    expect(mocks.getServerVersion).not.toHaveBeenCalled();
   });
 
-  it("连接失效清理等待其他在途工具调用自然完成", async () => {
+  it("连接关闭错误不会阻塞其他在途工具调用", async () => {
     const registry = createRegistry();
     await registry.getServerCatalog("demo");
     const successfulCall = createDeferred<{ content: Array<{ type: "text"; text: string }> }>();
@@ -403,22 +488,18 @@ describe("基于 SDK 的服务器工具", () => {
 
     const first = registry.callTool("demo", "search", { request: 1 });
     await vi.waitFor(() => expect(mocks.callTool).toHaveBeenCalledTimes(1));
-    let failedCallSettled = false;
-    const second = registry.callTool("demo", "search", { request: 2 }).finally(() => {
-      failedCallSettled = true;
-    });
+    const second = registry.callTool("demo", "search", { request: 2 });
+    const secondExpectation = expect(second).rejects.toBe(connectionError);
     await vi.waitFor(() => expect(mocks.callTool).toHaveBeenCalledTimes(2));
 
-    await Promise.resolve();
-    expect(failedCallSettled).toBe(false);
+    await secondExpectation;
     expect(mocks.close).not.toHaveBeenCalled();
 
     successfulCall.resolve({ content: [{ type: "text", text: "ok" }] });
     await expect(first).resolves.toMatchObject({ toolName: "search" });
-    await expect(second).rejects.toBe(connectionError);
 
-    expect(mocks.close).toHaveBeenCalledTimes(1);
-    expect((await registry.getServerSnapshot("demo"))?.connectState).toBe("disconnected");
+    expect(mocks.close).not.toHaveBeenCalled();
+    expect((await registry.getServerSnapshot("demo"))?.connectState).toBe("connected");
   });
 
   it.each([
@@ -479,6 +560,59 @@ describe("基于 SDK 的服务器工具", () => {
     expect(mocks.connect).toHaveBeenCalledTimes(2);
     expect(mocks.listTools).toHaveBeenCalledTimes(2);
     expect((await registry.getServerSnapshot("demo"))?.connectState).toBe("connected");
+  });
+
+  it("断开连接期间发布 disconnecting，完成后才变为 disconnected", async () => {
+    const registry = createRegistry();
+    await registry.getServerCatalog("demo");
+    const closeGate = createDeferred();
+    mocks.transportClose.mockImplementationOnce(() => closeGate.promise);
+
+    const disconnecting = registry.disconnectServer("demo");
+    await vi.waitFor(async () => {
+      expect(await registry.getServerSnapshot("demo")).toMatchObject({
+        connectState: "disconnecting",
+        tools: undefined,
+      });
+    });
+    expect(mocks.close).not.toHaveBeenCalled();
+
+    closeGate.resolve();
+    await expect(disconnecting).resolves.toMatchObject({
+      connectState: "disconnected",
+      tools: undefined,
+    });
+    expect(mocks.close).toHaveBeenCalledTimes(1);
+    expect(mocks.transportClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("显式关闭引起的 SDK onclose 不会提前覆盖 disconnecting", async () => {
+    const registry = createRegistry();
+    await registry.getServerCatalog("demo");
+    const closeGate = createDeferred();
+    mocks.transportClose.mockImplementationOnce(() => closeGate.promise);
+
+    const closing = registry.disconnectServer("demo");
+    await vi.waitFor(async () => {
+      expect((await registry.getServerSnapshot("demo"))?.connectState).toBe("disconnecting");
+    });
+
+    closeGate.resolve();
+    await closing;
+    expect((await registry.getServerSnapshot("demo"))?.connectState).toBe("disconnected");
+  });
+
+  it("关闭 client 失败后仍完成状态转换", async () => {
+    const registry = createRegistry();
+    await registry.getServerCatalog("demo");
+    mocks.transportClose.mockRejectedValueOnce(new Error("transport close failed"));
+
+    await expect(registry.disconnectServer("demo")).resolves.toMatchObject({
+      connectState: "disconnected",
+      tools: undefined,
+    });
+    expect(mocks.close).not.toHaveBeenCalled();
+    expect(mocks.transportClose).toHaveBeenCalledTimes(1);
   });
 
   it("服务器正在连接时等待连接结束再断开", async () => {
