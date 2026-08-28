@@ -104,25 +104,34 @@ export class SdkSessionManager {
     signal: AbortSignal | undefined,
     operation: (client: Client) => T | Promise<T>,
   ): Promise<T> {
-    while (true) {
-      const outcome = await this.lifecycleLock.withRead(async () => {
-        const client = this.client;
-        if (!client) {
-          return { connected: false } as const;
-        }
-
-        return {
-          connected: true,
-          value: await operation(client),
-        } as const;
-      });
-
-      if (outcome.connected) {
-        return outcome.value;
+    const initial = await this.lifecycleLock.withRead(async () => {
+      const client = this.client;
+      if (!client) {
+        return { connected: false } as const;
       }
 
-      await this.lifecycleLock.withWrite(() => this.connectLocked(signal));
+      return {
+        connected: true,
+        value: await operation(client),
+      } as const;
+    });
+
+    if (initial.connected) {
+      return initial.value;
     }
+
+    await this.lifecycleLock.withWrite(() => this.connectLocked(signal));
+
+    return this.lifecycleLock.withRead(async () => {
+      const client = this.client;
+      if (!client) {
+        throw new Error(
+          `MCP server "${this.options.serverName}" became unavailable before the requested operation could start.`,
+        );
+      }
+
+      return operation(client);
+    });
   }
 
   private async connectLocked(signal?: AbortSignal): Promise<void> {

@@ -615,6 +615,28 @@ describe("基于 SDK 的服务器工具", () => {
     expect(mocks.transportClose).toHaveBeenCalledTimes(1);
   });
 
+  it("连接完成前排队的断开会让目录请求单次失败而不重连", async () => {
+    const registry = createRegistry();
+    const connectGate = createDeferred();
+    mocks.connect.mockImplementationOnce(() => connectGate.promise);
+
+    const catalog = registry.getServerCatalog("demo");
+    await vi.waitFor(async () => {
+      expect((await registry.getServerSnapshot("demo"))?.connectState).toBe("connecting");
+    });
+
+    const disconnecting = registry.disconnectServer("demo");
+    connectGate.resolve();
+
+    await expect(disconnecting).resolves.toMatchObject({ connectState: "disconnected" });
+    await expect(catalog).rejects.toThrow(
+      'MCP server "demo" became unavailable before the requested operation could start.',
+    );
+    expect(mocks.connect).toHaveBeenCalledTimes(1);
+    expect(mocks.listTools).toHaveBeenCalledTimes(1);
+    expect((await registry.getServerSnapshot("demo"))?.connectState).toBe("disconnected");
+  });
+
   it("服务器正在连接时等待连接结束再断开", async () => {
     const registry = createRegistry();
     let finishConnect!: () => void;
