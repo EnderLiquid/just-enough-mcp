@@ -35,16 +35,51 @@ Resources、Prompts、Sampling、Elicitation、OAuth 和将每个 MCP tool 直�
 }
 ```
 
-`command` 用于 stdio server；`url` 用于 HTTP server，transport 会据此自动判断。stdio 配置还可包含 `cwd`、`env` 和 `args`，HTTP 配置可使用 `headers` 或 `bearerToken`。
+### Server 定义
 
-每个 server 还可设置：
+`command` 用于 stdio server；`url` 用于 HTTP server，通常会据此自动判断 transport。也可显式设置 `transport` 为 `"stdio"` 或 `"http"`，用来兼容既有配置或在同时提供 `command` 和 `url` 时消除歧义。无论采用哪种方式，stdio server 仍须提供非空 `command`，HTTP server 仍须提供非空 `url`。
+
+stdio server 还可设置：
+
+- `args`：字符串数组，作为启动命令的参数。
+- `cwd`：启动命令的工作目录。
+- `env`：传给启动命令的字符串键值环境变量。
+
+HTTP server 还可设置：
+
+- `headers`：静态请求头的字符串键值对象。
+- `bearerToken`：自动生成 `Authorization: Bearer <token>`；配置中的同名 `Authorization` 会被覆盖。
+
+所有 server 均可设置：
 
 - `connectionMode`：`lazy`（默认）或 `eager`。`eager` 会在会话启动时尽力预热；预热失败不会阻止插件启动，后续显式连接或 `mcp_tool` 调用仍会重试。
-- `overview`：显式指定 overview Markdown 文件；未指定时使用 `~/.pi/agent/mcp-overviews/<serverName>.md`。
+- `overview`：显式指定 overview Markdown 文件。相对路径相对于配置文件解析；未指定时使用 `~/.pi/agent/mcp-overviews/<serverName>.md`。
+- `includeTools`：非空工具名数组，作为允许列表；未设置时默认允许全部工具。
+- `excludeTools`：非空工具名数组，在允许列表之后排除工具。它优先于 `includeTools`，并同时限制工具目录和实际调用。
 
-顶层的 `materialization` 和 `tui` 分别用于调整结果物化与 TUI 展示。没有 overview 时，插件会在首次成功初始化后尝试依据 server 描述创建最小草稿。
+未显式配置 `overview` 且默认 overview 文件不存在时，插件会在首次成功初始化后尝试依据 server 描述创建最小草稿。
 
 server 名称同时用于工具调用、overview 文件名和物化目录，必须匹配 `^[a-z0-9][a-z0-9._-]{0,31}$`；Windows 保留设备名（如 `con`、`com1`）不可用。
+
+### 结果物化与 TUI
+
+顶层的 `materialization` 控制结果文件和给模型的摘要预算；`artifactRoot` 使用相对路径时相对于当前 Pi 工作目录解析，也可使用绝对路径。
+
+| 字段 | 默认值 | 用途 |
+| --- | --- | --- |
+| `materialization.artifactRoot` | `.pi/mcp` | 每次调用的 payload 与 `manifest.json` 的存放根目录。 |
+| `materialization.summaryItemCount` | `6` | 多 payload 结果中展示在模型摘要内的最大条目数。 |
+| `materialization.previewFullCharsPerItem` | `1500` | 单个文本 payload 不截断时的最大字符数。 |
+| `materialization.previewTruncateToCharsPerItem` | `600` | 超出预览阈值时保留的字符数，不能大于前一项。 |
+| `materialization.hardMaxChars` | `40000` | 最终模型摘要的硬字符上限。 |
+| `materialization.prettyPrintJson` | `true` | 是否格式化可识别的 JSON payload。 |
+
+顶层的 `tui` 只控制 Pi TUI 的渲染：
+
+| 字段 | 默认值 | 用途 |
+| --- | --- | --- |
+| `tui.renderMode` | `expanded` | `hidden`、`minimal` 或 `expanded`。`minimal` 默认仅显示简短摘要，`expanded` 显示结果预览。 |
+| `tui.expandedModeCollapsedLines` | `4` | `expanded` 模式下未手动展开时显示的最大结果行数。 |
 
 ## 工具入口
 
