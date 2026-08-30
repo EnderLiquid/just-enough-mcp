@@ -428,9 +428,11 @@ describe("基于 SDK 的服务器工具", () => {
 
     firstTransport.onclose?.();
 
-    expect(await registry.getServerSnapshot("demo")).toMatchObject({
-      connectState: "disconnected",
-      tools: undefined,
+    await vi.waitFor(async () => {
+      expect(await registry.getServerSnapshot("demo")).toMatchObject({
+        connectState: "disconnected",
+        tools: undefined,
+      });
     });
 
     await expect(registry.callTool("demo", "search", {})).resolves.toMatchObject({
@@ -438,6 +440,7 @@ describe("基于 SDK 的服务器工具", () => {
     });
     expect(mocks.connect).toHaveBeenCalledTimes(2);
     expect(mocks.listTools).toHaveBeenCalledTimes(2);
+    expect(mocks.callTool).toHaveBeenCalledTimes(1);
     expect((await registry.getServerSnapshot("demo"))?.connectState).toBe("connected");
   });
 
@@ -448,15 +451,49 @@ describe("基于 SDK 的服务器工具", () => {
     const firstClient = mocks.clients[0]!;
 
     firstTransport.onclose?.();
+    await vi.waitFor(async () => {
+      expect((await registry.getServerSnapshot("demo"))?.connectState).toBe("disconnected");
+    });
     await registry.getServerCatalog("demo");
 
     firstClient.onclose?.();
-
     expect(await registry.getServerSnapshot("demo")).toMatchObject({
       connectState: "connected",
       tools: remoteTools,
     });
     expect(mocks.clients).toHaveLength(2);
+  });
+
+  it("被动关闭排队失效 writer，新的操作不会使用旧 client", async () => {
+    const registry = createRegistry();
+    await registry.getServerCatalog("demo");
+    const firstTransport = mocks.connect.mock.calls[0]?.[0] as { onclose?: () => void };
+    const callGate = createDeferred<{ content: Array<{ type: "text"; text: string }> }>();
+    mocks.callTool.mockImplementationOnce(() => callGate.promise);
+
+    const firstCall = registry.callTool("demo", "search", { request: 1 });
+    await vi.waitFor(() => expect(mocks.callTool).toHaveBeenCalledTimes(1));
+
+    firstTransport.onclose?.();
+    expect((await registry.getServerSnapshot("demo"))?.connectState).toBe("connected");
+
+    let secondSettled = false;
+    const secondCall = registry.callTool("demo", "search", { request: 2 }).finally(() => {
+      secondSettled = true;
+    });
+    await Promise.resolve();
+    expect(secondSettled).toBe(false);
+    expect(mocks.callTool).toHaveBeenCalledTimes(1);
+
+    callGate.resolve({ content: [{ type: "text", text: "ok" }] });
+    await expect(firstCall).resolves.toMatchObject({ toolName: "search" });
+    await expect(secondCall).resolves.toMatchObject({ toolName: "search" });
+
+    expect(mocks.connect).toHaveBeenCalledTimes(2);
+    expect(mocks.listTools).toHaveBeenCalledTimes(2);
+    expect(mocks.callTool).toHaveBeenCalledTimes(2);
+    expect(mocks.clients).toHaveLength(2);
+    expect((await registry.getServerSnapshot("demo"))?.connectState).toBe("connected");
   });
 
   it("连接期间被动关闭时不会发布失效 client", async () => {

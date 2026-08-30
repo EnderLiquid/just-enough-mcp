@@ -72,9 +72,9 @@ export class SdkSessionManager {
     args: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<SdkSessionToolCallResult> {
-    return this.withConnectedRead(signal, async client => {
+    return this.withConnectedRead(signal, async () => {
       this.requireAvailableTool(name);
-      const result = await client.callTool(
+      const result = await this.client!.callTool(
         {
           name,
           arguments: args,
@@ -102,17 +102,16 @@ export class SdkSessionManager {
 
   private async withConnectedRead<T>(
     signal: AbortSignal | undefined,
-    operation: (client: Client) => T | Promise<T>,
+    operation: () => T | Promise<T>,
   ): Promise<T> {
     const initial = await this.lifecycleLock.withRead(async () => {
-      const client = this.client;
-      if (!client) {
+      if (!this.client) {
         return { connected: false } as const;
       }
 
       return {
         connected: true,
-        value: await operation(client),
+        value: await operation(),
       } as const;
     });
 
@@ -123,14 +122,13 @@ export class SdkSessionManager {
     await this.lifecycleLock.withWrite(() => this.connectLocked(signal));
 
     return this.lifecycleLock.withRead(async () => {
-      const client = this.client;
-      if (!client) {
+      if (!this.client) {
         throw new Error(
           `MCP server "${this.options.serverName}" became unavailable before the requested operation could start.`,
         );
       }
 
-      return operation(client);
+      return operation();
     });
   }
 
@@ -148,7 +146,7 @@ export class SdkSessionManager {
       const candidate = client;
       client.onclose = () => {
         closedBeforePublish = true;
-        this.handleClientClosed(candidate);
+        this.enqueueClientInvalidation(candidate);
       };
       const transport = this.options.createTransport();
       const requestOptions = signal ? { signal } : undefined;
@@ -201,7 +199,13 @@ export class SdkSessionManager {
     return this.snapshot();
   }
 
-  private handleClientClosed(client: Client): void {
+  private enqueueClientInvalidation(client: Client): void {
+    void this.lifecycleLock
+      .withWrite(() => this.invalidateClientLocked(client))
+      .catch(() => {});
+  }
+
+  private invalidateClientLocked(client: Client): void {
     if (this.client !== client) {
       return;
     }
