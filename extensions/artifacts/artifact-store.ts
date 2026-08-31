@@ -1,11 +1,10 @@
 import { extension as getMimeExtension } from "mime-types";
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path";
-import type { MaterializationSettings, PayloadDraft, StoredPayloadItem } from "./types.js";
+import { basename, dirname, extname, join, resolve } from "node:path";
+import type { PayloadDraft, StoredPayloadItem } from "./types.js";
 
 export interface ArtifactContext {
-  readonly cwd: string;
   readonly artifactRoot: string;
   readonly callDir: string;
   readonly manifestPath: string;
@@ -55,10 +54,6 @@ function createCallDirectoryName(server: string): string {
 
 export function normalizePathSlashes(value: string): string {
   return value.replace(/\\/g, "/");
-}
-
-function resolveArtifactRoot(cwd: string, artifactRoot: string): string {
-  return isAbsolute(artifactRoot) ? artifactRoot : resolve(cwd, artifactRoot);
 }
 
 const PREFERRED_MIME_EXTENSIONS: Record<string, string> = {
@@ -170,12 +165,10 @@ function toStoredPayloadItem(item: PayloadDraft & { index: number; path: string;
 }
 
 export function createArtifactContext(input: {
-  cwd: string;
   server: string;
-  settings: Pick<MaterializationSettings, "artifactRoot">;
+  artifactDir: string;
 }): ArtifactContext {
-  const cwd = resolve(input.cwd);
-  const artifactRoot = resolveArtifactRoot(cwd, input.settings.artifactRoot);
+  const artifactRoot = resolve(input.artifactDir);
   const callDirName = createCallDirectoryName(input.server);
   const callDir = normalizePathSlashes(join(artifactRoot, callDirName));
   const stagingDir = normalizePathSlashes(join(artifactRoot, `.partial-${callDirName}`));
@@ -183,7 +176,6 @@ export function createArtifactContext(input: {
   mkdirSync(stagingDir);
 
   const context: ArtifactContext = {
-    cwd: normalizePathSlashes(cwd),
     artifactRoot: normalizePathSlashes(artifactRoot),
     callDir,
     manifestPath: normalizePathSlashes(join(callDir, "manifest.json")),

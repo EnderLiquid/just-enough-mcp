@@ -44,6 +44,7 @@ export interface ResolvedServerConfig {
 export interface PluginConfigLoadResult {
   configPath: string;
   overviewDir: string;
+  artifactDir: string;
   materialization: MaterializationSettings;
   tui: TuiResultRenderSettings;
   servers: ResolvedServerConfig[];

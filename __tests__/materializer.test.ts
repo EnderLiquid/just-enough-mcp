@@ -21,7 +21,7 @@ describe("materializeToolCallResult", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-23T04:18:22Z"));
 
-    const cwd = tempDirs.create();
+    const artifactRoot = tempDirs.create();
     const serverName = `${"a".repeat(29)}--b`;
     const result: CallToolResult = {
       content: [{ type: "text", text: "hello world" }],
@@ -29,7 +29,7 @@ describe("materializeToolCallResult", () => {
     };
 
     const materialized = materializeToolCallResult({
-      cwd,
+      artifactDir: artifactRoot,
       server: serverName,
       tool: "codegraph_explore",
       result,
@@ -38,17 +38,15 @@ describe("materializeToolCallResult", () => {
     const callDirName = materialized.callDir.split("/").pop();
     expect(callDirName).toMatch(new RegExp(`^${serverName}-260623-041822-[0-9a-f]{4}$`));
     expect(callDirName).not.toContain("codegraph_explore");
-    expect(readdirSync(`${cwd}/.pi/mcp`)).toEqual([callDirName]);
+    expect(readdirSync(artifactRoot)).toEqual([callDirName]);
   });
 
   it("移除自身 staging 目录，不影响无关的 partial 目录", () => {
-    const cwd = tempDirs.create();
-    const artifactRoot = `${cwd}/.pi/mcp`;
+    const artifactRoot = tempDirs.create();
     mkdirSync(`${artifactRoot}/.partial-existing`, { recursive: true });
     const context = createArtifactContext({
-      cwd,
+      artifactDir: artifactRoot,
       server: "demo",
-      settings: { artifactRoot: ".pi/mcp" },
     });
     writeFileSync(`${context.stagingDir}/01-text.txt`, "partial", "utf8");
 
@@ -58,12 +56,11 @@ describe("materializeToolCallResult", () => {
   });
 
   it("staging 清理失败时仍保留物化错误信息", () => {
-    const cwd = tempDirs.create();
+    const artifactRoot = tempDirs.create();
     const materializationError = new Error("payload write failed");
     const context = createArtifactContext({
-      cwd,
+      artifactDir: artifactRoot,
       server: "demo",
-      settings: { artifactRoot: ".pi/mcp" },
     });
     rmSync(context.stagingDir, { recursive: true });
     writeFileSync(context.stagingDir, "not a directory", "utf8");
@@ -91,14 +88,14 @@ describe("materializeToolCallResult", () => {
   });
 
   it("仅返回单条文本预览（不含 manifest 提示），但实际仍写入 manifest", () => {
-    const cwd = tempDirs.create();
+    const artifactRoot = tempDirs.create();
     const result: CallToolResult = {
       content: [{ type: "text", text: "hello world" }],
       isError: false,
     };
 
     const materialized = materializeToolCallResult({
-      cwd,
+      artifactDir: artifactRoot,
       server: "tavily",
       tool: "search",
       result,
@@ -118,14 +115,14 @@ describe("materializeToolCallResult", () => {
   });
 
   it("识别 JSON 文本，标记为 application/json，写入 .json 文件", () => {
-    const cwd = tempDirs.create();
+    const artifactRoot = tempDirs.create();
     const result: CallToolResult = {
       content: [{ type: "text", text: '{"ok":true,"count":2}' }],
       isError: false,
     };
 
     const materialized = materializeToolCallResult({
-      cwd,
+      artifactDir: artifactRoot,
       server: "tavily",
       tool: "search",
       result,
@@ -139,14 +136,14 @@ describe("materializeToolCallResult", () => {
   });
 
   it("标记行内截断，报告剩余字符数和行数", () => {
-    const cwd = tempDirs.create();
+    const artifactRoot = tempDirs.create();
     const result: CallToolResult = {
       content: [{ type: "text", text: "abcdefghijklmnopqrstuvwxyz" }],
       isError: false,
     };
 
     const materialized = materializeToolCallResult({
-      cwd,
+      artifactDir: artifactRoot,
       server: "demo",
       tool: "preview",
       result,
@@ -162,14 +159,14 @@ describe("materializeToolCallResult", () => {
   });
 
   it("截断摘要中使用英文单数形式", () => {
-    const cwd = tempDirs.create();
+    const artifactRoot = tempDirs.create();
     const result: CallToolResult = {
       content: [{ type: "text", text: "abcde" }],
       isError: false,
     };
 
     const materialized = materializeToolCallResult({
-      cwd,
+      artifactDir: artifactRoot,
       server: "demo",
       tool: "preview-singular",
       result,
@@ -183,14 +180,14 @@ describe("materializeToolCallResult", () => {
   });
 
   it("截断发生在行边界时在新行显示截断摘要", () => {
-    const cwd = tempDirs.create();
+    const artifactRoot = tempDirs.create();
     const result: CallToolResult = {
       content: [{ type: "text", text: "abc\ndef\nghi" }],
       isError: false,
     };
 
     const materialized = materializeToolCallResult({
-      cwd,
+      artifactDir: artifactRoot,
       server: "demo",
       tool: "preview-lines",
       result,
@@ -206,7 +203,7 @@ describe("materializeToolCallResult", () => {
   });
 
   it("使用 MIME registry 推导扩展名，并将未知类型物化为 bin 文件", () => {
-    const cwd = tempDirs.create();
+    const artifactRoot = tempDirs.create();
     const result: CallToolResult = {
       content: [
         { type: "image", mimeType: "image/svg+xml", data: Buffer.from("svg").toString("base64") },
@@ -240,7 +237,7 @@ describe("materializeToolCallResult", () => {
     };
 
     const materialized = materializeToolCallResult({
-      cwd,
+      artifactDir: artifactRoot,
       server: "demo",
       tool: "mime-examples",
       result,
@@ -256,7 +253,7 @@ describe("materializeToolCallResult", () => {
   });
 
   it("构建轻量多条目摘要，包含文件和 manifest 路径", () => {
-    const cwd = tempDirs.create();
+    const artifactRoot = tempDirs.create();
     const result: CallToolResult = {
       content: [
         { type: "text", text: "hello world" },
@@ -267,7 +264,7 @@ describe("materializeToolCallResult", () => {
     };
 
     const materialized = materializeToolCallResult({
-      cwd,
+      artifactDir: artifactRoot,
       server: "tavily",
       tool: "search",
       result,
@@ -298,7 +295,7 @@ describe("materializeToolCallResult", () => {
   });
 
   it("使用 4 字符哈希后缀缩短过长的资源文件名", () => {
-    const cwd = tempDirs.create();
+    const artifactRoot = tempDirs.create();
     const result: CallToolResult = {
       content: [{
         type: "resource",
@@ -312,7 +309,7 @@ describe("materializeToolCallResult", () => {
     };
 
     const materialized = materializeToolCallResult({
-      cwd,
+      artifactDir: artifactRoot,
       server: "tavily",
       tool: "extract",
       result,
@@ -324,7 +321,7 @@ describe("materializeToolCallResult", () => {
   });
 
   it("将 resource_link 物化为纯文本，同时在 rawMimeType 中保留目标 MIME 类型", () => {
-    const cwd = tempDirs.create();
+    const artifactRoot = tempDirs.create();
     const result: CallToolResult = {
       content: [{
         type: "resource_link",
@@ -337,7 +334,7 @@ describe("materializeToolCallResult", () => {
     };
 
     const materialized = materializeToolCallResult({
-      cwd,
+      artifactDir: artifactRoot,
       server: "demo",
       tool: "links",
       result,
@@ -354,7 +351,7 @@ describe("materializeToolCallResult", () => {
   });
 
   it("当 structuredContent 与文本 payload 语义相等时抑制重复", () => {
-    const cwd = tempDirs.create();
+    const artifactRoot = tempDirs.create();
     const result: CallToolResult = {
       content: [{
         type: "text",
@@ -375,7 +372,7 @@ describe("materializeToolCallResult", () => {
     };
 
     const materialized = materializeToolCallResult({
-      cwd,
+      artifactDir: artifactRoot,
       server: "tavily",
       tool: "extract",
       result,

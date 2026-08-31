@@ -13,8 +13,9 @@ describe("loadPluginConfigFromPaths", () => {
 
   it("解析带连接模式、物化设置和 TUI 设置的服务器定义", () => {
     const root = tempDirs.create();
-    const configPath = join(root, "just-enough-mcp.json");
-    const overviewDir = join(root, "mcp-overviews");
+    const configPath = join(root, "config.json");
+    const overviewDir = join(root, "overviews");
+    const artifactDir = join(root, "artifacts");
     mkdirSync(overviewDir, { recursive: true });
     writeFileSync(join(overviewDir, "tavily.md"), "Search and extract web content.\nUse it for latest info.\n", "utf8");
 
@@ -25,7 +26,6 @@ describe("loadPluginConfigFromPaths", () => {
         previewTruncateToCharsPerItem: 120,
         hardMaxChars: 5000,
         prettyPrintJson: false,
-        artifactRoot: "custom-artifacts",
       },
       tui: {
         renderMode: "hidden",
@@ -44,7 +44,7 @@ describe("loadPluginConfigFromPaths", () => {
       },
     }, null, 2), "utf8");
 
-    const loaded = loadPluginConfigFromPaths(configPath, overviewDir);
+    const loaded = loadPluginConfigFromPaths(configPath, overviewDir, artifactDir);
     expect(loaded.servers).toHaveLength(2);
 
     const tavily = loaded.servers.find(server => server.name === "tavily");
@@ -55,7 +55,7 @@ describe("loadPluginConfigFromPaths", () => {
     expect(loaded.materialization.previewTruncateToCharsPerItem).toBe(120);
     expect(loaded.materialization.hardMaxChars).toBe(5000);
     expect(loaded.materialization.prettyPrintJson).toBe(false);
-    expect(loaded.materialization.artifactRoot).toBe("custom-artifacts");
+    expect(loaded.artifactDir).toBe(artifactDir);
     expect(loaded.tui.expandedModeCollapsedLines).toBe(5);
     expect(loaded.tui.renderMode).toBe("hidden");
     expect(tavily?.definition).toMatchObject({
@@ -74,8 +74,9 @@ describe("loadPluginConfigFromPaths", () => {
 
   it("省略时使用默认物化和 TUI 设置", () => {
     const root = tempDirs.create();
-    const configPath = join(root, "just-enough-mcp.json");
-    const overviewDir = join(root, "mcp-overviews");
+    const configPath = join(root, "config.json");
+    const overviewDir = join(root, "overviews");
+    const artifactDir = join(root, "artifacts");
     mkdirSync(overviewDir, { recursive: true });
 
     writeFileSync(configPath, JSON.stringify({
@@ -87,7 +88,7 @@ describe("loadPluginConfigFromPaths", () => {
       },
     }, null, 2), "utf8");
 
-    const loaded = loadPluginConfigFromPaths(configPath, overviewDir);
+    const loaded = loadPluginConfigFromPaths(configPath, overviewDir, artifactDir);
 
     expect(loaded.materialization.previewFullCharsPerItem).toBe(1500);
     expect(loaded.materialization.previewTruncateToCharsPerItem).toBe(600);
@@ -128,36 +129,39 @@ describe("loadPluginConfigFromPaths", () => {
 
     for (const serverName of validNames) {
       const root = tempDirs.create();
-      const configPath = join(root, "just-enough-mcp.json");
-      const overviewDir = join(root, "mcp-overviews");
+      const configPath = join(root, "config.json");
+      const overviewDir = join(root, "overviews");
+      const artifactDir = join(root, "artifacts");
       writeFileSync(configPath, JSON.stringify({
         servers: {
           [serverName]: { command: "npx" },
         },
       }), "utf8");
 
-      expect(loadPluginConfigFromPaths(configPath, overviewDir).servers[0]?.name).toBe(serverName);
+      expect(loadPluginConfigFromPaths(configPath, overviewDir, artifactDir).servers[0]?.name).toBe(serverName);
     }
 
     for (const { name: serverName, reason } of invalidNames) {
       const root = tempDirs.create();
-      const configPath = join(root, "just-enough-mcp.json");
-      const overviewDir = join(root, "mcp-overviews");
+      const configPath = join(root, "config.json");
+      const overviewDir = join(root, "overviews");
+      const artifactDir = join(root, "artifacts");
       writeFileSync(configPath, JSON.stringify({
         servers: {
           [serverName]: { command: "npx" },
         },
       }), "utf8");
 
-      expect(() => loadPluginConfigFromPaths(configPath, overviewDir)).toThrow(serverName);
-      expect(() => loadPluginConfigFromPaths(configPath, overviewDir)).toThrow(reason);
+      expect(() => loadPluginConfigFromPaths(configPath, overviewDir, artifactDir)).toThrow(serverName);
+      expect(() => loadPluginConfigFromPaths(configPath, overviewDir, artifactDir)).toThrow(reason);
     }
   });
 
   it("拒绝非对象的服务器配置", () => {
     const root = tempDirs.create();
-    const configPath = join(root, "just-enough-mcp.json");
-    const overviewDir = join(root, "mcp-overviews");
+    const configPath = join(root, "config.json");
+    const overviewDir = join(root, "overviews");
+    const artifactDir = join(root, "artifacts");
     mkdirSync(overviewDir, { recursive: true });
 
     writeFileSync(configPath, JSON.stringify({
@@ -166,13 +170,14 @@ describe("loadPluginConfigFromPaths", () => {
       },
     }, null, 2), "utf8");
 
-    expect(() => loadPluginConfigFromPaths(configPath, overviewDir)).toThrow(/broken/);
+    expect(() => loadPluginConfigFromPaths(configPath, overviewDir, artifactDir)).toThrow(/broken/);
   });
 
   it("拒绝无效的物化设置", () => {
     const root = tempDirs.create();
-    const configPath = join(root, "just-enough-mcp.json");
-    const overviewDir = join(root, "mcp-overviews");
+    const configPath = join(root, "config.json");
+    const overviewDir = join(root, "overviews");
+    const artifactDir = join(root, "artifacts");
     mkdirSync(overviewDir, { recursive: true });
 
     writeFileSync(configPath, JSON.stringify({
@@ -182,13 +187,14 @@ describe("loadPluginConfigFromPaths", () => {
       servers: {},
     }, null, 2), "utf8");
 
-    expect(() => loadPluginConfigFromPaths(configPath, overviewDir)).toThrow(/materialization.summaryItemCount/);
+    expect(() => loadPluginConfigFromPaths(configPath, overviewDir, artifactDir)).toThrow(/materialization.summaryItemCount/);
   });
 
   it("拒绝不一致的物化预览阈值", () => {
     const root = tempDirs.create();
-    const configPath = join(root, "just-enough-mcp.json");
-    const overviewDir = join(root, "mcp-overviews");
+    const configPath = join(root, "config.json");
+    const overviewDir = join(root, "overviews");
+    const artifactDir = join(root, "artifacts");
     mkdirSync(overviewDir, { recursive: true });
 
     writeFileSync(configPath, JSON.stringify({
@@ -199,14 +205,15 @@ describe("loadPluginConfigFromPaths", () => {
       servers: {},
     }, null, 2), "utf8");
 
-    expect(() => loadPluginConfigFromPaths(configPath, overviewDir)).toThrow(/materialization.previewTruncateToCharsPerItem/);
+    expect(() => loadPluginConfigFromPaths(configPath, overviewDir, artifactDir)).toThrow(/materialization.previewTruncateToCharsPerItem/);
   });
 
   it("接受所有 TUI 渲染模式", () => {
     for (const mode of ["hidden", "minimal", "expanded"] as const) {
       const root = tempDirs.create();
-      const configPath = join(root, "just-enough-mcp.json");
-      const overviewDir = join(root, "mcp-overviews");
+      const configPath = join(root, "config.json");
+      const overviewDir = join(root, "overviews");
+      const artifactDir = join(root, "artifacts");
       mkdirSync(overviewDir, { recursive: true });
 
       writeFileSync(configPath, JSON.stringify({
@@ -216,15 +223,16 @@ describe("loadPluginConfigFromPaths", () => {
         servers: {},
       }, null, 2), "utf8");
 
-      const loaded = loadPluginConfigFromPaths(configPath, overviewDir);
+      const loaded = loadPluginConfigFromPaths(configPath, overviewDir, artifactDir);
       expect(loaded.tui.renderMode).toBe(mode);
     }
   });
 
   it("拒绝无效的 TUI 渲染模式", () => {
     const root = tempDirs.create();
-    const configPath = join(root, "just-enough-mcp.json");
-    const overviewDir = join(root, "mcp-overviews");
+    const configPath = join(root, "config.json");
+    const overviewDir = join(root, "overviews");
+    const artifactDir = join(root, "artifacts");
     mkdirSync(overviewDir, { recursive: true });
 
     writeFileSync(configPath, JSON.stringify({
@@ -234,13 +242,14 @@ describe("loadPluginConfigFromPaths", () => {
       servers: {},
     }, null, 2), "utf8");
 
-    expect(() => loadPluginConfigFromPaths(configPath, overviewDir)).toThrow(/tui.renderMode/);
+    expect(() => loadPluginConfigFromPaths(configPath, overviewDir, artifactDir)).toThrow(/tui.renderMode/);
   });
 
   it("拒绝无效的 expanded 模式折叠行数", () => {
     const root = tempDirs.create();
-    const configPath = join(root, "just-enough-mcp.json");
-    const overviewDir = join(root, "mcp-overviews");
+    const configPath = join(root, "config.json");
+    const overviewDir = join(root, "overviews");
+    const artifactDir = join(root, "artifacts");
     mkdirSync(overviewDir, { recursive: true });
 
     writeFileSync(configPath, JSON.stringify({
@@ -250,6 +259,6 @@ describe("loadPluginConfigFromPaths", () => {
       servers: {},
     }, null, 2), "utf8");
 
-    expect(() => loadPluginConfigFromPaths(configPath, overviewDir)).toThrow(/tui.expandedModeCollapsedLines/);
+    expect(() => loadPluginConfigFromPaths(configPath, overviewDir, artifactDir)).toThrow(/tui.expandedModeCollapsedLines/);
   });
 });

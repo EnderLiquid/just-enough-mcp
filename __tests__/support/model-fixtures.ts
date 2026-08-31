@@ -40,8 +40,9 @@ export function makePluginConfig(
   const servers = overrides.servers ?? [makeResolvedServerConfig()];
 
   return {
-    configPath: "C:/Users/Admin/.pi/agent/just-enough-mcp.json",
-    overviewDir: "C:/Users/Admin/.pi/agent/mcp-overviews",
+    configPath: "C:/Users/Admin/.pi/agent/just-enough-mcp/config.json",
+    overviewDir: "C:/Users/Admin/.pi/agent/just-enough-mcp/overviews",
+    artifactDir: "C:/Users/Admin/.pi/agent/just-enough-mcp/artifacts",
     ...overrides,
     materialization: { ...(overrides.materialization ?? DEFAULT_MATERIALIZATION_SETTINGS) },
     tui: { ...(overrides.tui ?? DEFAULT_TUI_RESULT_RENDER_SETTINGS) },

@@ -18,7 +18,7 @@ import {
 } from "./types.js";
 
 export interface MaterializeCallToolResultInput {
-  cwd?: string;
+  artifactDir: string;
   server: string;
   tool: string;
   result: CallToolResult;
@@ -45,9 +45,8 @@ export function materializeToolCallResult(input: MaterializeCallToolResultInput)
   const budget = toSummaryBudget(settings);
 
   const context = createArtifactContext({
-    cwd: input.cwd ?? process.cwd(),
+    artifactDir: input.artifactDir,
     server: input.server,
-    settings,
   });
 
   try {

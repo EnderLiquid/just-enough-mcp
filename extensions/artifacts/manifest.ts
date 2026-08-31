@@ -37,7 +37,6 @@ export function writeToolCallManifest(input: WriteToolCallManifestInput): Writte
     `${JSON.stringify({
       server: input.server,
       tool: input.tool,
-      cwd: input.context.cwd,
       createdAt: new Date().toISOString(),
       callDir: input.context.callDir,
       manifestPath: input.context.manifestPath,

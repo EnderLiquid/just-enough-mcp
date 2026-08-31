@@ -6,7 +6,7 @@
 
 会话启动时，插件只将各个 server 的 overview 注入系统提示词。Agent 先选择合适的 server，再读取该 server 的工具目录；`mcp_tool` 的 `list` 和 `call` 会在需要时初始化目标 server。这样无需在启动时连接所有 server，也不会提前注入全部工具 schema。
 
-工具调用结果会物化为本地文件，并向模型返回带有 manifest 路径和有限预览的摘要。默认物化目录为当前工作目录下的 `.pi/mcp/`，可通过配置调整。
+工具调用结果会物化为本地文件，并向模型返回带有 manifest 路径和有限预览的摘要。默认物化目录为 `~/.pi/agent/just-enough-mcp/artifacts/`。
 
 ## 支持范围
 
@@ -16,7 +16,7 @@ Resources、Prompts、Sampling、Elicitation、OAuth 和将每个 MCP tool 直�
 
 ## 配置
 
-配置文件位于 `~/.pi/agent/just-enough-mcp.json`，默认 overview 目录为 `~/.pi/agent/mcp-overviews/`。它们在会话启动时读取；修改配置或 overview 后，请在 Pi 中执行 `/reload`。
+配置文件位于 `~/.pi/agent/just-enough-mcp/config.json`，默认 overview 目录为 `~/.pi/agent/just-enough-mcp/overviews/`，工具调用结果物化到 `~/.pi/agent/just-enough-mcp/artifacts/`。它们在会话启动时读取；修改配置或 overview 后，请在 Pi 中执行 `/reload`。
 
 下面的配置同时展示一个 stdio server 和一个 HTTP server：
 
@@ -53,7 +53,7 @@ HTTP server 还可设置：
 所有 server 均可设置：
 
 - `connectionMode`：`lazy`（默认）或 `eager`。`eager` 会在会话启动时尽力预热；预热失败不会阻止插件启动，后续显式连接或 `mcp_tool` 调用仍会重试。
-- `overview`：显式指定 overview Markdown 文件。相对路径相对于配置文件解析；未指定时使用 `~/.pi/agent/mcp-overviews/<serverName>.md`。
+- `overview`：显式指定 overview Markdown 文件。相对路径相对于配置文件解析；未指定时使用 `~/.pi/agent/just-enough-mcp/overviews/<serverName>.md`。
 - `includeTools`：非空工具名数组，作为允许列表；未设置时默认允许全部工具。
 - `excludeTools`：非空工具名数组，在允许列表之后排除工具。它优先于 `includeTools`，并同时限制工具目录和实际调用。
 
@@ -63,11 +63,10 @@ server 名称同时用于工具调用、overview 文件名和物化目录，必�
 
 ### 结果物化与 TUI
 
-顶层的 `materialization` 控制结果文件和给模型的摘要预算；`artifactRoot` 使用相对路径时相对于当前 Pi 工作目录解析，也可使用绝对路径。
+顶层的 `materialization` 控制结果文件和给模型的摘要预算。每次调用的 payload 与 `manifest.json` 固定存放于 `~/.pi/agent/just-enough-mcp/artifacts/`。
 
 | 字段 | 默认值 | 用途 |
 | --- | --- | --- |
-| `materialization.artifactRoot` | `.pi/mcp` | 每次调用的 payload 与 `manifest.json` 的存放根目录。 |
 | `materialization.summaryItemCount` | `6` | 多 payload 结果中展示在模型摘要内的最大条目数。 |
 | `materialization.previewFullCharsPerItem` | `1500` | 单个文本 payload 不截断时的最大字符数。 |
 | `materialization.previewTruncateToCharsPerItem` | `600` | 超出预览阈值时保留的字符数，不能大于前一项。 |

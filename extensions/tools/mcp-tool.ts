@@ -2,6 +2,7 @@ import { StringEnum, Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { materializeToolCallResult, type MaterializeCallToolResultInput } from "../artifacts/materializer.js";
 import { getCurrentPluginConfig } from "../config/current-config.js";
+import { getArtifactsDirectoryPath } from "../config/paths.js";
 import type { McpToolResultDetails, ServerCatalogResult } from "../modeling/types.js";
 import { refreshFooterStatus } from "../rendering/footer-status.js";
 import { renderMcpToolCall, renderMcpToolResult } from "../rendering/result-renderer.js";
@@ -135,7 +136,7 @@ export const mcpTool = defineTool<typeof mcpToolParametersSchema, McpToolResultD
   renderCall: (args, theme, context) => renderMcpToolCall(args, theme, context),
   renderResult: (result, options, theme, context) => renderMcpToolResult(result, options, theme, context),
   parameters: mcpToolParametersSchema,
-  async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+  async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
     validateInvocation(params);
     const registry = requireCurrentServerRegistry();
     const config = getCurrentPluginConfig();
@@ -162,7 +163,7 @@ export const mcpTool = defineTool<typeof mcpToolParametersSchema, McpToolResultD
       const args = params.args ?? {};
       const execution = await registry.callTool(params.server, params.tool!, args, signal);
       const materialized = materializeMcpToolResult({
-        cwd: ctx.cwd,
+        artifactDir: config?.artifactDir ?? getArtifactsDirectoryPath(),
         server: execution.server.name,
         tool: execution.toolName,
         result: execution.result,

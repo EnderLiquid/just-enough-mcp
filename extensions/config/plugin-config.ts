@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { getOverviewDirectoryPath, getPluginConfigPath } from "./paths.js";
+import { getArtifactsDirectoryPath, getOverviewDirectoryPath, getPluginConfigPath } from "./paths.js";
 import { loadServerOverview } from "./server-overviews.js";
 import {
   DEFAULT_CONNECTION_MODE,
@@ -71,7 +71,6 @@ function parseMaterialization(raw: unknown): MaterializationSettings {
   }
 
   return {
-    artifactRoot: ensureNonEmptyString(raw.artifactRoot, "materialization.artifactRoot") ?? DEFAULT_MATERIALIZATION_SETTINGS.artifactRoot,
     summaryItemCount: ensurePositiveInteger(raw.summaryItemCount, "materialization.summaryItemCount") ?? DEFAULT_MATERIALIZATION_SETTINGS.summaryItemCount,
     previewFullCharsPerItem,
     previewTruncateToCharsPerItem,
@@ -194,7 +193,11 @@ function resolveServers(configPath: string, overviewDir: string, raw: RawPluginC
   });
 }
 
-export function loadPluginConfigFromPaths(configPath: string, overviewDir: string): PluginConfigLoadResult {
+export function loadPluginConfigFromPaths(
+  configPath: string,
+  overviewDir: string,
+  artifactDir: string,
+): PluginConfigLoadResult {
   const raw = parseRawConfig(configPath);
   const servers = resolveServers(configPath, overviewDir, raw);
   const materialization = parseMaterialization(raw.materialization);
@@ -203,6 +206,7 @@ export function loadPluginConfigFromPaths(configPath: string, overviewDir: strin
   return {
     configPath,
     overviewDir,
+    artifactDir,
     materialization,
     tui,
     servers,
@@ -210,5 +214,9 @@ export function loadPluginConfigFromPaths(configPath: string, overviewDir: strin
 }
 
 export function loadPluginConfig(): PluginConfigLoadResult {
-  return loadPluginConfigFromPaths(getPluginConfigPath(), getOverviewDirectoryPath());
+  return loadPluginConfigFromPaths(
+    getPluginConfigPath(),
+    getOverviewDirectoryPath(),
+    getArtifactsDirectoryPath(),
+  );
 }

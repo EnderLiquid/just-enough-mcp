@@ -59,11 +59,11 @@ So:
 
 By default, the overview for a server named `serverName` is located at:
 
-- `~/.pi/agent/mcp-overviews/<serverName>.md`
+- `~/.pi/agent/just-enough-mcp/overviews/<serverName>.md`
 
 Users may also explicitly configure an overview path in the plugin config file:
 
-- `~/.pi/agent/just-enough-mcp.json`
+- `~/.pi/agent/just-enough-mcp/config.json`
 
 Follow these rules when maintaining overviews:
 
@@ -127,7 +127,7 @@ If a server has more complex boundaries, extend the structure as needed. If a se
 
 ## Example
 
-`~/.pi/agent/mcp-overviews/cua-driver.md`
+`~/.pi/agent/just-enough-mcp/overviews/cua-driver.md`
 
 ```md
 # cua-driver

@@ -6,12 +6,12 @@ import { makePluginConfig, makeResolvedServerConfig } from "./support/model-fixt
 function makeServer(overrides: Partial<ResolvedServerConfig> = {}): ResolvedServerConfig {
   return makeResolvedServerConfig({
     name: "tavily",
-    overviewPath: "C:/Users/Admin/.pi/agent/mcp-overviews/tavily.md",
+    overviewPath: "C:/Users/Admin/.pi/agent/just-enough-mcp/overviews/tavily.md",
     overview: {
       name: "tavily",
       content: "# tavily\n\nSearch and extract web content.",
       source: "auto",
-      path: "C:/Users/Admin/.pi/agent/mcp-overviews/tavily.md",
+      path: "C:/Users/Admin/.pi/agent/just-enough-mcp/overviews/tavily.md",
     },
     definition: {
       transport: "http",
@@ -43,7 +43,7 @@ describe("createServerOverviewPrompt", () => {
     expect(prompt).toContain("Do not call `mcp_server` connect as a routine prerequisite");
     expect(prompt).not.toContain("single `mcp` tool");
     expect(prompt).toContain("/reload");
-    expect(prompt).toContain("> Overview file: C:/Users/Admin/.pi/agent/mcp-overviews/tavily.md");
+    expect(prompt).toContain("> Overview file: C:/Users/Admin/.pi/agent/just-enough-mcp/overviews/tavily.md");
     expect(prompt).toContain("# tavily\n\nSearch and extract web content.");
   });
 

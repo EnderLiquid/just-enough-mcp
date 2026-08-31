@@ -59,11 +59,11 @@ overview 的目标不是全面介绍一个 server，而是帮助 agent 在 **ser
 
 名为 `serverName` 的 server，其 overview 默认位于：
 
-- `~/.pi/agent/mcp-overviews/<serverName>.md`
+- `~/.pi/agent/just-enough-mcp/overviews/<serverName>.md`
 
 用户也可能在插件配置文件中显式指定 overview 路径：
 
-- `~/.pi/agent/just-enough-mcp.json`
+- `~/.pi/agent/just-enough-mcp/config.json`
 
 维护时遵循以下规则：
 
@@ -127,7 +127,7 @@ overview 必须能**独立成立**。
 
 ## 示例
 
-`~/.pi/agent/mcp-overviews/cua-driver.md`
+`~/.pi/agent/just-enough-mcp/overviews/cua-driver.md`
 
 ```md
 # cua-driver

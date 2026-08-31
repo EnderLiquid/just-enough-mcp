@@ -6,10 +6,6 @@ export type PayloadContentType =
   | "resource_link"
   | "unknown";
 
-export interface ArtifactStorageSettings {
-  artifactRoot: string;
-}
-
 export interface PayloadNormalizationSettings {
   prettyPrintJson: boolean;
 }
@@ -28,7 +24,7 @@ export interface TuiResultRenderSettings {
   expandedModeCollapsedLines: number;
 }
 
-export interface MaterializationSettings extends ArtifactStorageSettings, PayloadNormalizationSettings, SummarySettings {}
+export interface MaterializationSettings extends PayloadNormalizationSettings, SummarySettings {}
 
 export interface SummaryBudget {
   summaryItemCount: number;
@@ -98,7 +94,6 @@ export interface MaterializedToolCallResult {
 }
 
 export const DEFAULT_MATERIALIZATION_SETTINGS: MaterializationSettings = {
-  artifactRoot: ".pi/mcp",
   summaryItemCount: 6,
   previewFullCharsPerItem: 1500,
   previewTruncateToCharsPerItem: 600,

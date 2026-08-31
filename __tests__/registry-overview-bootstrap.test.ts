@@ -69,7 +69,7 @@ function useBootstrapper(
   bootstrap: NonNullable<OverviewBootstrapperOptions["bootstrap"]> = vi.fn().mockResolvedValue(undefined),
 ): { bootstrapper: OverviewBootstrapper; bootstrap: typeof bootstrap } {
   currentBootstrapper = createOverviewBootstrapper({
-    overviewDir: "C:/Users/Admin/.pi/agent/mcp-overviews",
+    overviewDir: "C:/Users/Admin/.pi/agent/just-enough-mcp/overviews",
     bootstrap,
   });
   disposeBootstrapper = installCurrentOverviewBootstrapper(currentBootstrapper);

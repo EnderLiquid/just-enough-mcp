@@ -63,7 +63,7 @@ function executeMcpTool(
   params: Parameters<typeof mcpTool.execute>[1],
   signal?: AbortSignal,
 ) {
-  const context = { cwd: "D:/projects/ts/just-enough-mcp" } as Parameters<typeof mcpTool.execute>[4];
+  const context = {} as Parameters<typeof mcpTool.execute>[4];
   return mcpTool.execute("tool-call", params, signal, vi.fn(), context);
 }
 
@@ -75,7 +75,7 @@ afterEach(() => {
 });
 
 function makeMaterialized(summaryText = "ok"): MaterializedToolCallResult {
-  const callDir = "D:/project/.pi/mcp/demo-call";
+  const callDir = "D:/project/.pi/agent/just-enough-mcp/artifacts/demo-call";
   const payloadPath = `${callDir}/01-text.txt`;
   const manifestPath = `${callDir}/manifest.json`;
   return {
