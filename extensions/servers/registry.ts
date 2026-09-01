@@ -1,13 +1,15 @@
+import { getOauthCredentialsFilePath } from "../config/paths.js";
 import type {
   ResolvedServerConfig,
   ServerCatalogResult,
   ServerSnapshot,
   ToolCallExecutionResult,
 } from "../modeling/types.js";
+import { createOauthSessionServices } from "../oauth/session-services.js";
 import { AsyncReadWriteLock } from "../concurrency/async-read-write-lock.js";
 import { pluralize } from "../formatting/english.js";
 import { notifyWarning } from "../rendering/notifier.js";
-import { createMcpServer, type McpServerFactory } from "./servers/factory.js";
+import { createMcpServer } from "./servers/factory.js";
 import { supportsOauthControls, type McpServer } from "./servers/types.js";
 
 export interface ServerRegistryStatus {
@@ -40,9 +42,20 @@ function isConnectedSnapshot(snapshot: ServerSnapshot): boolean {
 
 export function createServerRegistry(
   serverConfigs: readonly ResolvedServerConfig[],
-  serverFactory: McpServerFactory = createMcpServer,
 ): ServerRegistry {
-  const servers = new Map(serverConfigs.map(config => [config.name, serverFactory(config)]));
+  const oauthServices = createOauthSessionServices({
+    credentialFilePath: getOauthCredentialsFilePath(),
+  });
+  let servers: Map<string, McpServer>;
+  try {
+    servers = new Map(serverConfigs.map(config => [
+      config.name,
+      createMcpServer(config, oauthServices),
+    ]));
+  } catch (error) {
+    void oauthServices.close().catch(() => undefined);
+    throw error;
+  }
   const lifecycleLock = new AsyncReadWriteLock();
   let initializationPromise: Promise<void> | undefined;
 
@@ -148,7 +161,11 @@ export function createServerRegistry(
       await lifecycleLock.withWrite(async () => {
         const active = [...servers.values()];
         servers.clear();
-        await Promise.all(active.map(server => server.close().catch(() => undefined)));
+        try {
+          await Promise.all(active.map(server => server.close().catch(() => undefined)));
+        } finally {
+          await oauthServices.close();
+        }
       });
     },
   };

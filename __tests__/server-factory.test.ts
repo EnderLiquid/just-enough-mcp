@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ResolvedServerConfig, ServerDefinition } from "../extensions/modeling/types.js";
 import type { OauthSessionServices } from "../extensions/oauth/session-services.js";
-import { createMcpServer } from "../extensions/servers/servers/factory.js";
+import { createMcpServer as createMcpServerWithOauthServices } from "../extensions/servers/servers/factory.js";
 import { HttpOauthServer } from "../extensions/servers/servers/http-oauth-server.js";
 import { HttpPublicServer } from "../extensions/servers/servers/http-public-server.js";
 import { HttpTokenServer } from "../extensions/servers/servers/http-token-server.js";
@@ -22,18 +22,18 @@ function makeConfig(definition: ServerDefinition, overrides: Partial<ResolvedSer
   };
 }
 
-describe("createMcpServer", () => {
-  const oauthServices = {} as OauthSessionServices;
-  it("创建 OAuth HTTP 服务器，并要求 session services", () => {
-    expect(() => createMcpServer(makeConfig({
-      url: "https://example.com/mcp",
-      auth: "oauth",
-    }))).toThrow(/OAuth session services are unavailable/);
+const oauthServices = {} as OauthSessionServices;
 
+function createMcpServer(config: ResolvedServerConfig) {
+  return createMcpServerWithOauthServices(config, oauthServices);
+}
+
+describe("createMcpServer", () => {
+  it("创建 OAuth HTTP 服务器", () => {
     const server = createMcpServer(makeConfig({
       url: "https://example.com/mcp",
       auth: "oauth",
-    }), { oauth: oauthServices });
+    }));
 
     expect(server).toBeInstanceOf(HttpOauthServer);
     expect(server.snapshot()).toEqual({
@@ -49,31 +49,31 @@ describe("createMcpServer", () => {
       transport: "stdio",
       command: "npx",
       auth: "oauth",
-    }), { oauth: oauthServices })).toThrow(/requires transport "http"/);
+    }))).toThrow(/requires transport "http"/);
     expect(() => createMcpServer(makeConfig({
       url: "https://example.com/mcp",
       auth: "oauth",
       bearerToken: "token-123",
-    }), { oauth: oauthServices })).toThrow(/cannot combine auth "oauth" with bearerToken/);
+    }))).toThrow(/cannot combine auth "oauth" with bearerToken/);
     expect(() => createMcpServer(makeConfig({
       url: "https://example.com/mcp",
       auth: "oauth",
       headers: { Authorization: "Bearer token-123" },
-    }), { oauth: oauthServices })).toThrow(/headers.Authorization/);
+    }))).toThrow(/headers.Authorization/);
     expect(() => createMcpServer(makeConfig({
       url: "https://example.com/mcp",
       oauth: {},
-    }), { oauth: oauthServices })).toThrow(/oauth settings but auth is not "oauth"/);
+    }))).toThrow(/oauth settings but auth is not "oauth"/);
     expect(() => createMcpServer(makeConfig({
       url: "https://example.com/mcp",
       auth: "oauth",
       oauth: { clientMetadataUrl: "http://example.com/client.json" },
-    }), { oauth: oauthServices })).toThrow(/must be an HTTPS URL/);
+    }))).toThrow(/must be an HTTPS URL/);
     expect(() => createMcpServer(makeConfig({
       url: "https://example.com/mcp",
       auth: "oauth",
       oauth: { scope: " " },
-    }), { oauth: oauthServices })).toThrow(/oauth.scope must be a non-empty string/);
+    }))).toThrow(/oauth.scope must be a non-empty string/);
   });
 
   it("保留非 Authorization 静态 HTTP headers 供 OAuth server 使用", () => {
@@ -82,7 +82,7 @@ describe("createMcpServer", () => {
       auth: "oauth",
       headers: { "X-Tenant": "demo" },
       oauth: { scope: "tools.read" },
-    }), { oauth: oauthServices })).not.toThrow();
+    }))).not.toThrow();
   });
 
   it("从推断的 stdio 定义创建服务器", () => {

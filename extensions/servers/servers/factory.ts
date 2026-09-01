@@ -60,19 +60,9 @@ function resolveTransportHint(config: ResolvedServerConfig): "stdio" | "http" {
   throw new Error(`Server "${config.name}" must provide command or url, or set transport to "stdio" or "http".`);
 }
 
-export interface McpServerFactoryDependencies {
-  oauth?: OauthSessionServices;
-}
-
-export type McpServerFactory = (config: ResolvedServerConfig) => McpServer;
-
-export function createMcpServerFactory(dependencies: McpServerFactoryDependencies): McpServerFactory {
-  return config => createMcpServer(config, dependencies);
-}
-
 export function createMcpServer(
   config: ResolvedServerConfig,
-  dependencies: McpServerFactoryDependencies = {},
+  oauthServices: OauthSessionServices,
 ): McpServer {
   switch (resolveTransportHint(config)) {
     case "stdio":
@@ -80,10 +70,7 @@ export function createMcpServer(
       return new StdioPragmaticServer(config);
     case "http":
       if (hasOauthAuthentication(config.definition, config.name)) {
-        if (!dependencies.oauth) {
-          throw new Error(`Server "${config.name}" uses OAuth but OAuth session services are unavailable.`);
-        }
-        return new HttpOauthServer(config, dependencies.oauth);
+        return new HttpOauthServer(config, oauthServices);
       }
       return hasStaticAuth(config.definition)
         ? new HttpTokenServer(config)

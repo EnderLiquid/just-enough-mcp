@@ -1,8 +1,16 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ResolvedServerConfig, ServerSnapshot } from "../extensions/modeling/types.js";
 import { createServerRegistry } from "../extensions/servers/registry.js";
 import type { McpServer } from "../extensions/servers/servers/types.js";
 import { makeResolvedServerConfig } from "./support/model-fixtures.js";
+
+const mocks = vi.hoisted(() => ({
+  createMcpServer: vi.fn(),
+}));
+
+vi.mock("../extensions/servers/servers/factory.js", () => ({
+  createMcpServer: mocks.createMcpServer,
+}));
 
 function snapshot(overrides: Partial<ServerSnapshot> = {}): ServerSnapshot {
   return {
@@ -35,6 +43,10 @@ function makeServer(
 }
 
 describe("ServerRegistry OAuth controls", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("只按 server name 转发 OAuth control", async () => {
     const config = makeResolvedServerConfig({
       name: "oauth-demo",
@@ -42,8 +54,11 @@ describe("ServerRegistry OAuth controls", () => {
     });
     const authorize = vi.fn().mockResolvedValue(snapshot({ oauthState: "authorized" }));
     const logout = vi.fn().mockResolvedValue(snapshot());
-    const factory = vi.fn(() => makeServer(config, { authorize, logout }));
-    const registry = createServerRegistry([config], factory);
+    mocks.createMcpServer.mockImplementation((serverConfig: ResolvedServerConfig) => makeServer(serverConfig, {
+      authorize,
+      logout,
+    }));
+    const registry = createServerRegistry([config]);
     const signal = new AbortController().signal;
 
     await expect(registry.authorizeServer("oauth-demo", signal)).resolves.toMatchObject({
@@ -55,12 +70,13 @@ describe("ServerRegistry OAuth controls", () => {
 
     expect(authorize).toHaveBeenCalledWith(signal);
     expect(logout).toHaveBeenCalledWith();
-    expect(factory).toHaveBeenCalledWith(config);
+    expect(mocks.createMcpServer).toHaveBeenCalledWith(config, expect.anything());
   });
 
   it("拒绝不支持 OAuth control 的服务器", async () => {
     const config = makeResolvedServerConfig({ name: "plain", definition: { command: "npx" } });
-    const registry = createServerRegistry([config], serverConfig => makeServer(serverConfig));
+    mocks.createMcpServer.mockImplementation((serverConfig: ResolvedServerConfig) => makeServer(serverConfig));
+    const registry = createServerRegistry([config]);
 
     await expect(registry.authorizeServer("plain")).rejects.toThrow(
       'MCP server "plain" does not support OAuth authorization.',
@@ -81,11 +97,12 @@ describe("ServerRegistry OAuth controls", () => {
     });
     const authorize = vi.fn(() => pendingAuthorize);
     const close = vi.fn().mockResolvedValue(snapshot());
-    const registry = createServerRegistry([config], serverConfig => makeServer(serverConfig, {
+    mocks.createMcpServer.mockImplementation((serverConfig: ResolvedServerConfig) => makeServer(serverConfig, {
       authorize,
       logout: async () => snapshot(),
       close,
     }));
+    const registry = createServerRegistry([config]);
 
     const authorizing = registry.authorizeServer("oauth-demo");
     await vi.waitFor(() => expect(authorize).toHaveBeenCalledTimes(1));
