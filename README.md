@@ -10,15 +10,15 @@
 
 ## 支持范围
 
-当前支持 `stdio`、Streamable HTTP（可使用静态 `headers` 或 `bearerToken`），以及 Tools primitive：`tools/list` 和 `tools/call`。同时提供 lazy / eager 初始化、server overview 与结果物化、TUI 渲染。
+当前支持 `stdio`、Streamable HTTP（静态 `headers`、`bearerToken` 或 OAuth），以及 Tools primitive：`tools/list` 和 `tools/call`。同时提供 lazy / eager 初始化、server overview、OAuth Dynamic Client Registration、结果物化与 TUI 渲染。
 
-Resources、Prompts、Sampling、Elicitation、OAuth 和将每个 MCP tool 直接注册为 Pi 工具，均不在当前范围内。
+Resources、Prompts、Sampling、Elicitation，以及将每个 MCP tool 直接注册为 Pi 工具，均不在当前范围内。
 
 ## 配置
 
 配置文件位于 `~/.pi/agent/just-enough-mcp/config.json`，默认 overview 目录为 `~/.pi/agent/just-enough-mcp/overviews/`，工具调用结果物化到 `~/.pi/agent/just-enough-mcp/artifacts/`。它们在会话启动时读取；修改配置或 overview 后，请在 Pi 中执行 `/reload`。
 
-下面的配置同时展示一个 stdio server 和一个 HTTP server：
+下面的配置同时展示一个 stdio server、一个静态 token HTTP server 和一个 OAuth HTTP server：
 
 ```json
 {
@@ -30,6 +30,15 @@ Resources、Prompts、Sampling、Elicitation、OAuth 和将每个 MCP tool 直�
     "search": {
       "url": "https://example.com/mcp",
       "bearerToken": "<token>"
+    },
+    "oauth-search": {
+      "transport": "http",
+      "url": "https://oauth.example.com/mcp",
+      "auth": "oauth",
+      "oauth": {
+        "scope": "tools.read",
+        "clientMetadataUrl": "https://example.com/clients/just-enough-mcp.json"
+      }
     }
   }
 }
@@ -49,6 +58,11 @@ HTTP server 还可设置：
 
 - `headers`：静态请求头的字符串键值对象。
 - `bearerToken`：自动生成 `Authorization: Bearer <token>`；配置中的同名 `Authorization` 会被覆盖。
+- `auth: "oauth"`：启用 OAuth。它只适用于 HTTP server，不能与 `bearerToken` 或 `headers.Authorization` 同时使用。
+- `oauth.scope`：可选的 OAuth scope fallback。MCP server 在 401/403 challenge 中给出的 scope 仍由 MCP SDK 优先处理。
+- `oauth.clientMetadataUrl`：可选的 HTTPS Client ID Metadata Document URL。Authorization Server 声明支持 CIMD 时 SDK 使用它；否则首版会使用 Dynamic Client Registration（DCR）。
+
+OAuth callback URI 固定为 `http://127.0.0.1:33418/oauth/callback`。使用 CIMD 时，该 URI 必须出现在文档的 `redirect_uris` 中；DCR 会自动注册它。
 
 所有 server 均可设置：
 
@@ -84,7 +98,7 @@ server 名称同时用于工具调用、overview 文件名和物化目录，必�
 
 | 工具 | action | 用途 |
 | --- | --- | --- |
-| `mcp_server` | `status`、`connect`、`disconnect` | 查看状态或显式控制某个 server 的可用性。 |
+| `mcp_server` | `status`、`connect`、`disconnect`、`authorize`、`logout` | 查看状态、控制可用性或管理 OAuth。 |
 | `mcp_tool` | `list`、`call` | 读取一个 server 的工具目录，并调用其中的工具。 |
 
 通常先读取目录，再按照返回的输入 schema 调用工具：
@@ -100,7 +114,17 @@ mcp_tool({
 })
 ```
 
-无需把 `mcp_server({ action: "connect" })` 作为常规前置步骤；`mcp_tool` 会自行初始化目标 server。只有需要主动检查状态、预热或断开连接时，才使用 `mcp_server`。
+OAuth server 首次使用前执行：
+
+```ts
+mcp_server({ action: "authorize", server: "oauth-search" })
+```
+
+`authorize` 会打开浏览器并同步等待 callback，完成后才返回。普通 `mcp_tool` 在需要交互授权时不会自行打开浏览器；先执行 `authorize`，再显式重新调用 `list` 或 `call`。`logout` 只清除本机保存的 OAuth token 和 DCR client information，并断开该 server，不会向 Authorization Server 发起远端 token revocation。
+
+OAuth records 保存于 `~/.pi/agent/just-enough-mcp/oauth/credentials.json`。这是首版的本地文件方案，不等同于 OS keychain；不要复制、提交或共享该文件。access token、refresh token、DCR client secret 和 PKCE verifier 均不会写入普通 plugin config、MCP result artifact 或 overview。
+
+无需把 `mcp_server({ action: "connect" })` 作为普通 server 的常规前置步骤；`mcp_tool` 会自行初始化目标 server。只有需要主动检查状态、预热或断开连接时，才使用 `mcp_server`。
 
 ## 开发
 

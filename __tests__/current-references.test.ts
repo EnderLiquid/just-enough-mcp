@@ -21,6 +21,8 @@ function makeRegistry(): ServerRegistry {
     getServerSnapshot: async () => undefined,
     connectServer: async () => { throw new Error("unused"); },
     disconnectServer: async () => { throw new Error("unused"); },
+    authorizeServer: async () => { throw new Error("unused"); },
+    logoutServer: async () => { throw new Error("unused"); },
     getServerCatalog: async () => { throw new Error("unused"); },
     callTool: async () => { throw new Error("unused"); },
     closeAll: async () => {},

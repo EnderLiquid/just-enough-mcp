@@ -6,18 +6,22 @@ import {
   type OverviewBootstrapper,
 } from "./config/overview-bootstrapper.js";
 import { loadPluginConfig } from "./config/plugin-config.js";
+import { getOauthCredentialsFilePath } from "./config/paths.js";
 import type { PluginConfigLoadResult } from "./modeling/types.js";
+import { createOauthSessionServices, type OauthSessionServices } from "./oauth/session-services.js";
 import { createServerOverviewPrompt } from "./prompting/system-prompt.js";
 import { installFooterStatusSink, refreshFooterStatus, updateFooterStatus } from "./rendering/footer-status.js";
 import { installNotifierSink, notifyError, notifyInfo } from "./rendering/notifier.js";
 import { installCurrentServerRegistry } from "./servers/current-registry.js";
 import { createServerRegistry, type ServerRegistry } from "./servers/registry.js";
+import { createMcpServerFactory } from "./servers/servers/factory.js";
 import { registerMcpServerTool } from "./tools/mcp-server-tool.js";
 import { registerMcpTool } from "./tools/mcp-tool.js";
 
 interface ActivePluginSession {
   config: PluginConfigLoadResult;
   registry: ServerRegistry;
+  oauthServices: OauthSessionServices;
   bootstrapper: OverviewBootstrapper;
   disposeConfig: () => void;
   disposeRegistry: () => void;
@@ -44,6 +48,7 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
 
     let config: PluginConfigLoadResult | undefined;
     let registry: ServerRegistry | undefined;
+    let oauthServices: OauthSessionServices | undefined;
     let bootstrapper: OverviewBootstrapper | undefined;
     let disposeBootstrapper: (() => void) | undefined;
     let disposeConfig: (() => void) | undefined;
@@ -57,7 +62,13 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
       });
       disposeBootstrapper = installCurrentOverviewBootstrapper(bootstrapper);
 
-      registry = createServerRegistry(config.servers);
+      oauthServices = createOauthSessionServices({
+        credentialFilePath: getOauthCredentialsFilePath(),
+      });
+      registry = createServerRegistry(
+        config.servers,
+        createMcpServerFactory({ oauth: oauthServices }),
+      );
       await registry.initialize();
 
       disposeConfig = installCurrentPluginConfig(config);
@@ -65,6 +76,7 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
       activeSession = {
         config,
         registry,
+        oauthServices,
         bootstrapper,
         disposeConfig,
         disposeRegistry,
@@ -75,6 +87,7 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
       disposeRegistry?.();
       disposeConfig?.();
       await registry?.closeAll().catch(() => undefined);
+      await oauthServices?.close().catch(() => undefined);
       disposeBootstrapper?.();
       await bootstrapper?.close().catch(() => undefined);
 
@@ -119,7 +132,11 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
         session.disposeRegistry();
         session.disposeConfig();
         try {
-          await session.registry.closeAll();
+          try {
+            await session.registry.closeAll();
+          } finally {
+            await session.oauthServices.close();
+          }
         } finally {
           session.disposeBootstrapper();
           await session.bootstrapper.close();

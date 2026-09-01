@@ -1,6 +1,9 @@
 import type { ResolvedServerConfig, ServerDefinition } from "../../modeling/types.js";
+import type { OauthSessionServices } from "../../oauth/session-services.js";
+import { HttpOauthServer } from "./http-oauth-server.js";
 import { HttpPublicServer } from "./http-public-server.js";
 import { HttpTokenServer } from "./http-token-server.js";
+import { hasOauthAuthentication, rejectOauthWithStdio } from "./oauth-config.js";
 import { StdioPragmaticServer } from "./stdio-pragmatic-server.js";
 import type { McpServer } from "./types.js";
 
@@ -57,11 +60,31 @@ function resolveTransportHint(config: ResolvedServerConfig): "stdio" | "http" {
   throw new Error(`Server "${config.name}" must provide command or url, or set transport to "stdio" or "http".`);
 }
 
-export function createMcpServer(config: ResolvedServerConfig): McpServer {
+export interface McpServerFactoryDependencies {
+  oauth?: OauthSessionServices;
+}
+
+export type McpServerFactory = (config: ResolvedServerConfig) => McpServer;
+
+export function createMcpServerFactory(dependencies: McpServerFactoryDependencies): McpServerFactory {
+  return config => createMcpServer(config, dependencies);
+}
+
+export function createMcpServer(
+  config: ResolvedServerConfig,
+  dependencies: McpServerFactoryDependencies = {},
+): McpServer {
   switch (resolveTransportHint(config)) {
     case "stdio":
+      rejectOauthWithStdio(config);
       return new StdioPragmaticServer(config);
     case "http":
+      if (hasOauthAuthentication(config.definition, config.name)) {
+        if (!dependencies.oauth) {
+          throw new Error(`Server "${config.name}" uses OAuth but OAuth session services are unavailable.`);
+        }
+        return new HttpOauthServer(config, dependencies.oauth);
+      }
       return hasStaticAuth(config.definition)
         ? new HttpTokenServer(config)
         : new HttpPublicServer(config);

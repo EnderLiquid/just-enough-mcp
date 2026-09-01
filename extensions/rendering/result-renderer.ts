@@ -13,7 +13,7 @@ type McpResultDetails = McpServerResultDetails | McpToolResultDetails;
 type McpContentBlock = AgentToolResult<McpResultDetails>["content"][number];
 
 export interface McpServerInput {
-  action: "status" | "connect" | "disconnect";
+  action: "status" | "connect" | "disconnect" | "authorize" | "logout";
   server?: string;
 }
 
@@ -104,11 +104,14 @@ function formatServerMinimalResultLine(
   switch (details.kind) {
     case "status":
       if ("serverName" in details) {
-        return `↳ ${details.serverName}: ${details.connectState} • Ctrl+O to expand`;
+        const oauth = details.oauthState ? `, oauth: ${details.oauthState}` : "";
+        return `↳ ${details.serverName}: ${details.connectState}${oauth} • Ctrl+O to expand`;
       }
       return `↳ ${details.connectedCount}/${details.totalCount} ${pluralize(details.totalCount, "server")} connected • Ctrl+O to expand`;
     case "connect":
     case "disconnect":
+    case "authorize":
+    case "logout":
       return undefined;
     default: {
       const unreachable: never = details;

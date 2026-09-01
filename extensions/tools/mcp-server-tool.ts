@@ -8,11 +8,11 @@ import type { ServerRegistryStatus } from "../servers/registry.js";
 import { pluralize } from "../formatting/english.js";
 
 export const mcpServerParametersSchema = Type.Object({
-  action: StringEnum(["status", "connect", "disconnect"] as const, {
-    description: "Inspect configured MCP server state or change one server's availability",
+  action: StringEnum(["status", "connect", "disconnect", "authorize", "logout"] as const, {
+    description: "Inspect configured MCP server state, change availability, or control OAuth authorization",
   }),
   server: Type.Optional(Type.String({
-    description: "Optional server name for status; required for connect and disconnect",
+    description: "Optional server name for status; required for connect, disconnect, authorize, and logout",
   })),
 });
 
@@ -31,7 +31,7 @@ function rejectUnknownFields(params: object): void {
 }
 
 function validateInvocation(params: {
-  action: "status" | "connect" | "disconnect";
+  action: "status" | "connect" | "disconnect" | "authorize" | "logout";
   server?: string;
 }): string | undefined {
   rejectUnknownFields(params);
@@ -40,6 +40,8 @@ function validateInvocation(params: {
       return params.server?.trim() || undefined;
     case "connect":
     case "disconnect":
+    case "authorize":
+    case "logout":
       return requireServer(params);
     default: {
       const unreachable: never = params.action;
@@ -59,6 +61,7 @@ function formatServerStatus(status: ServerRegistryStatus): string {
     ...status.servers.map((server, index) => [
       `[${index + 1}] ${server.name}`,
       server.connectState,
+      ...(server.oauthState ? [`oauth: ${server.oauthState}`] : []),
     ].join("\n")),
   ].join("\n\n");
 }
@@ -69,8 +72,9 @@ export const mcpServerTool = defineTool<typeof mcpServerParametersSchema, McpSer
   description: [
     "Inspect and manage configured MCP server state.",
     "Do not connect routinely before using mcp_tool; mcp_tool list and call initialize servers automatically.",
+    "For an OAuth server that requires user authorization, use the authorize action before retrying mcp_tool.",
   ].join(" "),
-  promptSnippet: "Inspect configured MCP server status, or explicitly connect or disconnect one server when needed.",
+  promptSnippet: "Inspect configured MCP server status, control availability, or authorize and log out one OAuth server when needed.",
   renderCall: (args, theme, context) => renderMcpServerCall(args, theme, context),
   renderResult: (result, options, theme, context) => renderMcpServerResult(result, options, theme, context),
   parameters: mcpServerParametersSchema,
@@ -86,8 +90,19 @@ export const mcpServerTool = defineTool<typeof mcpServerParametersSchema, McpSer
             throw new Error(`Unknown MCP server: ${serverName}`);
           }
           return {
-            content: [{ type: "text", text: server.connectState }],
-            details: { kind: "status", serverName: server.name, connectState: server.connectState },
+            content: [{
+              type: "text",
+              text: [
+                server.connectState,
+                ...(server.oauthState ? [`oauth: ${server.oauthState}`] : []),
+              ].join("\n"),
+            }],
+            details: {
+              kind: "status",
+              serverName: server.name,
+              connectState: server.connectState,
+              ...(server.oauthState ? { oauthState: server.oauthState } : {}),
+            },
           };
         }
 
@@ -117,14 +132,38 @@ export const mcpServerTool = defineTool<typeof mcpServerParametersSchema, McpSer
       };
     }
 
+    if (params.action === "disconnect") {
+      try {
+        await registry.disconnectServer(serverName!);
+      } finally {
+        await refreshFooterStatus(registry);
+      }
+      return {
+        content: [{ type: "text", text: "disconnected" }],
+        details: { kind: "disconnect" },
+      };
+    }
+
+    if (params.action === "authorize") {
+      try {
+        await registry.authorizeServer(serverName!, signal);
+      } finally {
+        await refreshFooterStatus(registry);
+      }
+      return {
+        content: [{ type: "text", text: "authorized" }],
+        details: { kind: "authorize" },
+      };
+    }
+
     try {
-      await registry.disconnectServer(serverName!);
+      await registry.logoutServer(serverName!);
     } finally {
       await refreshFooterStatus(registry);
     }
     return {
-      content: [{ type: "text", text: "disconnected" }],
-      details: { kind: "disconnect" },
+      content: [{ type: "text", text: "logged out" }],
+      details: { kind: "logout" },
     };
   },
 });

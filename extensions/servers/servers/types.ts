@@ -17,5 +17,13 @@ export interface McpServer {
     args: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<ToolCallExecutionResult>;
+  authorize?(signal?: AbortSignal): Promise<ServerSnapshot>;
+  logout?(): Promise<ServerSnapshot>;
   close(): Promise<ServerSnapshot>;
+}
+
+export function supportsOauthControls(
+  server: McpServer,
+): server is McpServer & Required<Pick<McpServer, "authorize" | "logout">> {
+  return typeof server.authorize === "function" && typeof server.logout === "function";
 }

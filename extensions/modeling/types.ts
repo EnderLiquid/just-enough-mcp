@@ -3,6 +3,7 @@ import type { MaterializationSettings, TuiResultRenderSettings } from "../artifa
 
 export type ServerConnectionMode = "lazy" | "eager";
 export type ServerConnectState = "disconnected" | "connecting" | "connected" | "disconnecting";
+export type ServerOauthState = "authorization-required" | "authorizing" | "authorized";
 
 export type ServerDefinition = Record<string, unknown>;
 
@@ -53,6 +54,7 @@ export interface PluginConfigLoadResult {
 export interface ServerSnapshot {
   name: string;
   connectState: ServerConnectState;
+  oauthState?: ServerOauthState;
   tools?: Tool[];
   description?: string;
 }
@@ -71,9 +73,11 @@ export interface ToolCallExecutionResult {
 
 export type McpServerResultDetails =
   | { kind: "status"; connectedCount: number; totalCount: number }
-  | { kind: "status"; serverName: string; connectState: ServerConnectState }
+  | { kind: "status"; serverName: string; connectState: ServerConnectState; oauthState?: ServerOauthState }
   | { kind: "connect" }
-  | { kind: "disconnect" };
+  | { kind: "disconnect" }
+  | { kind: "authorize" }
+  | { kind: "logout" };
 
 export type McpToolResultDetails =
   | { kind: "list"; toolCount: number }

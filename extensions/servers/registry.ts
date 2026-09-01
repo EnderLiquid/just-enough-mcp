@@ -7,8 +7,8 @@ import type {
 import { AsyncReadWriteLock } from "../concurrency/async-read-write-lock.js";
 import { pluralize } from "../formatting/english.js";
 import { notifyWarning } from "../rendering/notifier.js";
-import { createMcpServer } from "./servers/factory.js";
-import type { McpServer } from "./servers/types.js";
+import { createMcpServer, type McpServerFactory } from "./servers/factory.js";
+import { supportsOauthControls, type McpServer } from "./servers/types.js";
 
 export interface ServerRegistryStatus {
   servers: ServerSnapshot[];
@@ -22,6 +22,8 @@ export interface ServerRegistry {
   getServerSnapshot(name: string): Promise<ServerSnapshot | undefined>;
   connectServer(name: string, signal?: AbortSignal): Promise<ServerSnapshot>;
   disconnectServer(name: string): Promise<ServerSnapshot>;
+  authorizeServer(name: string, signal?: AbortSignal): Promise<ServerSnapshot>;
+  logoutServer(name: string): Promise<ServerSnapshot>;
   getServerCatalog(name: string, signal?: AbortSignal): Promise<ServerCatalogResult>;
   callTool(
     name: string,
@@ -36,8 +38,11 @@ function isConnectedSnapshot(snapshot: ServerSnapshot): boolean {
   return snapshot.connectState === "connected";
 }
 
-export function createServerRegistry(serverConfigs: readonly ResolvedServerConfig[]): ServerRegistry {
-  const servers = new Map(serverConfigs.map(config => [config.name, createMcpServer(config)]));
+export function createServerRegistry(
+  serverConfigs: readonly ResolvedServerConfig[],
+  serverFactory: McpServerFactory = createMcpServer,
+): ServerRegistry {
+  const servers = new Map(serverConfigs.map(config => [config.name, serverFactory(config)]));
   const lifecycleLock = new AsyncReadWriteLock();
   let initializationPromise: Promise<void> | undefined;
 
@@ -106,6 +111,24 @@ export function createServerRegistry(serverConfigs: readonly ResolvedServerConfi
       return lifecycleLock.withRead(async () => {
         const server = requireServer(name);
         return server.close();
+      });
+    },
+
+    async authorizeServer(name, signal) {
+      const server = await lifecycleLock.withRead(() => requireServer(name));
+      if (!supportsOauthControls(server)) {
+        throw new Error(`MCP server "${name}" does not support OAuth authorization.`);
+      }
+      return server.authorize(signal);
+    },
+
+    async logoutServer(name) {
+      return lifecycleLock.withRead(async () => {
+        const server = requireServer(name);
+        if (!supportsOauthControls(server)) {
+          throw new Error(`MCP server "${name}" does not support OAuth logout.`);
+        }
+        return server.logout();
       });
     },
 
