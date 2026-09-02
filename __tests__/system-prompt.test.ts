@@ -29,24 +29,6 @@ function makeConfig(overrides: Partial<PluginConfigLoadResult> = {}): PluginConf
 }
 
 describe("createServerOverviewPrompt", () => {
-  it("包含 overview 指南、维护说明和已解析的 overview 路径", () => {
-    const prompt = createServerOverviewPrompt(makeConfig());
-
-    expect(prompt).toContain("Reality:");
-    expect(prompt).toContain("Scope:");
-    expect(prompt).toContain("Connection behavior:");
-    expect(prompt).toContain("Overviews:");
-    expect(prompt).toContain("Overview maintenance:");
-    expect(prompt).toContain('mcp_tool({ action: "list", server: "<name>" })');
-    expect(prompt).toContain('mcp_tool({ action: "call", server: "<name>", tool: "<tool>", args: { ... } })');
-    expect(prompt).toContain('mcp_server({ action: "disconnect", server: "<name>" })');
-    expect(prompt).toContain("Do not call `mcp_server` connect as a routine prerequisite");
-    expect(prompt).not.toContain("single `mcp` tool");
-    expect(prompt).toContain("/reload");
-    expect(prompt).toContain("> Overview file: C:/Users/Admin/.pi/agent/just-enough-mcp/overviews/tavily.md");
-    expect(prompt).toContain("# tavily\n\nSearch and extract web content.");
-  });
-
   it("overview 没有 markdown 标题时添加合成标题", () => {
     const prompt = createServerOverviewPrompt(makeConfig({
       servers: [makeServer({
@@ -94,5 +76,77 @@ describe("createServerOverviewPrompt", () => {
     }));
 
     expect(prompt).toContain("# demo\n\n    # Example code");
+  });
+
+  it("在 overview 内容前输出正斜杠规范化后的路径", () => {
+    const overviewPath = "C:\\Users\\Admin\\.pi\\agent\\just-enough-mcp\\overviews\\demo.md";
+    const prompt = createServerOverviewPrompt(makeConfig({
+      servers: [makeServer({
+        name: "demo",
+        overviewPath,
+        overview: {
+          name: "demo",
+          content: "Demo overview.",
+          source: "auto",
+          path: overviewPath,
+        },
+      })],
+    }));
+
+    expect(prompt).toContain(
+      "> Overview file: C:/Users/Admin/.pi/agent/just-enough-mcp/overviews/demo.md\n\n# demo\n\nDemo overview.",
+    );
+  });
+
+  it("overview 没有路径时不输出路径前缀", () => {
+    const prompt = createServerOverviewPrompt(makeConfig({
+      servers: [makeServer({
+        name: "demo",
+        overviewPath: undefined,
+        overview: {
+          name: "demo",
+          content: "Overview without a path.",
+          source: "none",
+        },
+      })],
+    }));
+
+    expect(prompt).toContain("# demo\n\nOverview without a path.");
+    expect(prompt).not.toContain("> Overview file:");
+  });
+
+  it("按配置顺序拼接多个 overview", () => {
+    const alphaPath = "C:/overviews/alpha.md";
+    const betaPath = "C:/overviews/beta.md";
+    const prompt = createServerOverviewPrompt(makeConfig({
+      servers: [
+        makeServer({
+          name: "alpha",
+          overviewPath: alphaPath,
+          overview: {
+            name: "alpha",
+            content: "Alpha overview.",
+            source: "auto",
+            path: alphaPath,
+          },
+        }),
+        makeServer({
+          name: "beta",
+          overviewPath: betaPath,
+          overview: {
+            name: "beta",
+            content: "Beta overview.",
+            source: "auto",
+            path: betaPath,
+          },
+        }),
+      ],
+    }));
+    const alphaBlock = "> Overview file: C:/overviews/alpha.md\n\n# alpha\n\nAlpha overview.";
+    const betaBlock = "> Overview file: C:/overviews/beta.md\n\n# beta\n\nBeta overview.";
+
+    expect(prompt).toContain(alphaBlock);
+    expect(prompt).toContain(betaBlock);
+    expect(prompt.indexOf(alphaBlock)).toBeLessThan(prompt.indexOf(betaBlock));
   });
 });

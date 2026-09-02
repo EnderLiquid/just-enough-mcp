@@ -9,7 +9,7 @@ import { pluralize } from "../formatting/english.js";
 
 export const mcpServerParametersSchema = Type.Object({
   action: StringEnum(["status", "connect", "disconnect", "authorize", "logout"] as const, {
-    description: "Inspect configured MCP server state, change availability, or control OAuth authorization",
+    description: "Inspect server state, control availability, or manage OAuth authorization",
   }),
   server: Type.Optional(Type.String({
     description: "Optional server name for status; required for connect, disconnect, authorize, and logout",
@@ -69,12 +69,16 @@ function formatServerStatus(status: ServerRegistryStatus): string {
 export const mcpServerTool = defineTool<typeof mcpServerParametersSchema, McpServerResultDetails>({
   name: "mcp_server",
   label: "MCP Server",
+  // mcp_tool 通常按需初始化，但某些 server（例如后台进程）需要显式 startup/readiness。
+  // authorize 会打开浏览器，因此工具描述中明确其用户意图边界和后续重试要求。
   description: [
-    "Inspect and manage configured MCP server state.",
-    "Do not connect routinely before using mcp_tool; mcp_tool list and call initialize servers automatically.",
-    "For an OAuth server that requires user authorization, use the authorize action before retrying mcp_tool.",
+    "Inspect configured MCP server state or explicitly control availability.",
+    "mcp_tool list and call initialize servers automatically. Use connect or disconnect only when explicit lifecycle control is useful.",
+    "For example, use connect when a server requires explicit startup or readiness, such as a background-process server.",
+    "For OAuth, authorize opens the user's browser and waits until the user finishes; call it after obtaining the user's consent or when the user has explicitly asked to access that server, then retry the operation that required authorization.",
+    "logout removes local OAuth credentials and does not revoke remote tokens.",
   ].join(" "),
-  promptSnippet: "Inspect configured MCP server status, control availability, or authorize and log out one OAuth server when needed.",
+  promptSnippet: "Inspect MCP server status, explicitly control availability when needed, and manage OAuth authorization.",
   renderCall: (args, theme, context) => renderMcpServerCall(args, theme, context),
   renderResult: (result, options, theme, context) => renderMcpServerResult(result, options, theme, context),
   parameters: mcpServerParametersSchema,

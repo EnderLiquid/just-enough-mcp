@@ -22,7 +22,7 @@ export const mcpToolArgumentsSchema = Type.Unsafe<Record<string, unknown>>({
 
 export const mcpToolParametersSchema = Type.Object({
   action: StringEnum(["list", "call"] as const, {
-    description: "List available tools on one MCP server or call one of them",
+    description: "List one server's complete tool catalog or call one listed tool",
   }),
   server: Type.String({ description: "MCP server name" }),
   tool: Type.Optional(Type.String({ description: "Tool name; required for the call action" })),
@@ -128,11 +128,11 @@ export const mcpTool = defineTool<typeof mcpToolParametersSchema, McpToolResultD
   name: "mcp_tool",
   label: "MCP Tool",
   description: [
-    "List or call tools on one MCP server.",
+    "List a selected MCP server's complete tool catalog or call a tool from that catalog.",
     "Both actions initialize the selected server automatically when needed.",
-    "Use the input schema returned by list when constructing call args.",
+    "For call, pass the selected tool's native object input from list and omit args for a zero-argument tool.",
   ].join(" "),
-  promptSnippet: "List one MCP server's full tool catalog, then call a selected tool with native object arguments.",
+  promptSnippet: "List a selected MCP server's complete tool catalog, then call a listed tool with native object arguments.",
   renderCall: (args, theme, context) => renderMcpToolCall(args, theme, context),
   renderResult: (result, options, theme, context) => renderMcpToolResult(result, options, theme, context),
   parameters: mcpToolParametersSchema,

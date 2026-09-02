@@ -7,39 +7,40 @@ description: Maintain MCP server overviews for the Just Enough MCP plugin. Use i
 
 ## When to use this skill
 
-Load this skill before you do any of the following for an MCP server overview:
+Load this skill before doing any of the following for an MCP server overview:
 
-- Create a new overview
+- Create an overview
 - Rewrite an existing overview
-- Reorganize or refactor an overview structure
-- Review whether an overview is strong enough to support server selection
+- Organize or refactor an overview's structure
+- Review whether an overview is sufficient to support server selection
 
 This skill focuses on **how to maintain overviews**.
-The runtime rationale for overviews, why they are injected into the system prompt, and why full tool catalogs are not exposed up front are already covered by the system prompt and are not repeated here.
+The system prompt already explains why overviews exist at runtime, why they are injected into the system prompt, and why the complete tool catalog is not exposed directly, so those premises are not repeated here.
 
 ## Goal
 
-An overview is not meant to describe a server exhaustively. Its job is to help the agent make more accurate judgments during the **server-level selection** stage.
+An overview is not meant to introduce a server exhaustively. Its purpose is to help the agent make faster, more accurate decisions during **server selection** and avoid known server-use pitfalls.
 
 A good overview should primarily help answer these questions:
 
 - What is this server **suitable for**?
 - What is this server **not suitable for**?
-- What key constraints, prerequisites, or environment requirements apply before using it?
-- What information would materially improve the judgment of whether this server should be selected?
+- What prerequisites or environment requirements apply before using it?
+- What implicit constraints are not stated in the tool catalog?
 
 ## Recommended workflow
 
-1. Read the current overview for the server first, if there is one
-2. Decide whether it is only an auto-initialized draft
-3. Then inspect the server's full tool catalog
-4. If necessary, validate with 1–2 representative tool calls
-5. Refer to the information density and writing style of other overviews
-6. Only then write or revise the overview
+1. Read the server's current overview first, if one exists.
+2. Determine whether it is only an auto-initialized draft.
+3. Then inspect the server's complete tool catalog.
+4. If necessary, validate it with representative real tool calls.
+5. If necessary, find more information about the server.
+6. Refer to the information density and style of other overviews, if any.
+7. Only then write or revise the overview.
 
 ## Identifying an auto-initialized draft
 
-After a server connects successfully for the first time, the plugin may generate a minimal draft from the `description` field found in the metadata returned by that server.
+After a server connects successfully for the first time, the plugin may generate a minimal draft from the `description` in the metadata returned by that server.
 A typical form looks like this:
 
 ```md
@@ -48,28 +49,28 @@ A typical form looks like this:
 <description>
 ```
 
-This kind of content usually only tells you roughly what the server is. It is not enough to support reliable task routing or suitability judgments on its own.
+This kind of content usually only conveys roughly what the server is. It is not enough to reliably support suitability judgments or identify usage pitfalls.
 
-So:
+Therefore:
 
-- **The existence of a file does not mean the overview is already mature**
-- If the content is only a light expansion of the `description`, keep refining it
+- **The existence of a file does not mean the overview is mature.**
+- Continue filling it in when the content is insufficient.
 
 ## File paths
 
-By default, the overview for a server named `serverName` is located at:
+For a server named `serverName`, the default overview path is:
 
 - `~/.pi/agent/just-enough-mcp/overviews/<serverName>.md`
 
-Users may also explicitly configure an overview path in the plugin config file:
+A user may also explicitly configure an overview path in the plugin config file:
 
 - `~/.pi/agent/just-enough-mcp/config.json`
 
 Follow these rules when maintaining overviews:
 
-- If an explicit overview path is configured, maintain that explicit path first
-- If no explicit path is configured, maintain the default overview file
-- After changing an overview or config, remind the user to run `/reload` or restart the session if the updated content needs to appear in the system prompt
+- If the config explicitly specifies an overview path, maintain that path first.
+- If no explicit path is configured, maintain the default overview file.
+- After changing an overview or config, remind the user to run `/reload` or restart the session when the system prompt needs the latest content.
 
 ## Writing priorities
 
@@ -78,7 +79,7 @@ Prioritize writing these:
 - Suitable use cases
 - Unsuitable use cases / common misuse boundaries
 - Key constraints, prerequisites, and environment requirements
-- Information that can clearly improve server selection accuracy
+- Information that the tool catalog cannot express but that affects use
 
 Avoid writing these:
 
@@ -86,7 +87,7 @@ Avoid writing these:
 - Restatements of tool schemas
 - Marketing-style descriptions
 - Outdated content that no longer matches the server's actual capabilities
-- Hard dependency assumptions about other servers or other tools
+- Hard dependency assumptions about other servers or tools
 
 ## Atomicity principle
 
@@ -94,36 +95,37 @@ An overview must be able to **stand on its own**.
 
 This means:
 
-- Describe only what this server is, what it can do, and what its limitations are
-- Do not assume that other tools are available by default
-- Do not put cross-tool collaboration rules into a single server overview
+- Describe only what this server is, what it can do, and its limitations.
+- Do not treat the availability of other tools as a default prerequisite.
+- Do not put cross-tool collaboration rules into one server's overview.
+- Do not depend on overview documentation for other servers.
 
 For example, do not write:
 
-- "In some cases, prefer another server first"
-- "It is recommended to use this together with another tool"
+- "In some cases, prefer another server first."
+- "Use this together with another tool."
 
 Unless:
 
-- The related tool is fairly fundamental, such as `read`
-- The user explicitly asks for a cross-tool document
+- The related tool is fairly fundamental.
+- The user explicitly asks for compositional documentation.
 
 ## Suggested structure
 
-For most servers, start from this minimal structure:
+For most servers, start with this minimal structure:
 
 ```md
 # <serverName>
 
-<One sentence describing what it is and when it should be considered>
+<One sentence explaining what it is and when it should be considered>
 
 ## Notes
 
-- <Key limitation or suitability boundary 1>
-- <Key limitation or suitability boundary 2>
+- <Suitability boundary or implicit constraint 1>
+- <Suitability boundary or implicit constraint 2>
 ```
 
-If a server has more complex boundaries, extend the structure as needed. If a server is simple, keep it short and you may omit the notes section.
+If a server has more complex boundaries, extend the structure as needed. If a server is simple, keep it short; the notes section may be omitted.
 
 ## Example
 
@@ -142,10 +144,9 @@ A cross-platform desktop GUI automation and UI awareness tool for discovering lo
 
 ## Self-check list
 
-Before you finalize an overview, quickly check:
+Before finalizing an overview, quickly check:
 
 - Does it make it easier for the agent to decide whether this server should be selected?
-- Does it clearly describe unsuitable scenarios or misuse boundaries?
-- Does it include key constraints rather than only capabilities?
-- Does it avoid copying tool catalogs or schemas directly?
-- Can it still stand on its own without relying on documentation for other servers?
+- Does it help the agent avoid server-use pitfalls?
+- Does it avoid copying the tool catalog or schema directly?
+- Can it still stand on its own when other servers, tools, or their overview documentation are unavailable?
