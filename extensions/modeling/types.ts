@@ -37,7 +37,6 @@ export interface ResolvedServerConfig {
   name: string;
   connectionMode: ServerConnectionMode;
   hasExplicitOverviewConfig: boolean;
-  overviewPath?: string;
   overview: ServerOverview;
   definition: ServerDefinition;
 }

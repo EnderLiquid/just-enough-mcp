@@ -28,10 +28,6 @@ export async function tryBootstrapOverviewFromDescription(
     return undefined;
   }
 
-  if (server.overviewPath !== undefined) {
-    return undefined;
-  }
-
   if (typeof description !== "string") {
     return undefined;
   }

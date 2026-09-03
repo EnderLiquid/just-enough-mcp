@@ -6,7 +6,6 @@ import { makePluginConfig, makeResolvedServerConfig } from "./support/model-fixt
 function makeServer(overrides: Partial<ResolvedServerConfig> = {}): ResolvedServerConfig {
   return makeResolvedServerConfig({
     name: "tavily",
-    overviewPath: "C:/Users/Admin/.pi/agent/just-enough-mcp/overviews/tavily.md",
     overview: {
       name: "tavily",
       content: "# tavily\n\nSearch and extract web content.",
@@ -33,7 +32,6 @@ describe("createServerOverviewPrompt", () => {
     const prompt = createServerOverviewPrompt(makeConfig({
       servers: [makeServer({
         name: "demo",
-        overviewPath: undefined,
         overview: {
           name: "demo",
           content: "No overview is available for this server yet.",
@@ -49,7 +47,6 @@ describe("createServerOverviewPrompt", () => {
     const prompt = createServerOverviewPrompt(makeConfig({
       servers: [makeServer({
         name: "demo",
-        overviewPath: undefined,
         overview: {
           name: "demo",
           content: "\n  ## Existing heading\n\nOverview content.",
@@ -66,7 +63,6 @@ describe("createServerOverviewPrompt", () => {
     const prompt = createServerOverviewPrompt(makeConfig({
       servers: [makeServer({
         name: "demo",
-        overviewPath: undefined,
         overview: {
           name: "demo",
           content: "    # Example code",
@@ -83,7 +79,6 @@ describe("createServerOverviewPrompt", () => {
     const prompt = createServerOverviewPrompt(makeConfig({
       servers: [makeServer({
         name: "demo",
-        overviewPath,
         overview: {
           name: "demo",
           content: "Demo overview.",
@@ -102,7 +97,6 @@ describe("createServerOverviewPrompt", () => {
     const prompt = createServerOverviewPrompt(makeConfig({
       servers: [makeServer({
         name: "demo",
-        overviewPath: undefined,
         overview: {
           name: "demo",
           content: "Overview without a path.",
@@ -122,7 +116,6 @@ describe("createServerOverviewPrompt", () => {
       servers: [
         makeServer({
           name: "alpha",
-          overviewPath: alphaPath,
           overview: {
             name: "alpha",
             content: "Alpha overview.",
@@ -132,7 +125,6 @@ describe("createServerOverviewPrompt", () => {
         }),
         makeServer({
           name: "beta",
-          overviewPath: betaPath,
           overview: {
             name: "beta",
             content: "Beta overview.",

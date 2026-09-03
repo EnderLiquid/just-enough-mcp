@@ -161,7 +161,6 @@ function parseResolvedServerConfig(
     name: serverName,
     connectionMode,
     hasExplicitOverviewConfig: typeof overview === "string",
-    overviewPath: resolvedOverview.path,
     overview: resolvedOverview,
     definition,
   };
