@@ -16,8 +16,8 @@ MCP（Model Context Protocol）是一种将 agent 连接到外部系统的标准
 
 ## MCP 接入模型
 
-- 本插件不会把每个远端 MCP 工具注册为独立的、可直接调用的 Pi 工具，也不会生成 `mcp__<server>__<tool>` 形式的工具名。
-- 本插件通过两个 Pi 工具接入 MCP：`mcp_server` 用于查看服务器状态、控制服务器生命周期和管理 OAuth；`mcp_tool` 用于读取单个服务器的工具清单，并中继调用其中已列出的远端工具。
+- 本插件不会把每个 MCP 服务器提供的工具注册为独立的、可直接调用的 Pi 工具，也不会生成 `mcp__<server>__<tool>` 形式的工具名。
+- 本插件通过两个 Pi 工具接入 MCP：`mcp_server` 用于查看服务器状态、控制服务器生命周期和管理 OAuth；`mcp_tool` 用于读取单个服务器的工具清单，并中继调用其中已列出的工具。
 - `mcp_tool` 是中继入口：先调用 `mcp_tool({ action: "list", server: "<name>" })`，再根据返回的工具 schema 调用 `mcp_tool({ action: "call", server: "<name>", tool: "<listed-tool>", args: { ... } })`。`mcp_tool` 会将 `args` 转发给选中的服务器工具。`tool` 参数必须来自 `list` 返回的清单；不要猜测工具名或寻找类似 `mcp__<server>__<tool>` 的可直接调用 Pi 工具。
 
 ## 结果物化
