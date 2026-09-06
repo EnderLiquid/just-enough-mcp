@@ -145,31 +145,6 @@ describe("mcpServerTool.execute", () => {
     expect(result.details).toEqual({ kind: "status", serverName: "context7", connectState: "connected" });
   });
 
-  it("指定 OAuth server 状态时同时展示 OAuth 生命周期", async () => {
-    useRuntime({
-      registry: {
-        getServerSnapshot: async () => makeServerSnapshot({
-          name: "demo",
-          connectState: "connected",
-          oauthState: "authorization-required",
-        }),
-      },
-    });
-
-    const result = await executeMcpServer({ action: "status", server: "demo" });
-
-    expect(result.content[0]).toEqual({
-      type: "text",
-      text: "connected\noauth: authorization-required",
-    });
-    expect(result.details).toEqual({
-      kind: "status",
-      serverName: "demo",
-      connectState: "connected",
-      oauthState: "authorization-required",
-    });
-  });
-
   it("拒绝不存在的服务器状态查询并刷新 footer", async () => {
     const refreshFooter = vi.fn();
     useRuntime({ refreshFooter, registry: { getServerSnapshot: async () => undefined } });
@@ -204,50 +179,6 @@ describe("mcpServerTool.execute", () => {
 
     await expect(executeMcpServer({ action: "connect", server: "demo" })).rejects.toBe(error);
     expect(refreshFooter).toHaveBeenCalledTimes(1);
-  });
-
-  it("显式 OAuth authorize 并同步转发 AbortSignal", async () => {
-    const signal = new AbortController().signal;
-    const refreshFooter = vi.fn();
-    const authorizeServer = vi.fn().mockResolvedValue(makeServerSnapshot({
-      oauthState: "authorized",
-    }));
-    useRuntime({ refreshFooter, registry: { authorizeServer } });
-
-    const result = await executeMcpServer({ action: "authorize", server: "demo" }, signal);
-
-    expect(authorizeServer).toHaveBeenCalledWith("demo", signal);
-    expect(refreshFooter).toHaveBeenCalledTimes(1);
-    expect(result.content[0]).toEqual({ type: "text", text: "authorized" });
-    expect(result.details).toEqual({ kind: "authorize" });
-  });
-
-  it("OAuth authorize 失败后刷新 footer", async () => {
-    const error = new Error("OAuth authorization was cancelled.");
-    const refreshFooter = vi.fn();
-    useRuntime({
-      refreshFooter,
-      registry: { authorizeServer: vi.fn().mockRejectedValue(error) },
-    });
-
-    await expect(executeMcpServer({ action: "authorize", server: "demo" })).rejects.toBe(error);
-    expect(refreshFooter).toHaveBeenCalledTimes(1);
-  });
-
-  it("显式清除本地 OAuth credentials", async () => {
-    const refreshFooter = vi.fn();
-    const logoutServer = vi.fn().mockResolvedValue(makeServerSnapshot({
-      connectState: "disconnected",
-      oauthState: "authorization-required",
-    }));
-    useRuntime({ refreshFooter, registry: { logoutServer } });
-
-    const result = await executeMcpServer({ action: "logout", server: "demo" });
-
-    expect(logoutServer).toHaveBeenCalledWith("demo");
-    expect(refreshFooter).toHaveBeenCalledTimes(1);
-    expect(result.content[0]).toEqual({ type: "text", text: "logged out" });
-    expect(result.details).toEqual({ kind: "logout" });
   });
 
   it("显式断开连接，不将 AbortSignal 视为关闭取消信号", async () => {

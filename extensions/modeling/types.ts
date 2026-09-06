@@ -3,7 +3,11 @@ import type { MaterializationSettings, TuiResultRenderSettings } from "../artifa
 
 export type ServerConnectionMode = "lazy" | "eager";
 export type ServerConnectState = "disconnected" | "connecting" | "connected" | "disconnecting";
-export type ServerOauthState = "authorization-required" | "authorizing" | "authorized";
+export type ServerOauthState =
+  | "authorization-required"
+  | "authorizing"
+  | "authorized"
+  | "unknown";
 
 export type ServerDefinition = Record<string, unknown>;
 

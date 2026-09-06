@@ -10,6 +10,7 @@ export interface OauthHttpServerConfig {
   headers?: Record<string, string>;
   clientMetadataUrl?: string;
   scope?: string;
+  profile: string;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -34,7 +35,7 @@ export function hasOauthAuthentication(definition: ServerDefinition, serverName:
 function expectOptionalOauthSetting(
   definition: ServerDefinition,
   serverName: string,
-  fieldName: "clientMetadataUrl" | "scope",
+  fieldName: "clientMetadataUrl" | "scope" | "profile",
 ): string | undefined {
   if (definition.oauth === undefined) {
     return undefined;
@@ -107,6 +108,7 @@ export function parseOauthHttpServerConfig(config: ResolvedServerConfig): OauthH
   const headers = expectOptionalStringRecord(config.definition, "headers", config.name);
   rejectsStaticOAuthConflicts(config.definition, config.name, headers);
   const scope = expectOptionalOauthSetting(config.definition, config.name, "scope");
+  const profile = expectOptionalOauthSetting(config.definition, config.name, "profile") ?? "default";
   const clientMetadataUrl = expectClientMetadataUrl(config.definition, config.name);
 
   return {
@@ -114,6 +116,7 @@ export function parseOauthHttpServerConfig(config: ResolvedServerConfig): OauthH
     ...(headers && Object.keys(headers).length > 0 ? { headers } : {}),
     ...(scope ? { scope } : {}),
     ...(clientMetadataUrl ? { clientMetadataUrl } : {}),
+    profile,
   };
 }
 
