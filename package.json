@@ -4,6 +4,9 @@
   "description": "A Pi plugin that exposes a minimal multi-server MCP runtime with server-level progressive disclosure.",
   "type": "module",
   "license": "MIT",
+  "engines": {
+    "node": ">=22.19.0"
+  },
   "author": "EnderLiquid",
   "keywords": [
     "pi-package",
@@ -41,7 +44,7 @@
   },
   "scripts": {
     "test": "vitest --run",
-    "test:types": "tsc --noEmit"
+    "test:types": "tsc --noEmit && tsc -p tsconfig.broker-native.json"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.79.1",

@@ -1,4 +1,4 @@
-import type { OAuthIdentity } from "./identity.js";
+import type { OAuthIdentity } from "./identity.ts";
 import {
   applyOAuthAuthorization,
   applyOAuthRefresh,
@@ -12,7 +12,7 @@ import {
   type OAuthCredentialState,
   type OAuthTokenSnapshot,
   type OAuthTokenUpdate,
-} from "./credential-state.js";
+} from "./credential-state.ts";
 
 export interface OAuthRefreshRequest {
   readonly identity: OAuthIdentity;
@@ -80,9 +80,11 @@ export class OAuthCredentialChangedError extends Error {
 export class OAuthTokenCoordinator {
   private readonly states = new Map<string, OAuthCredentialState>();
   private readonly refreshFlights = new Map<string, Promise<OAuthTokenSnapshot>>();
+  private readonly options: OAuthTokenCoordinatorOptions;
   private readonly now: () => number;
 
-  constructor(private readonly options: OAuthTokenCoordinatorOptions) {
+  constructor(options: OAuthTokenCoordinatorOptions) {
+    this.options = options;
     this.now = options.now ?? (() => Date.now());
   }
 
