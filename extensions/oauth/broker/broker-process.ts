@@ -6,44 +6,43 @@ import {
   createOAuthBrokerErrorEnvelope,
   createOAuthBrokerSecret,
   createOAuthBrokerSuccessEnvelope,
-  digestOAuthBrokerSecret,
-  isProcessAlive,
-  oauthBrokerSecretsEqual,
   OAUTH_BROKER_ACCESS_FORMAT,
-  OAUTH_BROKER_CLAIM_TOKEN_ENV,
-  OAUTH_BROKER_ENDPOINT_FORMAT,
   OAUTH_BROKER_PROTOCOL_VERSION,
   OAUTH_BROKER_REQUEST_ID_HEADER,
   OAUTH_BROKER_ROUTES,
   parseOAuthBrokerPresenceRequest,
   parseOAuthBrokerRequestEnvelope,
+  parseOAuthBrokerAccessDescriptor,
+  oauthBrokerSecretsEqual,
   type OAuthBrokerAccessDescriptor,
-  type OAuthBrokerEndpointDescriptor,
   type OAuthBrokerHealth,
+  type OAuthBrokerPresenceRequest,
 } from "./protocol.ts";
 import {
-  ensureOAuthBrokerRuntimeIdentity,
-  readOAuthBrokerClaim,
-  listOAuthBrokerClaims,
-  listOAuthBrokerPublications,
-  removeOAuthBrokerCandidate,
-  writeOAuthBrokerPublication,
+  acquireOAuthBrokerLock,
+  OAuthBrokerLockError,
+  type OAuthBrokerLockHandle,
+} from "./lock.ts";
+import {
+  ensureOAuthBrokerRuntimeDirectories,
+  writeOAuthBrokerAccess,
 } from "./runtime-files.ts";
 
 const MAX_REQUEST_BODY_BYTES = 64 * 1024;
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
-interface BrokerProcessOptions {
+export interface OAuthBrokerProcessOptions {
   readonly rootDir: string;
   readonly namespaceId: string;
-  readonly claimId: string;
-  readonly requestedPort: number;
+  readonly configuredPort: number;
   readonly presenceTtlMs: number;
   readonly idleGraceMs: number;
-  readonly claimToken: string;
+  readonly lockStaleMs?: number;
+  readonly lockUpdateMs?: number;
 }
 
 interface PresenceRecord {
+  readonly presenceId: string;
   expiresAt: number;
 }
 
@@ -59,18 +58,32 @@ class BrokerStartupError extends Error {
   }
 }
 
-export async function runOAuthBrokerProcess(options: BrokerProcessOptions): Promise<void> {
-  await ensureOAuthBrokerRuntimeIdentity(options.rootDir, options.namespaceId);
-  const claim = await readOAuthBrokerClaim(options.rootDir, options.claimId);
-  if (!claim
-    || claim.namespaceId !== options.namespaceId
-    || claim.requestedPort !== options.requestedPort
-    || claim.expiresAt <= Date.now()
-    || !oauthBrokerSecretsEqual(
-      claim.claimTokenDigest,
-      digestOAuthBrokerSecret(options.claimToken),
-    )) {
-    throw new BrokerStartupError("broker-claim-rejected", "OAuth broker owner claim is invalid or expired.", 16);
+export async function runOAuthBrokerProcess(
+  options: OAuthBrokerProcessOptions,
+): Promise<void> {
+  await ensureOAuthBrokerRuntimeDirectories(options.rootDir);
+
+  let lock: OAuthBrokerLockHandle;
+  let lockCompromised = false;
+  let requestShutdown: (() => void) | undefined;
+  try {
+    lock = await acquireOAuthBrokerLock(options.rootDir, {
+      staleMs: options.lockStaleMs,
+      updateMs: options.lockUpdateMs,
+      onCompromised: () => {
+        lockCompromised = true;
+        requestShutdown?.();
+      },
+    });
+  } catch (error) {
+    if (error instanceof OAuthBrokerLockError && error.code === "lock-unavailable") {
+      throw new BrokerStartupError(
+        "lock-unavailable",
+        "OAuth broker runtime lock is already held.",
+        17,
+      );
+    }
+    throw error;
   }
 
   const instanceId = randomUUID();
@@ -82,23 +95,24 @@ export async function runOAuthBrokerProcess(options: BrokerProcessOptions): Prom
   let listening = false;
   let shuttingDown = false;
   let shutdownPromise: Promise<void> | undefined;
+  let idleTimer: ReturnType<typeof setInterval> | undefined;
 
   const currentHealth = (): OAuthBrokerHealth => ({
     namespaceId: options.namespaceId,
     instanceId,
     pid: process.pid,
-    port: options.requestedPort,
+    port: options.configuredPort,
     startedAt,
     presenceCount: sessions.size,
     pendingOperationCount,
     idleDeadline: idleDeadline ?? null,
   });
 
-  const clearIdleDeadline = () => {
+  const clearIdleDeadline = (): void => {
     idleDeadline = undefined;
   };
 
-  const expirePresence = () => {
+  const expirePresence = (): void => {
     const now = Date.now();
     for (const [sessionId, presence] of sessions) {
       if (presence.expiresAt <= now) {
@@ -107,7 +121,7 @@ export async function runOAuthBrokerProcess(options: BrokerProcessOptions): Prom
     }
   };
 
-  const evaluateIdle = () => {
+  const evaluateIdle = (): void => {
     if (shuttingDown) {
       return;
     }
@@ -125,68 +139,18 @@ export async function runOAuthBrokerProcess(options: BrokerProcessOptions): Prom
     }
   };
 
-  const server = createServer(async (request, response) => {
-    const requestId = getRequestId(request);
-    const pathname = getPathname(request);
-
-    if (pathname === OAUTH_BROKER_ROUTES.callback && request.method === "GET") {
-      sendCallbackUnavailable(response);
-      return;
-    }
-
-    if (!isAuthorized(request, secret)) {
-      sendError(response, requestId, 401, "unauthorized", "OAuth broker authentication failed.");
-      return;
-    }
-
-    if (pathname === OAUTH_BROKER_ROUTES.health && request.method === "GET") {
-      sendSuccess(response, requestId, currentHealth());
-      return;
-    }
-
-    if (pathname === OAUTH_BROKER_ROUTES.presence && request.method === "POST") {
-      let envelope;
-      try {
-        envelope = parseOAuthBrokerRequestEnvelope(
-          await readJsonBody(request),
-          parseOAuthBrokerPresenceRequest,
-        );
-        if (envelope.requestId !== requestId) {
-          throw new TypeError("requestId header and body do not match.");
-        }
-      } catch (error) {
+  const server = createServer((request, response) => {
+    void handleRequest(request, response).catch(error => {
+      if (!response.writableEnded && !response.destroyed) {
         sendError(
           response,
-          requestId,
-          400,
-          "invalid-request",
-          error instanceof Error ? error.message : "OAuth broker request is invalid.",
+          getRequestId(request),
+          500,
+          "broker-internal-error",
+          error instanceof Error ? error.message : "OAuth broker request failed.",
         );
-        return;
       }
-
-      const { action, sessionId } = envelope.params;
-      if (action === "register") {
-        sessions.set(sessionId, { expiresAt: Date.now() + options.presenceTtlMs });
-        clearIdleDeadline();
-      } else if (action === "pulse") {
-        if (!sessions.has(sessionId)) {
-          sendError(response, requestId, 409, "presence-not-found", "OAuth broker presence is no longer registered.");
-          evaluateIdle();
-          return;
-        }
-        sessions.set(sessionId, { expiresAt: Date.now() + options.presenceTtlMs });
-        clearIdleDeadline();
-      } else {
-        sessions.delete(sessionId);
-      }
-
-      sendSuccess(response, requestId, currentHealth());
-      evaluateIdle();
-      return;
-    }
-
-    sendError(response, requestId, 404, "route-not-found", "OAuth broker route was not found.");
+    });
   });
 
   const closeServer = (): Promise<void> => new Promise(resolveClose => {
@@ -208,14 +172,25 @@ export async function runOAuthBrokerProcess(options: BrokerProcessOptions): Prom
       return shutdownPromise;
     }
     shuttingDown = true;
+    if (idleTimer) {
+      clearInterval(idleTimer);
+      idleTimer = undefined;
+    }
     shutdownPromise = (async () => {
       await closeServer();
-      await removeOAuthBrokerCandidate(options.rootDir, options.claimId).catch(() => undefined);
+      await lock.release().catch(() => undefined);
     })();
     return shutdownPromise;
   };
 
-  const signalHandler = () => {
+  requestShutdown = () => {
+    void shutdown();
+  };
+  if (lockCompromised) {
+    requestShutdown();
+  }
+
+  const signalHandler = (): void => {
     void shutdown().finally(() => {
       process.exitCode = 0;
     });
@@ -224,92 +199,138 @@ export async function runOAuthBrokerProcess(options: BrokerProcessOptions): Prom
   process.once("SIGINT", signalHandler);
 
   try {
-    await assertNoCompetingPublication(options.namespaceId, options.rootDir, options.claimId);
-    await assertElectionWinner(options.namespaceId, options.rootDir, options.claimId);
-    await listen(server, options.requestedPort);
+    await listen(server, options.configuredPort);
     listening = true;
-    await assertNoCompetingPublication(options.namespaceId, options.rootDir, options.claimId);
-    await assertElectionWinner(options.namespaceId, options.rootDir, options.claimId);
 
-    const endpoint: OAuthBrokerEndpointDescriptor = {
-      format: OAUTH_BROKER_ENDPOINT_FORMAT,
-      protocolVersion: OAUTH_BROKER_PROTOCOL_VERSION,
-      namespaceId: options.namespaceId,
-      claimId: options.claimId,
-      instanceId,
-      pid: process.pid,
-      port: options.requestedPort,
-      startedAt,
-    };
-    const access: OAuthBrokerAccessDescriptor = {
+    const access: OAuthBrokerAccessDescriptor = parseOAuthBrokerAccessDescriptor({
       format: OAUTH_BROKER_ACCESS_FORMAT,
       protocolVersion: OAUTH_BROKER_PROTOCOL_VERSION,
       namespaceId: options.namespaceId,
-      claimId: options.claimId,
       instanceId,
+      port: options.configuredPort,
+      startedAt,
       secret,
-    };
-    await writeOAuthBrokerPublication(options.rootDir, { endpoint, access });
+    });
+    await writeOAuthBrokerAccess(options.rootDir, access);
+
+    idleTimer = setInterval(evaluateIdle, Math.max(100, Math.floor(options.presenceTtlMs / 3)));
+    idleTimer.unref?.();
     evaluateIdle();
   } catch (error) {
     await shutdown();
     if (isErrorWithCode(error) && error.code === "EADDRINUSE") {
-      throw new BrokerStartupError("port-unavailable", "The configured OAuth broker port is already in use.", 17);
+      throw new BrokerStartupError(
+        "port-unavailable",
+        `OAuth broker could not bind configured port ${options.configuredPort}.`,
+        17,
+      );
     }
     throw error;
   }
 
-  const idleTimer = setInterval(
-    evaluateIdle,
-    Math.max(100, Math.min(1_000, Math.floor(options.presenceTtlMs / 3))),
-  );
-  idleTimer.unref?.();
-
   await new Promise<void>(resolveExit => {
     server.once("close", resolveExit);
   });
-  clearInterval(idleTimer);
   await shutdown();
-}
 
-async function assertNoCompetingPublication(
-  namespaceId: string,
-  rootDir: string,
-  claimId: string,
-): Promise<void> {
-  const competing = (await listOAuthBrokerPublications(rootDir)).find(publication =>
-    publication.endpoint.namespaceId === namespaceId
-    && publication.endpoint.claimId !== claimId
-    && isProcessAlive(publication.endpoint.pid));
-  if (competing) {
-    throw new BrokerStartupError(
-      "claim-lost",
-      "Another OAuth broker owner published first.",
-      20,
-    );
+  async function handleRequest(
+    request: IncomingMessage,
+    response: ServerResponse,
+  ): Promise<void> {
+    const requestId = getRequestId(request);
+    const pathname = getPathname(request);
+
+    if (pathname === OAUTH_BROKER_ROUTES.callback && request.method === "GET") {
+      sendCallbackUnavailable(response);
+      return;
+    }
+
+    if (!isAuthorized(request, secret)) {
+      sendError(response, requestId, 401, "unauthorized", "OAuth broker authentication failed.");
+      return;
+    }
+
+    if (pathname === OAUTH_BROKER_ROUTES.health && request.method === "GET") {
+      sendSuccess(response, requestId, currentHealth());
+      return;
+    }
+
+    if (pathname !== OAUTH_BROKER_ROUTES.presence || request.method !== "POST") {
+      sendError(response, requestId, 404, "route-not-found", "OAuth broker route was not found.");
+      return;
+    }
+
+    pendingOperationCount += 1;
+    try {
+      let envelope;
+      try {
+        envelope = parseOAuthBrokerRequestEnvelope(
+          await readJsonBody(request),
+          parseOAuthBrokerPresenceRequest,
+        );
+        if (envelope.requestId !== requestId) {
+          throw new TypeError("requestId header and body do not match.");
+        }
+      } catch (error) {
+        sendError(
+          response,
+          requestId,
+          400,
+          "invalid-request",
+          error instanceof Error ? error.message : "OAuth broker request is invalid.",
+        );
+        return;
+      }
+
+      const result = applyPresence(envelope.params);
+      if (!result.ok) {
+        sendError(response, requestId, 409, result.code, result.message);
+        evaluateIdle();
+        return;
+      }
+      sendSuccess(response, requestId, currentHealth());
+      evaluateIdle();
+    } finally {
+      pendingOperationCount -= 1;
+      evaluateIdle();
+    }
+  }
+
+  function applyPresence(
+    request: OAuthBrokerPresenceRequest,
+  ): { ok: true } | { ok: false; code: string; message: string } {
+    const current = sessions.get(request.sessionId);
+    if (request.action === "register") {
+      sessions.set(request.sessionId, {
+        presenceId: request.presenceId,
+        expiresAt: Date.now() + options.presenceTtlMs,
+      });
+      clearIdleDeadline();
+      return { ok: true };
+    }
+
+    if (!current || current.presenceId !== request.presenceId) {
+      return {
+        ok: false,
+        code: "presence-not-found",
+        message: "OAuth broker presence incarnation is no longer registered.",
+      };
+    }
+
+    if (request.action === "pulse") {
+      current.expiresAt = Date.now() + options.presenceTtlMs;
+      clearIdleDeadline();
+    } else {
+      sessions.delete(request.sessionId);
+    }
+    return { ok: true };
   }
 }
 
-async function assertElectionWinner(
-  namespaceId: string,
-  rootDir: string,
-  claimId: string,
+function listen(
+  server: ReturnType<typeof createServer>,
+  port: number,
 ): Promise<void> {
-  const now = Date.now();
-  const claims = (await listOAuthBrokerClaims(rootDir))
-    .filter(candidate => candidate.namespaceId === namespaceId && candidate.expiresAt > now)
-    .sort((left, right) =>
-      left.createdAt - right.createdAt || left.claimId.localeCompare(right.claimId));
-  if (claims[0]?.claimId !== claimId) {
-    throw new BrokerStartupError(
-      "claim-lost",
-      "OAuth broker owner claim lost the startup election.",
-      20,
-    );
-  }
-}
-
-function listen(server: ReturnType<typeof createServer>, port: number): Promise<void> {
   return new Promise((resolveListen, reject) => {
     const onError = (error: Error) => {
       server.off("listening", onListening);
@@ -431,20 +452,18 @@ function parseArgs(argv: readonly string[]): Record<string, string> {
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
-  const claimToken = process.env[OAUTH_BROKER_CLAIM_TOKEN_ENV];
-  delete process.env[OAUTH_BROKER_CLAIM_TOKEN_ENV];
-  if (!claimToken) {
-    throw new BrokerStartupError("invalid-arguments", "OAuth broker claim token is missing.", 2);
-  }
-
   await runOAuthBrokerProcess({
     rootDir: args.root ?? "",
     namespaceId: args.namespace ?? "",
-    claimId: args.claim ?? "",
-    requestedPort: parsePositiveInteger(args.port, "port"),
+    configuredPort: parsePositiveInteger(args.port, "port"),
     presenceTtlMs: parsePositiveInteger(args["presence-ttl-ms"], "presence-ttl-ms"),
     idleGraceMs: parsePositiveInteger(args["idle-grace-ms"], "idle-grace-ms"),
-    claimToken,
+    lockStaleMs: args["lock-stale-ms"] === undefined
+      ? undefined
+      : parsePositiveInteger(args["lock-stale-ms"], "lock-stale-ms"),
+    lockUpdateMs: args["lock-update-ms"] === undefined
+      ? undefined
+      : parsePositiveInteger(args["lock-update-ms"], "lock-update-ms"),
   });
 }
 
@@ -456,9 +475,20 @@ const isMain = process.argv[1] !== undefined
   && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
 if (isMain) {
   main().catch(error => {
-    const code = error instanceof BrokerStartupError ? error.code : "broker-start-failed";
-    const exitCode = error instanceof BrokerStartupError ? error.exitCode : 18;
-    process.stderr.write(`${JSON.stringify({ code, message: error instanceof Error ? error.message : String(error) })}\n`);
+    const code = error instanceof BrokerStartupError
+      ? error.code
+      : error instanceof OAuthBrokerLockError
+        ? error.code
+        : "broker-start-failed";
+    const exitCode = error instanceof BrokerStartupError
+      ? error.exitCode
+      : error instanceof OAuthBrokerLockError && error.code === "lock-unavailable"
+        ? 17
+        : 18;
+    process.stderr.write(`${JSON.stringify({
+      code,
+      message: error instanceof Error ? error.message : String(error),
+    })}\n`);
     process.exitCode = exitCode;
   });
 }

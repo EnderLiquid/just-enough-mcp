@@ -1,21 +1,20 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 
 export const OAUTH_BROKER_PROTOCOL_VERSION = 1 as const;
-export const DEFAULT_OAUTH_BROKER_PORT = 33418;
-export const DEFAULT_OAUTH_BROKER_STARTUP_TIMEOUT_MS = 5_000;
+export const DEFAULT_OAUTH_BROKER_PORT = 33_418;
 export const DEFAULT_OAUTH_BROKER_REQUEST_TIMEOUT_MS = 2_000;
-export const DEFAULT_OAUTH_BROKER_ELECTION_WINDOW_MS = 75;
-export const DEFAULT_OAUTH_BROKER_CLAIM_TTL_MS = 10_000;
+export const DEFAULT_OAUTH_BROKER_CONNECT_TIMEOUT_MS = 5_000;
+export const DEFAULT_OAUTH_BROKER_RECONNECT_INTERVAL_MS = 1_000;
 export const DEFAULT_OAUTH_BROKER_PRESENCE_PULSE_MS = 10_000;
 export const DEFAULT_OAUTH_BROKER_PRESENCE_TTL_MS = 30_000;
 export const DEFAULT_OAUTH_BROKER_IDLE_GRACE_MS = 5_000;
+export const DEFAULT_OAUTH_BROKER_LOCK_STALE_MS = 30_000;
+export const DEFAULT_OAUTH_BROKER_LOCK_UPDATE_MS = 10_000;
 
-export const OAUTH_BROKER_RUNTIME_FORMAT = "just-enough-mcp.oauth-broker-runtime" as const;
-export const OAUTH_BROKER_CLAIM_FORMAT = "just-enough-mcp.oauth-broker-claim" as const;
-export const OAUTH_BROKER_ENDPOINT_FORMAT = "just-enough-mcp.oauth-broker-endpoint" as const;
 export const OAUTH_BROKER_ACCESS_FORMAT = "just-enough-mcp.oauth-broker-access" as const;
-export const OAUTH_BROKER_CLAIM_TOKEN_ENV = "JUST_ENOUGH_MCP_OAUTH_BROKER_CLAIM_TOKEN";
 export const OAUTH_BROKER_REQUEST_ID_HEADER = "x-just-enough-mcp-request-id";
+export const OAUTH_BROKER_SESSION_ID_HEADER = "x-just-enough-mcp-session-id";
+export const OAUTH_BROKER_PRESENCE_ID_HEADER = "x-just-enough-mcp-presence-id";
 
 export const OAUTH_BROKER_ROUTES = {
   callback: "/oauth/callback",
@@ -25,51 +24,15 @@ export const OAUTH_BROKER_ROUTES = {
 
 export type OAuthBrokerPresenceAction = "register" | "pulse" | "release";
 
-export interface OAuthBrokerRuntimeIdentity {
-  readonly format: typeof OAUTH_BROKER_RUNTIME_FORMAT;
-  readonly protocolVersion: typeof OAUTH_BROKER_PROTOCOL_VERSION;
-  readonly namespaceId: string;
-}
-
-export interface OAuthBrokerOwnerClaim {
-  readonly format: typeof OAUTH_BROKER_CLAIM_FORMAT;
-  readonly protocolVersion: typeof OAUTH_BROKER_PROTOCOL_VERSION;
-  readonly namespaceId: string;
-  readonly claimId: string;
-  readonly claimTokenDigest: string;
-  readonly claimantPid: number;
-  readonly requestedPort: number;
-  readonly createdAt: number;
-  readonly expiresAt: number;
-}
-
-/**
- * 可公开发现的 endpoint 描述。认证 secret 和 owner token 不得写入这里。
- */
-export interface OAuthBrokerEndpointDescriptor {
-  readonly format: typeof OAUTH_BROKER_ENDPOINT_FORMAT;
-  readonly protocolVersion: typeof OAUTH_BROKER_PROTOCOL_VERSION;
-  readonly namespaceId: string;
-  readonly claimId: string;
-  readonly instanceId: string;
-  readonly pid: number;
-  readonly port: number;
-  readonly startedAt: number;
-}
-
-/** 与 endpoint 分文件保存、仅供同一 agentDir 下可信 session 读取的控制面凭据。 */
+/** 固定路径的 access snapshot。文件可以陈旧，只有认证 health 才证明 broker 可用。 */
 export interface OAuthBrokerAccessDescriptor {
   readonly format: typeof OAUTH_BROKER_ACCESS_FORMAT;
   readonly protocolVersion: typeof OAUTH_BROKER_PROTOCOL_VERSION;
   readonly namespaceId: string;
-  readonly claimId: string;
   readonly instanceId: string;
+  readonly port: number;
+  readonly startedAt: number;
   readonly secret: string;
-}
-
-export interface OAuthBrokerPublication {
-  readonly endpoint: OAuthBrokerEndpointDescriptor;
-  readonly access: OAuthBrokerAccessDescriptor;
 }
 
 export interface OAuthBrokerHealth {
@@ -83,9 +46,13 @@ export interface OAuthBrokerHealth {
   readonly idleDeadline: number | null;
 }
 
-export interface OAuthBrokerPresenceRequest {
-  readonly action: OAuthBrokerPresenceAction;
+export interface OAuthBrokerPresenceIdentity {
   readonly sessionId: string;
+  readonly presenceId: string;
+}
+
+export interface OAuthBrokerPresenceRequest extends OAuthBrokerPresenceIdentity {
+  readonly action: OAuthBrokerPresenceAction;
 }
 
 export interface OAuthBrokerRequestEnvelope<T> {
@@ -113,7 +80,6 @@ export interface OAuthBrokerErrorEnvelope {
   readonly error: OAuthBrokerErrorBody;
 }
 
-const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/;
 const SECRET_PATTERN = /^[0-9a-f]{64}$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -122,35 +88,28 @@ export function createOAuthBrokerSecret(): string {
   return randomBytes(32).toString("hex");
 }
 
-export function digestOAuthBrokerSecret(secret: string): string {
-  return createHash("sha256").update(secret, "utf8").digest("hex");
-}
-
 export function oauthBrokerSecretsEqual(left: string, right: string): boolean {
   const leftBuffer = Buffer.from(left, "utf8");
   const rightBuffer = Buffer.from(right, "utf8");
   return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
 }
 
-export function getOAuthBrokerOrigin(endpoint: OAuthBrokerEndpointDescriptor): string {
-  return `http://127.0.0.1:${endpoint.port}`;
+export function getOAuthBrokerOrigin(port: number): string {
+  return `http://127.0.0.1:${assertOAuthBrokerPort(port, "port")}`;
 }
 
-export function getOAuthBrokerUrl(
-  endpoint: OAuthBrokerEndpointDescriptor,
-  pathname: string,
-): string {
+export function getOAuthBrokerUrl(port: number, pathname: string): string {
   if (!pathname.startsWith("/")) {
     throw new TypeError("OAuth broker pathname must begin with '/'.");
   }
-  return `${getOAuthBrokerOrigin(endpoint)}${pathname}`;
+  return `${getOAuthBrokerOrigin(port)}${pathname}`;
 }
 
 export function createOAuthBrokerRequestEnvelope<T>(
   requestId: string,
   params: T,
 ): OAuthBrokerRequestEnvelope<T> {
-  assertRequestId(requestId);
+  assertOAuthBrokerRequestId(requestId);
   return {
     protocolVersion: OAUTH_BROKER_PROTOCOL_VERSION,
     requestId,
@@ -162,7 +121,7 @@ export function createOAuthBrokerSuccessEnvelope<T>(
   requestId: string,
   result: T,
 ): OAuthBrokerSuccessEnvelope<T> {
-  assertRequestId(requestId);
+  assertOAuthBrokerRequestId(requestId);
   return {
     protocolVersion: OAUTH_BROKER_PROTOCOL_VERSION,
     requestId,
@@ -176,7 +135,7 @@ export function createOAuthBrokerErrorEnvelope(
   code: string,
   message: string,
 ): OAuthBrokerErrorEnvelope {
-  assertRequestId(requestId);
+  assertOAuthBrokerRequestId(requestId);
   assertNonEmptyString(code, "error.code");
   assertNonEmptyString(message, "error.message");
   return {
@@ -184,64 +143,6 @@ export function createOAuthBrokerErrorEnvelope(
     requestId,
     ok: false,
     error: { code, message },
-  };
-}
-
-export function parseOAuthBrokerRuntimeIdentity(
-  value: unknown,
-): OAuthBrokerRuntimeIdentity {
-  const record = requireRecord(value, "OAuth broker runtime identity");
-  assertLiteral(record.format, OAUTH_BROKER_RUNTIME_FORMAT, "runtime.format");
-  assertProtocolVersion(record.protocolVersion, "runtime.protocolVersion");
-  return {
-    format: OAUTH_BROKER_RUNTIME_FORMAT,
-    protocolVersion: OAUTH_BROKER_PROTOCOL_VERSION,
-    namespaceId: assertNonEmptyString(record.namespaceId, "runtime.namespaceId"),
-  };
-}
-
-export function parseOAuthBrokerOwnerClaim(value: unknown): OAuthBrokerOwnerClaim {
-  const record = requireRecord(value, "OAuth broker claim");
-  assertLiteral(record.format, OAUTH_BROKER_CLAIM_FORMAT, "claim.format");
-  assertProtocolVersion(record.protocolVersion, "claim.protocolVersion");
-  const namespaceId = assertNonEmptyString(record.namespaceId, "claim.namespaceId");
-  const claimId = assertUuid(record.claimId, "claim.claimId");
-  const claimTokenDigest = assertPattern(record.claimTokenDigest, SHA256_HEX_PATTERN, "claim.claimTokenDigest");
-  const claimantPid = assertPositiveSafeInteger(record.claimantPid, "claim.claimantPid");
-  const requestedPort = assertPort(record.requestedPort, "claim.requestedPort");
-  const createdAt = assertNonNegativeFinite(record.createdAt, "claim.createdAt");
-  const expiresAt = assertNonNegativeFinite(record.expiresAt, "claim.expiresAt");
-  if (expiresAt <= createdAt) {
-    throw new TypeError("claim.expiresAt must be later than claim.createdAt.");
-  }
-  return {
-    format: OAUTH_BROKER_CLAIM_FORMAT,
-    protocolVersion: OAUTH_BROKER_PROTOCOL_VERSION,
-    namespaceId,
-    claimId,
-    claimTokenDigest,
-    claimantPid,
-    requestedPort,
-    createdAt,
-    expiresAt,
-  };
-}
-
-export function parseOAuthBrokerEndpointDescriptor(
-  value: unknown,
-): OAuthBrokerEndpointDescriptor {
-  const record = requireRecord(value, "OAuth broker endpoint");
-  assertLiteral(record.format, OAUTH_BROKER_ENDPOINT_FORMAT, "endpoint.format");
-  assertProtocolVersion(record.protocolVersion, "endpoint.protocolVersion");
-  return {
-    format: OAUTH_BROKER_ENDPOINT_FORMAT,
-    protocolVersion: OAUTH_BROKER_PROTOCOL_VERSION,
-    namespaceId: assertNonEmptyString(record.namespaceId, "endpoint.namespaceId"),
-    claimId: assertUuid(record.claimId, "endpoint.claimId"),
-    instanceId: assertUuid(record.instanceId, "endpoint.instanceId"),
-    pid: assertPositiveSafeInteger(record.pid, "endpoint.pid"),
-    port: assertPort(record.port, "endpoint.port"),
-    startedAt: assertNonNegativeFinite(record.startedAt, "endpoint.startedAt"),
   };
 }
 
@@ -255,31 +156,20 @@ export function parseOAuthBrokerAccessDescriptor(
     format: OAUTH_BROKER_ACCESS_FORMAT,
     protocolVersion: OAUTH_BROKER_PROTOCOL_VERSION,
     namespaceId: assertNonEmptyString(record.namespaceId, "access.namespaceId"),
-    claimId: assertUuid(record.claimId, "access.claimId"),
-    instanceId: assertUuid(record.instanceId, "access.instanceId"),
+    instanceId: assertOAuthBrokerId(record.instanceId, "access.instanceId"),
+    port: assertOAuthBrokerPort(record.port, "access.port"),
+    startedAt: assertNonNegativeFinite(record.startedAt, "access.startedAt"),
     secret: assertPattern(record.secret, SECRET_PATTERN, "access.secret"),
   };
-}
-
-export function assertOAuthBrokerPublication(
-  publication: OAuthBrokerPublication,
-): OAuthBrokerPublication {
-  const { endpoint, access } = publication;
-  if (endpoint.namespaceId !== access.namespaceId
-    || endpoint.claimId !== access.claimId
-    || endpoint.instanceId !== access.instanceId) {
-    throw new TypeError("OAuth broker endpoint and access descriptors do not match.");
-  }
-  return publication;
 }
 
 export function parseOAuthBrokerHealth(value: unknown): OAuthBrokerHealth {
   const record = requireRecord(value, "OAuth broker health result");
   return {
     namespaceId: assertNonEmptyString(record.namespaceId, "health.namespaceId"),
-    instanceId: assertUuid(record.instanceId, "health.instanceId"),
+    instanceId: assertOAuthBrokerId(record.instanceId, "health.instanceId"),
     pid: assertPositiveSafeInteger(record.pid, "health.pid"),
-    port: assertPort(record.port, "health.port"),
+    port: assertOAuthBrokerPort(record.port, "health.port"),
     startedAt: assertNonNegativeFinite(record.startedAt, "health.startedAt"),
     presenceCount: assertNonNegativeSafeInteger(record.presenceCount, "health.presenceCount"),
     pendingOperationCount: assertNonNegativeSafeInteger(
@@ -300,7 +190,8 @@ export function parseOAuthBrokerPresenceRequest(value: unknown): OAuthBrokerPres
   }
   return {
     action,
-    sessionId: assertRequestId(record.sessionId, "presence.sessionId"),
+    sessionId: assertOAuthBrokerRequestId(record.sessionId, "presence.sessionId"),
+    presenceId: assertOAuthBrokerId(record.presenceId, "presence.presenceId"),
   };
 }
 
@@ -312,7 +203,7 @@ export function parseOAuthBrokerRequestEnvelope<T>(
   assertProtocolVersion(record.protocolVersion, "request.protocolVersion");
   return {
     protocolVersion: OAUTH_BROKER_PROTOCOL_VERSION,
-    requestId: assertRequestId(record.requestId),
+    requestId: assertOAuthBrokerRequestId(record.requestId),
     params: parseParams(record.params),
   };
 }
@@ -323,7 +214,7 @@ export function parseOAuthBrokerResponseEnvelope(
 ): OAuthBrokerSuccessEnvelope<unknown> | OAuthBrokerErrorEnvelope {
   const record = requireRecord(value, "OAuth broker response");
   assertProtocolVersion(record.protocolVersion, "response.protocolVersion");
-  const requestId = assertRequestId(record.requestId, "response.requestId");
+  const requestId = assertOAuthBrokerRequestId(record.requestId, "response.requestId");
   if (requestId !== expectedRequestId) {
     throw new TypeError("OAuth broker response requestId does not match the request.");
   }
@@ -352,7 +243,21 @@ export function parseOAuthBrokerResponseEnvelope(
 }
 
 export function assertOAuthBrokerId(value: unknown, fieldName = "id"): string {
-  return assertUuid(value, fieldName);
+  return assertPattern(value, UUID_PATTERN, fieldName);
+}
+
+export function assertOAuthBrokerRequestId(
+  value: unknown,
+  fieldName = "requestId",
+): string {
+  return assertPattern(value, REQUEST_ID_PATTERN, fieldName);
+}
+
+export function assertOAuthBrokerPort(value: unknown, fieldName: string): number {
+  if (!Number.isInteger(value) || (value as number) < 1 || (value as number) > 65_535) {
+    throw new TypeError(`${fieldName} must be an integer from 1 to 65535.`);
+  }
+  return value as number;
 }
 
 export function isProcessAlive(pid: number): boolean {
@@ -404,14 +309,6 @@ function assertPattern(value: unknown, pattern: RegExp, fieldName: string): stri
   return value;
 }
 
-function assertUuid(value: unknown, fieldName: string): string {
-  return assertPattern(value, UUID_PATTERN, fieldName);
-}
-
-function assertRequestId(value: unknown, fieldName = "requestId"): string {
-  return assertPattern(value, REQUEST_ID_PATTERN, fieldName);
-}
-
 function assertPositiveSafeInteger(value: unknown, fieldName: string): number {
   if (!Number.isSafeInteger(value) || (value as number) <= 0) {
     throw new TypeError(`${fieldName} must be a positive safe integer.`);
@@ -431,13 +328,6 @@ function assertNonNegativeFinite(value: unknown, fieldName: string): number {
     throw new TypeError(`${fieldName} must be a non-negative finite number.`);
   }
   return value;
-}
-
-function assertPort(value: unknown, fieldName: string): number {
-  if (!Number.isInteger(value) || (value as number) < 1 || (value as number) > 65_535) {
-    throw new TypeError(`${fieldName} must be an integer from 1 to 65535.`);
-  }
-  return value as number;
 }
 
 function isErrorWithCode(error: unknown): error is { code: string } {
