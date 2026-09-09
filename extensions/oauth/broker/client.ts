@@ -6,14 +6,17 @@ import {
   DEFAULT_OAUTH_BROKER_RECONNECT_INTERVAL_MS,
   DEFAULT_OAUTH_BROKER_REQUEST_TIMEOUT_MS,
   getOAuthBrokerUrl,
+  OAUTH_BROKER_PRESENCE_ID_HEADER,
   OAUTH_BROKER_REQUEST_ID_HEADER,
   OAUTH_BROKER_ROUTES,
+  OAUTH_BROKER_SESSION_ID_HEADER,
   parseOAuthBrokerAccessDescriptor,
   parseOAuthBrokerHealth,
   parseOAuthBrokerResponseEnvelope,
   type OAuthBrokerAccessDescriptor,
   type OAuthBrokerHealth,
   type OAuthBrokerPresenceAction,
+  type OAuthBrokerPresenceIdentity,
   type OAuthBrokerPresenceRequest,
 } from "./protocol.ts";
 import { readOAuthBrokerAccess } from "./runtime-files.ts";
@@ -79,7 +82,11 @@ export interface OAuthBrokerCallOptions extends OAuthBrokerRequestOptions {
 
 interface LowLevelRequestOptions extends OAuthBrokerCallOptions {
   readonly fetch?: typeof globalThis.fetch;
+  readonly presence?: OAuthBrokerPresenceIdentity;
 }
+
+// Node clamps larger timeout delays; long custom pulse intervals are scheduled in chunks.
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 /**
  * Session-scoped broker client. It owns only the session presence and a
@@ -103,9 +110,10 @@ export class OAuthBrokerClient {
   private access: OAuthBrokerAccessDescriptor | undefined;
   private presenceId: string | undefined;
   private lastActivityAt = 0;
+  private activityRevision = 0;
   private ensureConnectedFlight: Promise<void> | undefined;
   private pulseFlight: Promise<void> | undefined;
-  private pulseTimer: ReturnType<typeof setInterval> | undefined;
+  private pulseTimer: ReturnType<typeof setTimeout> | undefined;
   private reconnectTimer: ReturnType<typeof setInterval> | undefined;
   private closeFlight: Promise<void> | undefined;
 
@@ -204,6 +212,7 @@ export class OAuthBrokerClient {
     try {
       const result = await requestOAuthBrokerJson<T>(access, pathname, {
         ...options,
+        presence: { sessionId: this.sessionId, presenceId },
         timeoutMs: options.timeoutMs ?? this.requestTimeoutMs,
         fetch: this.fetchImplementation,
       });
@@ -271,9 +280,8 @@ export class OAuthBrokerClient {
           }
           this.access = access;
           this.presenceId = presenceId;
-          this.lastActivityAt = Date.now();
           this.setState("connected");
-          this.startPulseTimer();
+          this.noteActivity();
           return;
         } catch (error) {
           lastError = error;
@@ -335,48 +343,69 @@ export class OAuthBrokerClient {
     void this.transitionAway("disconnected").finally(() => this.startReconnectTimer());
   }
 
-  private startPulseTimer(): void {
-    if (this.pulseTimer || this.lifecycle !== "connected") {
+  private schedulePulse(): void {
+    if (this.pulseTimer) {
+      clearTimeout(this.pulseTimer);
+      this.pulseTimer = undefined;
+    }
+    if (this.lifecycle !== "connected") {
       return;
     }
-    this.pulseTimer = setInterval(() => {
-      if (this.lifecycle !== "connected" || this.pulseFlight) {
-        return;
-      }
-      if (Date.now() - this.lastActivityAt < this.presencePulseMs) {
-        return;
-      }
-      const access = this.access;
-      const presenceId = this.presenceId;
-      const generation = this.generation;
-      if (!access || !presenceId) {
-        return;
-      }
-      const flight = sendPresence(access, this.sessionId, presenceId, "pulse", {
-        timeoutMs: this.requestTimeoutMs,
-        fetch: this.fetchImplementation,
-      }).then(() => undefined);
-      this.pulseFlight = flight;
-      flight.then(
-        () => {
-          if (this.pulseFlight === flight) {
-            this.pulseFlight = undefined;
-          }
-          if (this.generation === generation && this.lifecycle === "connected") {
-            this.noteActivity();
-          }
-        },
-        error => {
-          if (this.pulseFlight === flight) {
-            this.pulseFlight = undefined;
-          }
-          if (this.generation === generation && shouldDisconnect(error)) {
+
+    const remainingMs = this.lastActivityAt + this.presencePulseMs - Date.now();
+    const delayMs = Math.min(MAX_TIMER_DELAY_MS, Math.max(0, remainingMs));
+    this.pulseTimer = setTimeout(() => {
+      this.pulseTimer = undefined;
+      this.sendPulseIfDue();
+    }, delayMs);
+    this.pulseTimer.unref?.();
+  }
+
+  private sendPulseIfDue(): void {
+    if (this.lifecycle !== "connected" || this.pulseFlight) {
+      return;
+    }
+    if (Date.now() - this.lastActivityAt < this.presencePulseMs) {
+      this.schedulePulse();
+      return;
+    }
+
+    const access = this.access;
+    const presenceId = this.presenceId;
+    const generation = this.generation;
+    const activityRevision = this.activityRevision;
+    if (!access || !presenceId) {
+      this.markDisconnected();
+      return;
+    }
+
+    const flight = sendPresence(access, this.sessionId, presenceId, "pulse", {
+      timeoutMs: this.requestTimeoutMs,
+      fetch: this.fetchImplementation,
+    }).then(() => undefined);
+    this.pulseFlight = flight;
+    flight.then(
+      () => {
+        if (this.pulseFlight === flight) {
+          this.pulseFlight = undefined;
+        }
+        if (this.generation === generation && this.lifecycle === "connected") {
+          this.noteActivity();
+        }
+      },
+      () => {
+        if (this.pulseFlight === flight) {
+          this.pulseFlight = undefined;
+        }
+        if (this.generation === generation && this.lifecycle === "connected") {
+          if (this.activityRevision !== activityRevision) {
+            this.schedulePulse();
+          } else {
             this.markDisconnected();
           }
-        },
-      );
-    }, Math.max(100, Math.min(this.presencePulseMs, 1_000)));
-    this.pulseTimer.unref?.();
+        }
+      },
+    );
   }
 
   private startReconnectTimer(): void {
@@ -393,7 +422,7 @@ export class OAuthBrokerClient {
 
   private stopTimers(): void {
     if (this.pulseTimer) {
-      clearInterval(this.pulseTimer);
+      clearTimeout(this.pulseTimer);
       this.pulseTimer = undefined;
     }
     if (this.reconnectTimer) {
@@ -404,6 +433,8 @@ export class OAuthBrokerClient {
 
   private noteActivity(): void {
     this.lastActivityAt = Date.now();
+    this.activityRevision += 1;
+    this.schedulePulse();
   }
 
   private clearEnsureFlight(flight: Promise<void>): void {
@@ -543,6 +574,10 @@ export async function requestOAuthBrokerJson<T = unknown>(
         headers: {
           authorization: `Bearer ${access.secret}`,
           [OAUTH_BROKER_REQUEST_ID_HEADER]: requestId,
+          ...(options.presence === undefined ? {} : {
+            [OAUTH_BROKER_SESSION_ID_HEADER]: options.presence.sessionId,
+            [OAUTH_BROKER_PRESENCE_ID_HEADER]: options.presence.presenceId,
+          }),
           ...(options.params === undefined ? {} : { "content-type": "application/json" }),
         },
         body: options.params === undefined

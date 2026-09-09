@@ -1,13 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   OAuthBrokerClient,
 } from "../extensions/oauth/broker/client.js";
 import {
   createOAuthBrokerSuccessEnvelope,
   OAUTH_BROKER_ACCESS_FORMAT,
+  OAUTH_BROKER_PRESENCE_ID_HEADER,
   OAUTH_BROKER_PROTOCOL_VERSION,
   OAUTH_BROKER_REQUEST_ID_HEADER,
+  OAUTH_BROKER_SESSION_ID_HEADER,
   type OAuthBrokerAccessDescriptor,
   type OAuthBrokerHealth,
 } from "../extensions/oauth/broker/protocol.js";
@@ -15,6 +17,10 @@ import { writeOAuthBrokerAccess } from "../extensions/oauth/broker/runtime-files
 import { createTempDirFixture } from "./support/temp-dir.js";
 
 const tempDirs = createTempDirFixture("just-enough-mcp-oauth-broker-client");
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function createFixture(): {
   rootDir: string;
@@ -109,6 +115,136 @@ describe("OAuthBrokerClient lifecycle concurrency", () => {
 
     expect(registerCalls).toBe(1);
     expect(client.state).toBe("connected");
+    await client.close();
+  });
+
+  it("schedules an idle pulse directly at the activity deadline", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-09T00:00:00.000Z"));
+    const { rootDir, access, health } = createFixture();
+    await writeOAuthBrokerAccess(rootDir, access);
+    const actions: string[] = [];
+    const fetch = async (_input: string | URL | globalThis.Request, init?: RequestInit): Promise<Response> => {
+      const action = parsePresenceAction(init);
+      if (action) {
+        actions.push(action);
+      }
+      return successResponse(init, health);
+    };
+    const client = new OAuthBrokerClient({
+      rootDir,
+      namespaceId: access.namespaceId,
+      configuredPort: access.port,
+      requestTimeoutMs: 500,
+      connectTimeoutMs: 500,
+      reconnectIntervalMs: 5_000,
+      presencePulseMs: 1_000,
+      fetch,
+    });
+
+    client.start();
+    await client.ensureConnected();
+    expect(actions).toEqual(["register"]);
+
+    await vi.advanceTimersByTimeAsync(999);
+    expect(actions).toEqual(["register"]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(actions).toEqual(["register", "pulse"]);
+
+    await vi.advanceTimersByTimeAsync(999);
+    expect(actions).toEqual(["register", "pulse"]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(actions).toEqual(["register", "pulse", "pulse"]);
+    await client.close();
+  });
+
+  it("successful ordinary RPC postpones the pulse and carries its presence incarnation", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-09T00:00:00.000Z"));
+    const { rootDir, access, health } = createFixture();
+    await writeOAuthBrokerAccess(rootDir, access);
+    let pulseCalls = 0;
+    let rpcPresence: { sessionId: string | null; presenceId: string | null } | undefined;
+    const fetch = async (_input: string | URL | globalThis.Request, init?: RequestInit): Promise<Response> => {
+      const action = parsePresenceAction(init);
+      if (action === "pulse") {
+        pulseCalls += 1;
+      }
+      const headers = new Headers(init?.headers);
+      if (!action && headers.has(OAUTH_BROKER_SESSION_ID_HEADER)) {
+        rpcPresence = {
+          sessionId: headers.get(OAUTH_BROKER_SESSION_ID_HEADER),
+          presenceId: headers.get(OAUTH_BROKER_PRESENCE_ID_HEADER),
+        };
+      }
+      return successResponse(init, health);
+    };
+    const client = new OAuthBrokerClient({
+      rootDir,
+      namespaceId: access.namespaceId,
+      configuredPort: access.port,
+      requestTimeoutMs: 500,
+      connectTimeoutMs: 500,
+      reconnectIntervalMs: 5_000,
+      presencePulseMs: 1_000,
+      fetch,
+    });
+
+    client.start();
+    await client.ensureConnected();
+    await vi.advanceTimersByTimeAsync(750);
+    await client.request("/v1/example");
+    expect(rpcPresence).toEqual({
+      sessionId: client.sessionId,
+      presenceId: client.currentPresenceId,
+    });
+
+    await vi.advanceTimersByTimeAsync(999);
+    expect(pulseCalls).toBe(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(pulseCalls).toBe(1);
+    await client.close();
+  });
+
+  it("a newer successful RPC supersedes a concurrent pulse failure", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-09T00:00:00.000Z"));
+    const { rootDir, access, health } = createFixture();
+    await writeOAuthBrokerAccess(rootDir, access);
+    const pulseGate = deferred();
+    const pulseStarted = deferred();
+    let pulseCalls = 0;
+    const fetch = async (_input: string | URL | globalThis.Request, init?: RequestInit): Promise<Response> => {
+      if (parsePresenceAction(init) === "pulse") {
+        pulseCalls += 1;
+        pulseStarted.resolve();
+        await pulseGate.promise;
+        throw new Error("simulated stale pulse failure");
+      }
+      return successResponse(init, health);
+    };
+    const client = new OAuthBrokerClient({
+      rootDir,
+      namespaceId: access.namespaceId,
+      configuredPort: access.port,
+      requestTimeoutMs: 500,
+      connectTimeoutMs: 500,
+      reconnectIntervalMs: 5_000,
+      presencePulseMs: 1_000,
+      fetch,
+    });
+
+    client.start();
+    await client.ensureConnected();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await pulseStarted.promise;
+    await client.request("/v1/example");
+    pulseGate.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(client.state).toBe("connected");
+    await vi.advanceTimersByTimeAsync(999);
+    expect(pulseCalls).toBe(1);
     await client.close();
   });
 

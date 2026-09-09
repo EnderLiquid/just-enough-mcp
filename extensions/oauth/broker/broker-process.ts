@@ -7,15 +7,19 @@ import {
   createOAuthBrokerSecret,
   createOAuthBrokerSuccessEnvelope,
   OAUTH_BROKER_ACCESS_FORMAT,
+  OAUTH_BROKER_PRESENCE_ID_HEADER,
   OAUTH_BROKER_PROTOCOL_VERSION,
   OAUTH_BROKER_REQUEST_ID_HEADER,
   OAUTH_BROKER_ROUTES,
+  OAUTH_BROKER_SESSION_ID_HEADER,
+  parseOAuthBrokerPresenceIdentity,
   parseOAuthBrokerPresenceRequest,
   parseOAuthBrokerRequestEnvelope,
   parseOAuthBrokerAccessDescriptor,
   oauthBrokerSecretsEqual,
   type OAuthBrokerAccessDescriptor,
   type OAuthBrokerHealth,
+  type OAuthBrokerPresenceIdentity,
   type OAuthBrokerPresenceRequest,
 } from "./protocol.ts";
 import {
@@ -250,6 +254,56 @@ export async function runOAuthBrokerProcess(
       return;
     }
 
+    let requestPresence: OAuthBrokerPresenceIdentity | undefined;
+    try {
+      requestPresence = pathname === OAUTH_BROKER_ROUTES.presence
+        ? undefined
+        : readOptionalPresenceIdentity(request);
+    } catch (error) {
+      sendError(
+        response,
+        requestId,
+        400,
+        "invalid-presence",
+        error instanceof Error ? error.message : "OAuth broker presence headers are invalid.",
+      );
+      return;
+    }
+
+    const requiresPresence = pathname.startsWith("/v1/")
+      && pathname !== OAUTH_BROKER_ROUTES.health
+      && pathname !== OAUTH_BROKER_ROUTES.presence;
+    if (requiresPresence && !requestPresence) {
+      sendError(
+        response,
+        requestId,
+        400,
+        "presence-required",
+        "OAuth broker session and presence headers are required.",
+      );
+      return;
+    }
+
+    // Liveness is transport-level: receiving any authenticated request from the
+    // current incarnation proves the session is alive, independent of its domain result.
+    // A successful response renews it again so long-running RPCs align the broker
+    // expiry deadline with the client's post-response heartbeat deadline.
+    if (requestPresence) {
+      const result = renewPresence(requestPresence);
+      if (!result.ok) {
+        sendError(response, requestId, 409, result.code, result.message);
+        evaluateIdle();
+        return;
+      }
+      const responsePresence = requestPresence;
+      response.once("finish", () => {
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          renewPresence(responsePresence);
+        }
+        evaluateIdle();
+      });
+    }
+
     if (pathname === OAUTH_BROKER_ROUTES.health && request.method === "GET") {
       sendSuccess(response, requestId, currentHealth());
       return;
@@ -296,10 +350,25 @@ export async function runOAuthBrokerProcess(
     }
   }
 
+  function renewPresence(
+    request: OAuthBrokerPresenceIdentity,
+  ): { ok: true } | { ok: false; code: string; message: string } {
+    const current = sessions.get(request.sessionId);
+    if (!current || current.presenceId !== request.presenceId) {
+      return {
+        ok: false,
+        code: "presence-not-found",
+        message: "OAuth broker presence incarnation is no longer registered.",
+      };
+    }
+    current.expiresAt = Date.now() + options.presenceTtlMs;
+    clearIdleDeadline();
+    return { ok: true };
+  }
+
   function applyPresence(
     request: OAuthBrokerPresenceRequest,
   ): { ok: true } | { ok: false; code: string; message: string } {
-    const current = sessions.get(request.sessionId);
     if (request.action === "register") {
       sessions.set(request.sessionId, {
         presenceId: request.presenceId,
@@ -309,6 +378,11 @@ export async function runOAuthBrokerProcess(
       return { ok: true };
     }
 
+    if (request.action === "pulse") {
+      return renewPresence(request);
+    }
+
+    const current = sessions.get(request.sessionId);
     if (!current || current.presenceId !== request.presenceId) {
       return {
         ok: false,
@@ -316,13 +390,7 @@ export async function runOAuthBrokerProcess(
         message: "OAuth broker presence incarnation is no longer registered.",
       };
     }
-
-    if (request.action === "pulse") {
-      current.expiresAt = Date.now() + options.presenceTtlMs;
-      clearIdleDeadline();
-    } else {
-      sessions.delete(request.sessionId);
-    }
+    sessions.delete(request.sessionId);
     return { ok: true };
   }
 }
@@ -359,6 +427,20 @@ function getRequestId(request: IncomingMessage): string {
   return typeof value === "string" && REQUEST_ID_PATTERN.test(value)
     ? value
     : `anonymous-${randomUUID()}`;
+}
+
+function readOptionalPresenceIdentity(
+  request: IncomingMessage,
+): OAuthBrokerPresenceIdentity | undefined {
+  const sessionId = request.headers[OAUTH_BROKER_SESSION_ID_HEADER];
+  const presenceId = request.headers[OAUTH_BROKER_PRESENCE_ID_HEADER];
+  if (sessionId === undefined && presenceId === undefined) {
+    return undefined;
+  }
+  if (typeof sessionId !== "string" || typeof presenceId !== "string") {
+    throw new TypeError("OAuth broker session and presence headers must be provided together.");
+  }
+  return parseOAuthBrokerPresenceIdentity({ sessionId, presenceId });
 }
 
 function isAuthorized(request: IncomingMessage, secret: string): boolean {

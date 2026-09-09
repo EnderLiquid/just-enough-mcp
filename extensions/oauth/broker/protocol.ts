@@ -182,6 +182,14 @@ export function parseOAuthBrokerHealth(value: unknown): OAuthBrokerHealth {
   };
 }
 
+export function parseOAuthBrokerPresenceIdentity(value: unknown): OAuthBrokerPresenceIdentity {
+  const record = requireRecord(value, "OAuth broker presence identity");
+  return {
+    sessionId: assertOAuthBrokerRequestId(record.sessionId, "presence.sessionId"),
+    presenceId: assertOAuthBrokerId(record.presenceId, "presence.presenceId"),
+  };
+}
+
 export function parseOAuthBrokerPresenceRequest(value: unknown): OAuthBrokerPresenceRequest {
   const record = requireRecord(value, "OAuth broker presence request");
   const action = record.action;
@@ -190,8 +198,7 @@ export function parseOAuthBrokerPresenceRequest(value: unknown): OAuthBrokerPres
   }
   return {
     action,
-    sessionId: assertOAuthBrokerRequestId(record.sessionId, "presence.sessionId"),
-    presenceId: assertOAuthBrokerId(record.presenceId, "presence.presenceId"),
+    ...parseOAuthBrokerPresenceIdentity(record),
   };
 }
 

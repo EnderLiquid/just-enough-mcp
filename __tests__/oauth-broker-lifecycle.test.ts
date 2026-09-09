@@ -12,9 +12,11 @@ import {
   createOAuthBrokerRequestEnvelope,
   getOAuthBrokerUrl,
   isProcessAlive,
+  OAUTH_BROKER_PRESENCE_ID_HEADER,
   OAUTH_BROKER_PROTOCOL_VERSION,
   OAUTH_BROKER_REQUEST_ID_HEADER,
   OAUTH_BROKER_ROUTES,
+  OAUTH_BROKER_SESSION_ID_HEADER,
 } from "../extensions/oauth/broker/protocol.js";
 import { readOAuthBrokerAccess } from "../extensions/oauth/broker/runtime-files.js";
 import { createTempDirFixture } from "./support/temp-dir.js";
@@ -336,6 +338,37 @@ describe("simplified standalone OAuth broker lifecycle", () => {
     await second.client.close();
   }, 10_000);
 
+  it("带当前 incarnation 的认证 RPC 会续期 broker presence", async () => {
+    const rootDir = createRoot();
+    const port = await allocatePort();
+    const result = await bootstrapOAuthBroker(makeOptions(
+      rootDir,
+      "agent-dir:v1:" + "1".repeat(64),
+      port,
+      { presenceTtlMs: 600, idleGraceMs: 1_000 },
+    ));
+    await result.client.ensureConnected({ timeoutMs: 2_000 });
+    const access = (await readOAuthBrokerAccess(rootDir))!;
+    trackedPids.add((await result.client.health()).pid);
+
+    const sessionId = randomUUID();
+    const presenceId = randomUUID();
+    expect((await rawPresence(access, "register", sessionId, presenceId)).status).toBe(200);
+    await result.client.close();
+
+    await new Promise(resolve => setTimeout(resolve, 350));
+    expect((await rawHealth(access, { sessionId, presenceId })).status).toBe(200);
+    await new Promise(resolve => setTimeout(resolve, 400));
+
+    const observed = await rawHealth(access);
+    expect(observed.status).toBe(200);
+    expect(observed.payload).toMatchObject({
+      ok: true,
+      result: { presenceCount: 1 },
+    });
+    await rawPresence(access, "release", sessionId, presenceId);
+  });
+
   it("旧 presence release 不能影响新 incarnation", async () => {
     const rootDir = createRoot();
     const port = await allocatePort();
@@ -362,6 +395,24 @@ describe("simplified standalone OAuth broker lifecycle", () => {
     await result.client.close();
   });
 });
+
+async function rawHealth(
+  access: NonNullable<Awaited<ReturnType<typeof readOAuthBrokerAccess>>>,
+  presence?: { sessionId: string; presenceId: string },
+): Promise<{ status: number; payload: unknown }> {
+  const requestId = randomUUID();
+  const response = await fetch(getOAuthBrokerUrl(access.port, OAUTH_BROKER_ROUTES.health), {
+    headers: {
+      authorization: `Bearer ${access.secret}`,
+      [OAUTH_BROKER_REQUEST_ID_HEADER]: requestId,
+      ...(presence === undefined ? {} : {
+        [OAUTH_BROKER_SESSION_ID_HEADER]: presence.sessionId,
+        [OAUTH_BROKER_PRESENCE_ID_HEADER]: presence.presenceId,
+      }),
+    },
+  });
+  return { status: response.status, payload: await response.json() as unknown };
+}
 
 async function rawPresence(
   access: NonNullable<Awaited<ReturnType<typeof readOAuthBrokerAccess>>>,
