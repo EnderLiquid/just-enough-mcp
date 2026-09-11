@@ -1,4 +1,6 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
+import { normalizeOAuthScope } from "./credential-state.ts";
+import { parseOAuthIdentity, type OAuthIdentity } from "./identity.ts";
 
 export const OAUTH_BROKER_PROTOCOL_VERSION = 1 as const;
 export const DEFAULT_OAUTH_BROKER_PORT = 33_418;
@@ -20,6 +22,9 @@ export const OAUTH_BROKER_ROUTES = {
   callback: "/oauth/callback",
   health: "/v1/health",
   presence: "/v1/presence",
+  oauthStatus: "/v1/oauth/status",
+  oauthToken: "/v1/oauth/token",
+  oauthLogout: "/v1/oauth/logout",
 } as const;
 
 export type OAuthBrokerPresenceAction = "register" | "pulse" | "release";
@@ -53,6 +58,40 @@ export interface OAuthBrokerPresenceIdentity {
 
 export interface OAuthBrokerPresenceRequest extends OAuthBrokerPresenceIdentity {
   readonly action: OAuthBrokerPresenceAction;
+}
+
+export type OAuthBrokerKnownState =
+  | "authorization-required"
+  | "authorizing"
+  | "authorized";
+
+export interface OAuthBrokerIdentityRequest {
+  readonly identity: OAuthIdentity;
+  readonly scope?: string;
+}
+
+export interface OAuthBrokerTokenRequest extends OAuthBrokerIdentityRequest {
+  readonly minRemainingMs: number;
+  readonly rejectedCredentialRevision?: number;
+}
+
+export interface OAuthBrokerLogoutRequest extends OAuthBrokerIdentityRequest {
+  readonly expectedCredentialRevision?: number;
+}
+
+export interface OAuthBrokerStatusResult {
+  readonly oauthState: OAuthBrokerKnownState;
+  readonly credentialRevision: number;
+}
+
+export interface OAuthBrokerTokenResult {
+  readonly accessToken: string;
+  readonly accessTokenExpiresAt: number;
+  readonly credentialRevision: number;
+}
+
+export interface OAuthBrokerLogoutResult extends OAuthBrokerStatusResult {
+  readonly applied: boolean;
 }
 
 export interface OAuthBrokerRequestEnvelope<T> {
@@ -202,6 +241,83 @@ export function parseOAuthBrokerPresenceRequest(value: unknown): OAuthBrokerPres
   };
 }
 
+export function parseOAuthBrokerIdentityRequest(value: unknown): OAuthBrokerIdentityRequest {
+  const record = requireRecord(value, "OAuth broker identity request");
+  return {
+    identity: parseOAuthIdentity(record.identity),
+    ...(record.scope === undefined
+      ? {}
+      : { scope: normalizeOAuthScope(assertString(record.scope, "oauth.scope")) }),
+  };
+}
+
+export function parseOAuthBrokerTokenRequest(value: unknown): OAuthBrokerTokenRequest {
+  const record = requireRecord(value, "OAuth broker token request");
+  return {
+    ...parseOAuthBrokerIdentityRequest(record),
+    minRemainingMs: record.minRemainingMs === undefined
+      ? 0
+      : assertNonNegativeFinite(record.minRemainingMs, "oauth.minRemainingMs"),
+    ...(record.rejectedCredentialRevision === undefined
+      ? {}
+      : {
+          rejectedCredentialRevision: assertNonNegativeSafeInteger(
+            record.rejectedCredentialRevision,
+            "oauth.rejectedCredentialRevision",
+          ),
+        }),
+  };
+}
+
+export function parseOAuthBrokerLogoutRequest(value: unknown): OAuthBrokerLogoutRequest {
+  const record = requireRecord(value, "OAuth broker logout request");
+  return {
+    ...parseOAuthBrokerIdentityRequest(record),
+    ...(record.expectedCredentialRevision === undefined
+      ? {}
+      : {
+          expectedCredentialRevision: assertNonNegativeSafeInteger(
+            record.expectedCredentialRevision,
+            "oauth.expectedCredentialRevision",
+          ),
+        }),
+  };
+}
+
+export function parseOAuthBrokerStatusResult(value: unknown): OAuthBrokerStatusResult {
+  const record = requireRecord(value, "OAuth broker status result");
+  return {
+    oauthState: parseKnownState(record.oauthState),
+    credentialRevision: assertNonNegativeSafeInteger(
+      record.credentialRevision,
+      "oauth.credentialRevision",
+    ),
+  };
+}
+
+export function parseOAuthBrokerTokenResult(value: unknown): OAuthBrokerTokenResult {
+  const record = requireRecord(value, "OAuth broker token result");
+  return {
+    accessToken: assertNonEmptyString(record.accessToken, "oauth.accessToken"),
+    accessTokenExpiresAt: assertFinite(record.accessTokenExpiresAt, "oauth.accessTokenExpiresAt"),
+    credentialRevision: assertNonNegativeSafeInteger(
+      record.credentialRevision,
+      "oauth.credentialRevision",
+    ),
+  };
+}
+
+export function parseOAuthBrokerLogoutResult(value: unknown): OAuthBrokerLogoutResult {
+  const record = requireRecord(value, "OAuth broker logout result");
+  if (typeof record.applied !== "boolean") {
+    throw new TypeError("oauth.applied must be a boolean.");
+  }
+  return {
+    ...parseOAuthBrokerStatusResult(record),
+    applied: record.applied,
+  };
+}
+
 export function parseOAuthBrokerRequestEnvelope<T>(
   value: unknown,
   parseParams: (params: unknown) => T,
@@ -309,6 +425,20 @@ function assertNonEmptyString(value: unknown, fieldName: string): string {
   return value;
 }
 
+function assertString(value: unknown, fieldName: string): string {
+  if (typeof value !== "string") {
+    throw new TypeError(`${fieldName} must be a string.`);
+  }
+  return value;
+}
+
+function parseKnownState(value: unknown): OAuthBrokerKnownState {
+  if (value !== "authorization-required" && value !== "authorizing" && value !== "authorized") {
+    throw new TypeError("oauth.oauthState is invalid.");
+  }
+  return value;
+}
+
 function assertPattern(value: unknown, pattern: RegExp, fieldName: string): string {
   if (typeof value !== "string" || !pattern.test(value)) {
     throw new TypeError(`${fieldName} has an invalid format.`);
@@ -333,6 +463,13 @@ function assertNonNegativeSafeInteger(value: unknown, fieldName: string): number
 function assertNonNegativeFinite(value: unknown, fieldName: string): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
     throw new TypeError(`${fieldName} must be a non-negative finite number.`);
+  }
+  return value;
+}
+
+function assertFinite(value: unknown, fieldName: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new TypeError(`${fieldName} must be a finite number.`);
   }
   return value;
 }

@@ -25,6 +25,14 @@ export type OAuthIdentity = OAuthIdentityV1;
 
 const HTTP_PROTOCOLS = new Set(["http:", "https:"]);
 const HEADER_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+
+function requireRecord(value: unknown, fieldName: string): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new TypeError(`${fieldName} must be an object.`);
+  }
+  return value as Record<string, unknown>;
+}
 
 function requireNonEmptyString(value: unknown, fieldName: string): string {
   if (typeof value !== "string" || value.trim().length === 0) {
@@ -95,6 +103,24 @@ export function createRequestHeadersDigest(
   return sha256(JSON.stringify(canonicalizeHeaders(headers)));
 }
 
+function createOAuthIdentityFromCanonicalFields(input: {
+  namespaceId: string;
+  resourceUrl: string;
+  clientMetadataUrl: string | null;
+  profile: string;
+  requestHeadersDigest: string;
+}): OAuthIdentityV1 {
+  const keyMaterial = JSON.stringify({
+    identityVersion: OAUTH_IDENTITY_VERSION,
+    ...input,
+  });
+  return {
+    identityVersion: OAUTH_IDENTITY_VERSION,
+    ...input,
+    key: `oauth:v1:${sha256(keyMaterial)}`,
+  };
+}
+
 export function createOAuthIdentity(input: OAuthIdentityInput): OAuthIdentityV1 {
   const namespaceId = requireNonEmptyString(input.namespaceId, "namespaceId");
   const resourceUrl = canonicalizeHttpUrl(input.resourceUrl, "resourceUrl");
@@ -106,22 +132,49 @@ export function createOAuthIdentity(input: OAuthIdentityInput): OAuthIdentityV1 
     : requireNonEmptyString(input.profile, "profile");
   const requestHeadersDigest = createRequestHeadersDigest(input.requestHeaders);
 
-  const keyMaterial = JSON.stringify({
-    identityVersion: OAUTH_IDENTITY_VERSION,
+  return createOAuthIdentityFromCanonicalFields({
     namespaceId,
     resourceUrl,
     clientMetadataUrl,
     profile,
     requestHeadersDigest,
   });
+}
 
-  return {
-    identityVersion: OAUTH_IDENTITY_VERSION,
+/** Parses an identity sent over the broker boundary and verifies its derived key. */
+export function parseOAuthIdentity(value: unknown): OAuthIdentityV1 {
+  const record = requireRecord(value, "OAuth identity");
+  if (record.identityVersion !== OAUTH_IDENTITY_VERSION) {
+    throw new TypeError(`identity.identityVersion must be ${OAUTH_IDENTITY_VERSION}.`);
+  }
+  const namespaceId = requireNonEmptyString(record.namespaceId, "identity.namespaceId");
+  const resourceUrl = canonicalizeHttpUrl(
+    requireNonEmptyString(record.resourceUrl, "identity.resourceUrl"),
+    "identity.resourceUrl",
+  );
+  const clientMetadataUrl = record.clientMetadataUrl === null
+    ? null
+    : canonicalizeClientMetadataUrl(
+      requireNonEmptyString(record.clientMetadataUrl, "identity.clientMetadataUrl"),
+    );
+  const profile = requireNonEmptyString(record.profile, "identity.profile");
+  const requestHeadersDigest = requireNonEmptyString(
+    record.requestHeadersDigest,
+    "identity.requestHeadersDigest",
+  );
+  if (!SHA256_PATTERN.test(requestHeadersDigest)) {
+    throw new TypeError("identity.requestHeadersDigest must be a lowercase SHA-256 digest.");
+  }
+
+  const identity = createOAuthIdentityFromCanonicalFields({
     namespaceId,
     resourceUrl,
     clientMetadataUrl,
     profile,
     requestHeadersDigest,
-    key: `oauth:v1:${sha256(keyMaterial)}`,
-  };
+  });
+  if (record.key !== identity.key) {
+    throw new TypeError("identity.key does not match the canonical OAuth identity fields.");
+  }
+  return identity;
 }

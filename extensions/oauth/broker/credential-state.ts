@@ -2,6 +2,8 @@ export interface OAuthTokenCredentials {
   readonly accessToken: string;
   readonly accessTokenExpiresAt: number;
   readonly refreshToken?: string;
+  /** Token endpoint 返回或 authorization commit 解析后的 canonical scope。 */
+  readonly scope?: string;
 }
 
 export interface OAuthTokenUpdate {
@@ -9,6 +11,8 @@ export interface OAuthTokenUpdate {
   readonly accessTokenExpiresAt: number;
   /** 未提供时，refresh flow 保留现有 refresh token；authorization flow 则不设置。 */
   readonly refreshToken?: string;
+  /** 未提供时，refresh flow 保留现有 scope；authorization flow 则不设置。 */
+  readonly scope?: string;
 }
 
 export interface OAuthCredentialState {
@@ -61,6 +65,9 @@ function assertTokenCredentials(tokens: OAuthTokenCredentials, fieldName = "toke
     typeof tokens.refreshToken !== "string" || tokens.refreshToken.length === 0
   )) {
     throw new TypeError(`${fieldName}.refreshToken must be a non-empty string when provided.`);
+  }
+  if (tokens.scope !== undefined) {
+    normalizeOAuthScope(tokens.scope, `${fieldName}.scope`);
   }
 }
 
@@ -154,9 +161,11 @@ export function applyOAuthRefresh(
   return {
     ...cloneOAuthCredentialState(state),
     tokens: {
-      accessToken: update.accessToken,
-      accessTokenExpiresAt: update.accessTokenExpiresAt,
+      ...update,
       refreshToken,
+      ...(update.scope === undefined && state.tokens.scope !== undefined
+        ? { scope: state.tokens.scope }
+        : {}),
     },
     credentialRevision: incrementCounter(state.credentialRevision, "credentialRevision"),
   };
@@ -176,8 +185,7 @@ export function applyOAuthAuthorization(
     ...cloneOAuthCredentialState(state),
     credentialRevision: incrementCounter(state.credentialRevision, "credentialRevision"),
     tokens: {
-      accessToken: update.accessToken,
-      accessTokenExpiresAt: update.accessTokenExpiresAt,
+      ...update,
       ...(update.refreshToken !== undefined ? { refreshToken: update.refreshToken } : {}),
     },
   };
@@ -201,6 +209,31 @@ export function clearOAuthTokens(
       authEpoch: incrementCounter(state.authEpoch, "authEpoch"),
     },
   };
+}
+
+export function normalizeOAuthScope(scope: string, fieldName = "scope"): string {
+  if (typeof scope !== "string") {
+    throw new TypeError(`${fieldName} must be a string.`);
+  }
+  const values = [...new Set(scope.split(/\s+/u).filter(Boolean))].sort();
+  if (values.length === 0) {
+    throw new TypeError(`${fieldName} must contain at least one scope value.`);
+  }
+  return values.join(" ");
+}
+
+export function oauthTokenSatisfiesScope(
+  tokens: Pick<OAuthTokenCredentials, "scope">,
+  requestedScope: string | undefined,
+): boolean {
+  if (requestedScope === undefined) {
+    return true;
+  }
+  if (tokens.scope === undefined) {
+    return false;
+  }
+  const granted = new Set(normalizeOAuthScope(tokens.scope).split(" "));
+  return normalizeOAuthScope(requestedScope).split(" ").every(value => granted.has(value));
 }
 
 function incrementCounter(value: number, fieldName: string): number {

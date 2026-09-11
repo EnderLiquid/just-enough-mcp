@@ -1,4 +1,5 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getOAuthBrokerDirectoryPath } from "./config/paths.js";
 import { getCurrentPluginConfig, installCurrentPluginConfig } from "./config/current-config.js";
 import {
   createOverviewBootstrapper,
@@ -9,7 +10,14 @@ import { loadPluginConfig } from "./config/plugin-config.js";
 import type { PluginConfigLoadResult } from "./modeling/types.js";
 import { createServerOverviewPrompt } from "./prompting/system-prompt.js";
 import { installFooterStatusSink, refreshFooterStatus, updateFooterStatus } from "./rendering/footer-status.js";
-import { installNotifierSink, notifyError, notifyInfo } from "./rendering/notifier.js";
+import { installNotifierSink, notifyError, notifyInfo, notifyWarning } from "./rendering/notifier.js";
+import { OAuthBrokerClient } from "./oauth/broker/client.js";
+import {
+  createOAuthBrokerBootstrapper,
+  type OAuthBrokerBootstrapper,
+} from "./oauth/broker/bootstrapper.js";
+import { createOAuthBrokerNamespace } from "./oauth/broker/namespace.js";
+import { DEFAULT_OAUTH_BROKER_PORT } from "./oauth/broker/protocol.js";
 import { installCurrentServerRegistry } from "./servers/current-registry.js";
 import { createServerRegistry, type ServerRegistry } from "./servers/registry.js";
 import { registerMcpServerTool } from "./tools/mcp-server-tool.js";
@@ -19,6 +27,12 @@ interface ActivePluginSession {
   config: PluginConfigLoadResult;
   registry: ServerRegistry;
   bootstrapper: OverviewBootstrapper;
+  oauthBroker?: {
+    client: OAuthBrokerClient;
+    launcher: OAuthBrokerBootstrapper;
+    launchAbortController: AbortController;
+    namespaceId: string;
+  };
   disposeConfig: () => void;
   disposeRegistry: () => void;
   disposeBootstrapper: () => void;
@@ -48,16 +62,56 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
     let disposeBootstrapper: (() => void) | undefined;
     let disposeConfig: (() => void) | undefined;
     let disposeRegistry: (() => void) | undefined;
+    let oauthBroker: ActivePluginSession["oauthBroker"];
 
     try {
       config = loadPluginConfig();
+      if (config.servers.some(server => server.definition.auth === "oauth")) {
+        const namespace = await createOAuthBrokerNamespace(getAgentDir());
+        const launchAbortController = new AbortController();
+        const client = new OAuthBrokerClient({
+          rootDir: getOAuthBrokerDirectoryPath(),
+          namespaceId: namespace.namespaceId,
+          configuredPort: DEFAULT_OAUTH_BROKER_PORT,
+        });
+        const launcher = createOAuthBrokerBootstrapper({
+          rootDir: getOAuthBrokerDirectoryPath(),
+          namespaceId: namespace.namespaceId,
+          requestedPort: DEFAULT_OAUTH_BROKER_PORT,
+          client,
+          signal: launchAbortController.signal,
+          onWarning: (message, error) => notifyWarning(
+            error instanceof Error ? `${message} ${error.message}` : message,
+          ),
+        });
+        oauthBroker = {
+          client,
+          launcher,
+          launchAbortController,
+          namespaceId: namespace.namespaceId,
+        };
+        void launcher.start().catch(error => {
+          if (!launchAbortController.signal.aborted) {
+            const message = error instanceof Error ? error.message : String(error);
+            notifyWarning(`OAuth broker could not be bootstrapped: ${message}`);
+          }
+        });
+      }
+
       bootstrapper = createOverviewBootstrapper({
         overviewDir: config.overviewDir,
         onCreated: serverName => notifyInfo(`Created MCP overview stub: ${serverName}`),
       });
       disposeBootstrapper = installCurrentOverviewBootstrapper(bootstrapper);
 
-      registry = createServerRegistry(config.servers);
+      registry = oauthBroker
+        ? createServerRegistry(config.servers, {
+            oauth: {
+              brokerClient: oauthBroker.client,
+              namespaceId: oauthBroker.namespaceId,
+            },
+          })
+        : createServerRegistry(config.servers);
       await registry.initialize();
 
       disposeConfig = installCurrentPluginConfig(config);
@@ -66,6 +120,7 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
         config,
         registry,
         bootstrapper,
+        ...(oauthBroker ? { oauthBroker } : {}),
         disposeConfig,
         disposeRegistry,
         disposeBootstrapper,
@@ -74,7 +129,10 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
       activeSession = undefined;
       disposeRegistry?.();
       disposeConfig?.();
+      oauthBroker?.launchAbortController.abort();
+      await oauthBroker?.client.freeze().catch(() => undefined);
       await registry?.closeAll().catch(() => undefined);
+      await oauthBroker?.client.close().catch(() => undefined);
       disposeBootstrapper?.();
       await bootstrapper?.close().catch(() => undefined);
 
@@ -119,8 +177,11 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
         session.disposeRegistry();
         session.disposeConfig();
         try {
+          session.oauthBroker?.launchAbortController.abort();
+          await session.oauthBroker?.client.freeze().catch(() => undefined);
           await session.registry.closeAll();
         } finally {
+          await session.oauthBroker?.client.close().catch(() => undefined);
           session.disposeBootstrapper();
           await session.bootstrapper.close();
         }

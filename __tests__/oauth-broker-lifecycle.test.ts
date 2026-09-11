@@ -369,6 +369,28 @@ describe("simplified standalone OAuth broker lifecycle", () => {
     await rawPresence(access, "release", sessionId, presenceId);
   });
 
+  it("broker hard crash 后 heartbeat 使 session client 进入 disconnected", async () => {
+    const rootDir = createRoot();
+    const port = await allocatePort();
+    const options = makeOptions(rootDir, "agent-dir:v1:" + "g".repeat(64), port, {
+      requestTimeoutMs: 100,
+      reconnectIntervalMs: 50,
+      presencePulseMs: 50,
+      presenceTtlMs: 250,
+      idleGraceMs: 500,
+    });
+    const result = await bootstrapOAuthBroker(options);
+    await result.client.ensureConnected({ timeoutMs: 2_000 });
+    const health = await result.client.health({ timeoutMs: 1_000 });
+    trackedPids.add(health.pid);
+
+    await terminateProcess(health.pid);
+    await waitFor(() => result.client.state === "disconnected", 3_000);
+
+    expect(result.client.currentPresenceId).toBeUndefined();
+    await result.client.close();
+  });
+
   it("旧 presence release 不能影响新 incarnation", async () => {
     const rootDir = createRoot();
     const port = await allocatePort();

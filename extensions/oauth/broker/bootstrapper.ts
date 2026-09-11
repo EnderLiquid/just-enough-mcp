@@ -51,6 +51,8 @@ export interface OAuthBrokerBootstrapOptions {
   readonly lockStaleMs?: number;
   readonly lockUpdateMs?: number;
   readonly brokerEntrypoint?: string;
+  /** Allows the composition root to own the session client while this launcher remains non-owning. */
+  readonly client?: OAuthBrokerClient;
   readonly signal?: AbortSignal;
   readonly onWarning?: (message: string, error?: unknown) => void;
 }
@@ -87,6 +89,7 @@ interface ResolvedBootstrapOptions {
   readonly lockStaleMs: number;
   readonly lockUpdateMs: number;
   readonly brokerEntrypoint: string;
+  readonly client?: OAuthBrokerClient;
   readonly signal?: AbortSignal;
   readonly onWarning?: (message: string, error?: unknown) => void;
 }
@@ -138,7 +141,7 @@ export async function bootstrapOAuthBroker(
     options.onWarning?.(diagnosticWarning(diagnostic));
   }
 
-  const client = new OAuthBrokerClient({
+  const client = options.client ?? new OAuthBrokerClient({
     rootDir: options.rootDir,
     namespaceId: options.namespaceId,
     configuredPort: options.requestedPort,
@@ -315,6 +318,7 @@ function resolveOptions(input: OAuthBrokerBootstrapOptions): ResolvedBootstrapOp
     lockStaleMs,
     lockUpdateMs,
     brokerEntrypoint: input.brokerEntrypoint ?? DEFAULT_BROKER_ENTRYPOINT,
+    client: input.client,
     signal: input.signal,
     onWarning: input.onWarning,
   };

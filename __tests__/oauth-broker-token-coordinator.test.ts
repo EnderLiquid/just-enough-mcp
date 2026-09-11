@@ -7,6 +7,7 @@ import {
 import {
   OAuthAuthorizationRequiredError,
   OAuthCredentialChangedError,
+  OAuthPermanentRefreshError,
   OAuthTokenCoordinator,
   type OAuthRefreshOperation,
 } from "../extensions/oauth/broker/token-coordinator.js";
@@ -59,14 +60,14 @@ describe("OAuth credential state", () => {
     const identity = makeIdentity();
     const refresh = vi.fn<OAuthRefreshOperation>();
     const coordinator = makeCoordinator(refresh);
-    coordinator.restore(identity, makeState("access-current", 2_000, "refresh-secret", 7, 2));
+    await coordinator.restore(identity, makeState("access-current", 2_000, "refresh-secret", 7, 2));
 
     await expect(coordinator.getAccessToken(identity, { minRemainingMs: 100 })).resolves.toEqual({
       accessToken: "access-current",
       accessTokenExpiresAt: 2_000,
       credentialRevision: 7,
     });
-    expect(coordinator.getCredentialView(identity)).toEqual({
+    expect(await coordinator.getCredentialView(identity)).toEqual({
       credentialRevision: 7,
       authEpoch: 2,
       hasAccessToken: true,
@@ -86,7 +87,7 @@ describe("OAuth credential state", () => {
       return gate.promise;
     });
     const coordinator = makeCoordinator(refresh);
-    coordinator.restore(identity, makeState("access-old", 0, "refresh-old", 4, 3));
+    await coordinator.restore(identity, makeState("access-old", 0, "refresh-old", 4, 3));
 
     const first = coordinator.getAccessToken(identity, { minRemainingMs: 100 });
     const second = coordinator.getAccessToken(makeIdentity(), { minRemainingMs: 100 });
@@ -117,7 +118,7 @@ describe("OAuth credential state", () => {
         credentialRevision: 5,
       },
     ]);
-    expect(coordinator.getCredentialView(identity)).toMatchObject({
+    expect(await coordinator.getCredentialView(identity)).toMatchObject({
       credentialRevision: 5,
       authEpoch: 3,
       hasRefreshToken: true,
@@ -141,7 +142,7 @@ describe("OAuth credential state", () => {
       };
     });
     coordinator = makeCoordinator(refresh);
-    coordinator.restore(identity, makeState("access-old", 0, "refresh-old", 1, 0));
+    await coordinator.restore(identity, makeState("access-old", 0, "refresh-old", 1, 0));
 
     await expect(coordinator.getAccessToken(identity, { minRemainingMs: 100 })).resolves.toEqual({
       accessToken: "access-new",
@@ -164,7 +165,7 @@ describe("OAuth credential state", () => {
       accessTokenExpiresAt: 4_000,
     }));
     const coordinator = makeCoordinator(refresh);
-    coordinator.restore(identity, makeState("access-rejected", 4_000, "refresh-old", 8, 1));
+    await coordinator.restore(identity, makeState("access-rejected", 4_000, "refresh-old", 8, 1));
 
     await expect(coordinator.getAccessToken(identity, {
       minRemainingMs: 100,
@@ -184,7 +185,7 @@ describe("OAuth credential state", () => {
       accessTokenExpiresAt: 4_000,
     }));
     const coordinator = makeCoordinator(refresh);
-    coordinator.restore(identity, makeState("access-new", 4_000, "refresh-new", 9, 1));
+    await coordinator.restore(identity, makeState("access-new", 4_000, "refresh-new", 9, 1));
 
     await expect(coordinator.getAccessToken(identity, {
       minRemainingMs: 100,
@@ -204,7 +205,7 @@ describe("OAuth credential state", () => {
       accessTokenExpiresAt: 4_000,
     }));
     const coordinator = makeCoordinator(refresh);
-    coordinator.restore(identity, createOAuthCredentialState({
+    await coordinator.restore(identity, createOAuthCredentialState({
       credentialRevision: 2,
       authEpoch: 1,
       tokens: {
@@ -228,10 +229,10 @@ describe("OAuth credential state", () => {
         accessTokenExpiresAt: 4_000,
       });
     const coordinator = makeCoordinator(refresh);
-    coordinator.restore(identity, makeState("access-old", 0, "refresh-old", 3, 2));
+    await coordinator.restore(identity, makeState("access-old", 0, "refresh-old", 3, 2));
 
     await expect(coordinator.getAccessToken(identity, { minRemainingMs: 100 })).rejects.toBe(failure);
-    expect(coordinator.getCredentialView(identity)).toMatchObject({
+    expect(await coordinator.getCredentialView(identity)).toMatchObject({
       credentialRevision: 3,
       authEpoch: 2,
       hasAccessToken: true,
@@ -257,14 +258,14 @@ describe("OAuth credential state", () => {
         accessTokenExpiresAt: 8_000,
       });
     const coordinator = makeCoordinator(refresh);
-    coordinator.restore(identity, makeState("access-old", 0, "refresh-keep", 3, 2));
+    await coordinator.restore(identity, makeState("access-old", 0, "refresh-keep", 3, 2));
 
     await expect(coordinator.getAccessToken(identity, { minRemainingMs: 100 })).resolves.toEqual({
       accessToken: "access-new",
       accessTokenExpiresAt: 4_000,
       credentialRevision: 4,
     });
-    expect(coordinator.getCredentialView(identity)).toMatchObject({
+    expect(await coordinator.getCredentialView(identity)).toMatchObject({
       credentialRevision: 4,
       hasRefreshToken: true,
     });
@@ -284,13 +285,57 @@ describe("OAuth credential state", () => {
     }));
   });
 
-  it("条件 logout 的 revision 不匹配时不清除更新后的 credential", () => {
+  it("永久 refresh 拒绝只清除当前 revision，并要求重新授权", async () => {
+    const identity = makeIdentity();
+    const coordinator = makeCoordinator(async () => {
+      throw new OAuthPermanentRefreshError("invalid_grant");
+    });
+    await coordinator.restore(identity, makeState("access-old", 0, "refresh-old", 4, 2));
+
+    await expect(coordinator.getAccessToken(identity, { minRemainingMs: 100 }))
+      .rejects.toBeInstanceOf(OAuthAuthorizationRequiredError);
+    expect(await coordinator.getCredentialView(identity)).toEqual({
+      credentialRevision: 5,
+      authEpoch: 3,
+      hasAccessToken: false,
+      hasRefreshToken: false,
+    });
+  });
+
+  it("迟到的永久 refresh 拒绝不能把新授权描述为 authorization-required", async () => {
+    const identity = makeIdentity();
+    const gate = deferred<OAuthTokenUpdate>();
+    const refresh = vi.fn<OAuthRefreshOperation>(async () => gate.promise);
+    const coordinator = makeCoordinator(refresh);
+    await coordinator.restore(identity, makeState("access-old", 0, "refresh-old", 4, 2));
+
+    const pending = coordinator.getAccessToken(identity, { minRemainingMs: 100 });
+    await vi.waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    const fence = await coordinator.beginAuthorization(identity);
+    expect(await coordinator.commitAuthorization(identity, fence, {
+      accessToken: "access-new",
+      accessTokenExpiresAt: 8_000,
+      refreshToken: "refresh-new",
+    })).toBe(true);
+    gate.reject(new OAuthPermanentRefreshError("stale invalid_grant"));
+
+    await expect(pending).rejects.toBeInstanceOf(OAuthCredentialChangedError);
+    expect(await coordinator.getCredentialView(identity)).toMatchObject({
+      credentialRevision: 5,
+      authEpoch: 3,
+      hasAccessToken: true,
+      hasRefreshToken: true,
+      accessTokenExpiresAt: 8_000,
+    });
+  });
+
+  it("条件 logout 的 revision 不匹配时不清除更新后的 credential", async () => {
     const identity = makeIdentity();
     const refresh = vi.fn<OAuthRefreshOperation>();
     const coordinator = makeCoordinator(refresh);
-    coordinator.restore(identity, makeState("access-new", 4_000, "refresh-new", 9, 2));
+    await coordinator.restore(identity, makeState("access-new", 4_000, "refresh-new", 9, 2));
 
-    expect(coordinator.logout(identity, 8)).toEqual({
+    expect(await coordinator.logout(identity, 8)).toEqual({
       applied: false,
       credential: {
         credentialRevision: 9,
@@ -300,9 +345,9 @@ describe("OAuth credential state", () => {
         hasRefreshToken: true,
       },
     });
-    expect(coordinator.getCredentialView(identity).hasAccessToken).toBe(true);
+    expect((await coordinator.getCredentialView(identity)).hasAccessToken).toBe(true);
 
-    expect(coordinator.logout(identity, 9)).toEqual({
+    expect(await coordinator.logout(identity, 9)).toEqual({
       applied: true,
       credential: {
         credentialRevision: 10,
@@ -321,11 +366,11 @@ describe("OAuth credential state", () => {
       refreshToken: "refresh-new",
     }));
     const coordinator = makeCoordinator(refresh);
-    coordinator.restore(identity, makeState("access-old", 0, "refresh-old", 4, 1));
+    await coordinator.restore(identity, makeState("access-old", 0, "refresh-old", 4, 1));
 
     await coordinator.getAccessToken(identity, { minRemainingMs: 100 });
-    expect(coordinator.logout(identity, 4)).toMatchObject({ applied: false });
-    expect(coordinator.getCredentialView(identity)).toMatchObject({
+    expect(await coordinator.logout(identity, 4)).toMatchObject({ applied: false });
+    expect(await coordinator.getCredentialView(identity)).toMatchObject({
       credentialRevision: 5,
       authEpoch: 1,
       hasAccessToken: true,
@@ -338,11 +383,11 @@ describe("OAuth credential state", () => {
     const gate = deferred<OAuthTokenUpdate>();
     const refresh = vi.fn<OAuthRefreshOperation>(async () => gate.promise);
     const coordinator = makeCoordinator(refresh);
-    coordinator.restore(identity, makeState("access-old", 0, "refresh-old", 6, 4));
+    await coordinator.restore(identity, makeState("access-old", 0, "refresh-old", 6, 4));
 
     const pending = coordinator.getAccessToken(identity, { minRemainingMs: 100 });
     await vi.waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
-    expect(coordinator.logout(identity, 6)).toMatchObject({ applied: true });
+    expect(await coordinator.logout(identity, 6)).toMatchObject({ applied: true });
 
     gate.resolve({
       accessToken: "access-stale",
@@ -350,7 +395,7 @@ describe("OAuth credential state", () => {
       refreshToken: "refresh-stale",
     });
     await expect(pending).rejects.toBeInstanceOf(OAuthCredentialChangedError);
-    expect(coordinator.getCredentialView(identity)).toMatchObject({
+    expect(await coordinator.getCredentialView(identity)).toMatchObject({
       credentialRevision: 7,
       authEpoch: 5,
       hasAccessToken: false,
@@ -366,13 +411,13 @@ describe("OAuth credential state", () => {
     const gate = deferred<OAuthTokenUpdate>();
     const refresh = vi.fn<OAuthRefreshOperation>(async () => gate.promise);
     const coordinator = makeCoordinator(refresh);
-    coordinator.restore(identity, makeState("access-old", 0, "refresh-old", 2, 5));
+    await coordinator.restore(identity, makeState("access-old", 0, "refresh-old", 2, 5));
 
     const pending = coordinator.getAccessToken(identity, { minRemainingMs: 100 });
     await vi.waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
-    const fence = coordinator.beginAuthorization(identity);
+    const fence = await coordinator.beginAuthorization(identity);
     expect(fence).toEqual({ credentialRevision: 2, authEpoch: 6 });
-    expect(coordinator.commitAuthorization(identity, fence, {
+    expect(await coordinator.commitAuthorization(identity, fence, {
       accessToken: "access-authorized",
       accessTokenExpiresAt: 8_000,
       refreshToken: "refresh-authorized",
@@ -380,7 +425,7 @@ describe("OAuth credential state", () => {
 
     gate.resolve({ accessToken: "access-stale", accessTokenExpiresAt: 9_000 });
     await expect(pending).rejects.toBeInstanceOf(OAuthCredentialChangedError);
-    expect(coordinator.getCredentialView(identity)).toMatchObject({
+    expect(await coordinator.getCredentialView(identity)).toMatchObject({
       credentialRevision: 3,
       authEpoch: 6,
       hasAccessToken: true,
@@ -389,25 +434,25 @@ describe("OAuth credential state", () => {
     });
   });
 
-  it("旧 authorization fence 不能提交到更新后的授权生命周期", () => {
+  it("旧 authorization fence 不能提交到更新后的授权生命周期", async () => {
     const identity = makeIdentity();
     const refresh = vi.fn<OAuthRefreshOperation>();
     const coordinator = makeCoordinator(refresh);
-    coordinator.restore(identity, makeState("access-old", 4_000, "refresh-old", 2, 5));
+    await coordinator.restore(identity, makeState("access-old", 4_000, "refresh-old", 2, 5));
 
-    const oldFence = coordinator.beginAuthorization(identity);
-    const newFence = coordinator.beginAuthorization(identity);
-    expect(coordinator.commitAuthorization(identity, oldFence, {
+    const oldFence = await coordinator.beginAuthorization(identity);
+    const newFence = await coordinator.beginAuthorization(identity);
+    expect(await coordinator.commitAuthorization(identity, oldFence, {
       accessToken: "access-stale",
       accessTokenExpiresAt: 6_000,
       refreshToken: "refresh-stale",
     })).toBe(false);
-    expect(coordinator.commitAuthorization(identity, newFence, {
+    expect(await coordinator.commitAuthorization(identity, newFence, {
       accessToken: "access-current",
       accessTokenExpiresAt: 7_000,
       refreshToken: "refresh-current",
     })).toBe(true);
-    expect(coordinator.getCredentialView(identity)).toMatchObject({
+    expect(await coordinator.getCredentialView(identity)).toMatchObject({
       credentialRevision: 3,
       authEpoch: 7,
       accessTokenExpiresAt: 7_000,

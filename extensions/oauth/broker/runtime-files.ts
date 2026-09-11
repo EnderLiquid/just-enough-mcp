@@ -9,12 +9,14 @@ import {
 } from "./protocol.ts";
 
 const ACCESS_FILE_NAME = "broker-access.json";
+const CREDENTIAL_FILE_NAME = "broker-credentials.json";
 const LOCK_TARGET_NAME = "broker-runtime";
 const LOCK_FILE_NAME = "broker-runtime.lock";
 
 export interface OAuthBrokerRuntimePaths {
   readonly rootDir: string;
   readonly accessPath: string;
+  readonly credentialPath: string;
   /** proper-lockfile locks this existing directory with the explicit lockfilePath. */
   readonly lockTargetPath: string;
   readonly lockPath: string;
@@ -27,6 +29,7 @@ export function getOAuthBrokerRuntimePaths(rootDir: string): OAuthBrokerRuntimeP
   return {
     rootDir,
     accessPath: join(rootDir, ACCESS_FILE_NAME),
+    credentialPath: join(rootDir, CREDENTIAL_FILE_NAME),
     lockTargetPath: join(rootDir, LOCK_TARGET_NAME),
     lockPath: join(rootDir, LOCK_FILE_NAME),
   };

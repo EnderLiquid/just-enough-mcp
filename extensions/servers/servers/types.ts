@@ -10,6 +10,8 @@ export interface McpServer {
   readonly config: ResolvedServerConfig;
 
   snapshot(): ServerSnapshot;
+  /** Optional async status source for runtimes whose authoritative state is external. */
+  status?(): Promise<ServerSnapshot>;
   connect(signal?: AbortSignal): Promise<ServerSnapshot>;
   getCatalog(signal?: AbortSignal): Promise<ServerCatalogResult>;
   callTool(

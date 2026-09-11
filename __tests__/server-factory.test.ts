@@ -1,9 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { OAuthBrokerClient } from "../extensions/oauth/broker/client.js";
 import type { ResolvedServerConfig, ServerDefinition } from "../extensions/modeling/types.js";
 import { createMcpServer } from "../extensions/servers/servers/factory.js";
 import { HttpPublicServer } from "../extensions/servers/servers/http-public-server.js";
 import { HttpTokenServer } from "../extensions/servers/servers/http-token-server.js";
 import { StdioPragmaticServer } from "../extensions/servers/servers/stdio-pragmatic-server.js";
+import { UnsupportedOauthServer } from "../extensions/servers/servers/unsupported-oauth-server.js";
 
 function makeConfig(definition: ServerDefinition, overrides: Partial<ResolvedServerConfig> = {}): ResolvedServerConfig {
   return {
@@ -46,6 +48,69 @@ describe("createMcpServer", () => {
     const server = createMcpServer(makeConfig(definition));
 
     expect(server).toBeInstanceOf(HttpTokenServer);
+  });
+
+  it("为 OAuth HTTP server 注入借用的 broker capability，并提供瞬时 status/logout", async () => {
+    const getOAuthStatus = vi.fn()
+      .mockResolvedValueOnce({ oauthState: "authorized", credentialRevision: 4 })
+      .mockRejectedValueOnce(new Error("broker unavailable"));
+    const logoutOAuth = vi.fn().mockResolvedValue({
+      applied: true,
+      oauthState: "authorization-required",
+      credentialRevision: 5,
+    });
+    const closeBroker = vi.fn();
+    const brokerClient = {
+      getOAuthStatus,
+      logoutOAuth,
+      close: closeBroker,
+    } as unknown as OAuthBrokerClient;
+    const config = makeConfig({
+      url: "https://example.com/mcp",
+      auth: "oauth",
+      headers: { "X-Tenant": "alpha" },
+      oauth: {
+        clientMetadataUrl: "https://client.example.test/metadata.json",
+        profile: "work",
+        scope: "write read",
+      },
+    });
+    const server = createMcpServer(config, {
+      oauth: {
+        brokerClient,
+        namespaceId: `agent-dir:v1:${"e".repeat(64)}`,
+      },
+    });
+
+    expect(server).toBeInstanceOf(UnsupportedOauthServer);
+    expect(server.snapshot()).toMatchObject({ oauthState: "unknown" });
+    await expect(server.status?.()).resolves.toMatchObject({ oauthState: "authorized" });
+    expect(getOAuthStatus).toHaveBeenCalledWith({
+      identity: expect.objectContaining({
+        namespaceId: `agent-dir:v1:${"e".repeat(64)}`,
+        resourceUrl: "https://example.com/mcp",
+        clientMetadataUrl: "https://client.example.test/metadata.json",
+        profile: "work",
+        requestHeadersDigest: expect.stringMatching(/^[0-9a-f]{64}$/),
+      }),
+      scope: "write read",
+    });
+
+    await expect(server.status?.()).resolves.toMatchObject({ oauthState: "unknown" });
+    expect(server.snapshot()).toMatchObject({ oauthState: "authorized" });
+    if (!server.logout) {
+      throw new Error("Expected OAuth server logout support.");
+    }
+    await expect(server.logout()).resolves.toMatchObject({
+      connectState: "disconnected",
+      oauthState: "authorization-required",
+    });
+    expect(logoutOAuth).toHaveBeenCalledWith({
+      identity: expect.objectContaining({ profile: "work" }),
+      scope: "write read",
+    });
+    await server.close();
+    expect(closeBroker).not.toHaveBeenCalled();
   });
 
   it("保留显式设置的 legacy transport 为主要依据", () => {

@@ -12,15 +12,21 @@ import {
   OAUTH_BROKER_REQUEST_ID_HEADER,
   OAUTH_BROKER_ROUTES,
   OAUTH_BROKER_SESSION_ID_HEADER,
+  parseOAuthBrokerLogoutRequest,
   parseOAuthBrokerPresenceIdentity,
   parseOAuthBrokerPresenceRequest,
   parseOAuthBrokerRequestEnvelope,
+  parseOAuthBrokerTokenRequest,
+  parseOAuthBrokerIdentityRequest,
   parseOAuthBrokerAccessDescriptor,
   oauthBrokerSecretsEqual,
   type OAuthBrokerAccessDescriptor,
   type OAuthBrokerHealth,
+  type OAuthBrokerIdentityRequest,
+  type OAuthBrokerLogoutRequest,
   type OAuthBrokerPresenceIdentity,
   type OAuthBrokerPresenceRequest,
+  type OAuthBrokerTokenRequest,
 } from "./protocol.ts";
 import {
   acquireOAuthBrokerLock,
@@ -31,6 +37,17 @@ import {
   ensureOAuthBrokerRuntimeDirectories,
   writeOAuthBrokerAccess,
 } from "./runtime-files.ts";
+import {
+  FileOAuthCredentialRepository,
+  type OAuthCredentialRepository,
+} from "./credential-repository.ts";
+import {
+  OAuthAuthorizationRequiredError,
+  OAuthCredentialChangedError,
+  OAuthRefreshUnavailableError,
+  OAuthTokenCoordinator,
+  type OAuthRefreshOperation,
+} from "./token-coordinator.ts";
 
 const MAX_REQUEST_BODY_BYTES = 64 * 1024;
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -43,6 +60,11 @@ export interface OAuthBrokerProcessOptions {
   readonly idleGraceMs: number;
   readonly lockStaleMs?: number;
   readonly lockUpdateMs?: number;
+  /** Protocol adapter injection point; production uses the explicit Phase 3 unavailable adapter. */
+  readonly refresh?: OAuthRefreshOperation;
+  /** Test-only repository injection. Standalone brokers use the file repository. */
+  readonly credentialRepository?: OAuthCredentialRepository;
+  readonly now?: () => number;
 }
 
 interface PresenceRecord {
@@ -89,6 +111,20 @@ export async function runOAuthBrokerProcess(
     }
     throw error;
   }
+
+  const repository = options.credentialRepository ?? await FileOAuthCredentialRepository
+    .open(options.rootDir, options.namespaceId)
+    .catch(async error => {
+      await lock.release().catch(() => undefined);
+      throw error;
+    });
+  const tokenCoordinator = new OAuthTokenCoordinator({
+    repository,
+    refresh: options.refresh ?? (async () => {
+      throw new OAuthRefreshUnavailableError();
+    }),
+    now: options.now,
+  });
 
   const instanceId = randomUUID();
   const secret = createOAuthBrokerSecret();
@@ -222,6 +258,8 @@ export async function runOAuthBrokerProcess(
     evaluateIdle();
   } catch (error) {
     await shutdown();
+    process.off("SIGTERM", signalHandler);
+    process.off("SIGINT", signalHandler);
     if (isErrorWithCode(error) && error.code === "EADDRINUSE") {
       throw new BrokerStartupError(
         "port-unavailable",
@@ -232,10 +270,15 @@ export async function runOAuthBrokerProcess(
     throw error;
   }
 
-  await new Promise<void>(resolveExit => {
-    server.once("close", resolveExit);
-  });
-  await shutdown();
+  try {
+    await new Promise<void>(resolveExit => {
+      server.once("close", resolveExit);
+    });
+    await shutdown();
+  } finally {
+    process.off("SIGTERM", signalHandler);
+    process.off("SIGINT", signalHandler);
+  }
 
   async function handleRequest(
     request: IncomingMessage,
@@ -309,41 +352,121 @@ export async function runOAuthBrokerProcess(
       return;
     }
 
-    if (pathname !== OAUTH_BROKER_ROUTES.presence || request.method !== "POST") {
+    if (pathname === OAUTH_BROKER_ROUTES.presence && request.method === "POST") {
+      pendingOperationCount += 1;
+      try {
+        const params = await parseRequestParams(
+          request,
+          requestId,
+          parseOAuthBrokerPresenceRequest,
+          response,
+        );
+        if (!params) {
+          return;
+        }
+        const result = applyPresence(params);
+        if (!result.ok) {
+          sendError(response, requestId, 409, result.code, result.message);
+          return;
+        }
+        sendSuccess(response, requestId, currentHealth());
+      } finally {
+        pendingOperationCount -= 1;
+        evaluateIdle();
+      }
+      return;
+    }
+
+    const isOAuthRoute = pathname === OAUTH_BROKER_ROUTES.oauthStatus
+      || pathname === OAUTH_BROKER_ROUTES.oauthToken
+      || pathname === OAUTH_BROKER_ROUTES.oauthLogout;
+    if (!isOAuthRoute || request.method !== "POST") {
       sendError(response, requestId, 404, "route-not-found", "OAuth broker route was not found.");
       return;
     }
 
     pendingOperationCount += 1;
     try {
-      let envelope;
-      try {
-        envelope = parseOAuthBrokerRequestEnvelope(
-          await readJsonBody(request),
-          parseOAuthBrokerPresenceRequest,
-        );
-        if (envelope.requestId !== requestId) {
-          throw new TypeError("requestId header and body do not match.");
-        }
-      } catch (error) {
-        sendError(
-          response,
+      if (pathname === OAUTH_BROKER_ROUTES.oauthStatus) {
+        const params = await parseRequestParams(
+          request,
           requestId,
-          400,
-          "invalid-request",
-          error instanceof Error ? error.message : "OAuth broker request is invalid.",
+          parseOAuthBrokerIdentityRequest,
+          response,
         );
+        if (!params || !validateIdentityNamespace(
+          params,
+          options.namespaceId,
+          requestId,
+          response,
+        )) {
+          return;
+        }
+        const credential = await tokenCoordinator.getCredentialView(params.identity);
+        sendSuccess(response, requestId, {
+          oauthState: credentialIsAuthorized(credential, params.scope, options.now?.() ?? Date.now())
+            ? "authorized"
+            : "authorization-required",
+          credentialRevision: credential.credentialRevision,
+        });
         return;
       }
 
-      const result = applyPresence(envelope.params);
-      if (!result.ok) {
-        sendError(response, requestId, 409, result.code, result.message);
-        evaluateIdle();
+      if (pathname === OAUTH_BROKER_ROUTES.oauthToken) {
+        const params = await parseRequestParams(
+          request,
+          requestId,
+          parseOAuthBrokerTokenRequest,
+          response,
+        );
+        if (!params || !validateIdentityNamespace(
+          params,
+          options.namespaceId,
+          requestId,
+          response,
+        )) {
+          return;
+        }
+        try {
+          const token = await tokenCoordinator.getAccessToken(params.identity, {
+            minRemainingMs: params.minRemainingMs,
+            rejectedCredentialRevision: params.rejectedCredentialRevision,
+            scope: params.scope,
+          });
+          sendSuccess(response, requestId, token);
+        } catch (error) {
+          sendOAuthOperationError(response, requestId, error);
+        }
         return;
       }
-      sendSuccess(response, requestId, currentHealth());
-      evaluateIdle();
+
+      const params = await parseRequestParams(
+        request,
+        requestId,
+        parseOAuthBrokerLogoutRequest,
+        response,
+      );
+      if (!params || !validateIdentityNamespace(
+        params,
+        options.namespaceId,
+        requestId,
+        response,
+      )) {
+        return;
+      }
+      const result = await tokenCoordinator.logout(
+        params.identity,
+        params.expectedCredentialRevision,
+      );
+      sendSuccess(response, requestId, {
+        applied: result.applied,
+        oauthState: credentialIsAuthorized(
+          result.credential,
+          params.scope,
+          options.now?.() ?? Date.now(),
+        ) ? "authorized" : "authorization-required",
+        credentialRevision: result.credential.credentialRevision,
+      });
     } finally {
       pendingOperationCount -= 1;
       evaluateIdle();
@@ -393,6 +516,96 @@ export async function runOAuthBrokerProcess(
     sessions.delete(request.sessionId);
     return { ok: true };
   }
+}
+
+async function parseRequestParams<T>(
+  request: IncomingMessage,
+  requestId: string,
+  parser: (value: unknown) => T,
+  response: ServerResponse,
+): Promise<T | undefined> {
+  try {
+    const envelope = parseOAuthBrokerRequestEnvelope(await readJsonBody(request), parser);
+    if (envelope.requestId !== requestId) {
+      throw new TypeError("requestId header and body do not match.");
+    }
+    return envelope.params;
+  } catch (error) {
+    sendError(
+      response,
+      requestId,
+      400,
+      "invalid-request",
+      error instanceof Error ? error.message : "OAuth broker request is invalid.",
+    );
+    return undefined;
+  }
+}
+
+function validateIdentityNamespace(
+  params: OAuthBrokerIdentityRequest | OAuthBrokerTokenRequest | OAuthBrokerLogoutRequest,
+  namespaceId: string,
+  requestId: string,
+  response: ServerResponse,
+): boolean {
+  if (params.identity.namespaceId === namespaceId) {
+    return true;
+  }
+  sendError(
+    response,
+    requestId,
+    400,
+    "identity-namespace-mismatch",
+    "OAuth identity namespace does not match this broker.",
+  );
+  return false;
+}
+
+function credentialIsAuthorized(
+  credential: {
+    readonly hasAccessToken: boolean;
+    readonly accessTokenExpiresAt?: number;
+    readonly hasRefreshToken: boolean;
+    readonly scope?: string;
+  },
+  requestedScope: string | undefined,
+  now: number,
+): boolean {
+  const scopeSatisfied = requestedScope === undefined
+    || (credential.scope !== undefined && requestedScope.split(" ").every(
+      value => credential.scope?.split(" ").includes(value) === true,
+    ));
+  if (!scopeSatisfied) {
+    return false;
+  }
+  return credential.hasRefreshToken
+    || (credential.hasAccessToken && (credential.accessTokenExpiresAt ?? 0) > now);
+}
+
+function sendOAuthOperationError(
+  response: ServerResponse,
+  requestId: string,
+  error: unknown,
+): void {
+  if (error instanceof OAuthAuthorizationRequiredError) {
+    sendError(response, requestId, 409, error.code, error.message);
+    return;
+  }
+  if (error instanceof OAuthCredentialChangedError) {
+    sendError(response, requestId, 409, error.code, error.message);
+    return;
+  }
+  if (error instanceof OAuthRefreshUnavailableError) {
+    sendError(response, requestId, 503, error.code, error.message);
+    return;
+  }
+  sendError(
+    response,
+    requestId,
+    500,
+    "credential-operation-failed",
+    "OAuth broker credential operation failed.",
+  );
 }
 
 function listen(

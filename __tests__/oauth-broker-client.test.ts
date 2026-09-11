@@ -248,6 +248,58 @@ describe("OAuthBrokerClient lifecycle concurrency", () => {
     await client.close();
   });
 
+  it("heartbeat timeout publishes disconnected and reconnects on the next interval", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-09T00:00:00.000Z"));
+    const { rootDir, access, health } = createFixture();
+    await writeOAuthBrokerAccess(rootDir, access);
+    let registerCalls = 0;
+    let pulseCalls = 0;
+    let releaseCalls = 0;
+    const reconnectRegisterStarted = deferred();
+    const fetch = async (_input: string | URL | globalThis.Request, init?: RequestInit): Promise<Response> => {
+      const action = parsePresenceAction(init);
+      if (action === "register") {
+        registerCalls += 1;
+        if (registerCalls === 2) {
+          reconnectRegisterStarted.resolve();
+        }
+      } else if (action === "pulse") {
+        pulseCalls += 1;
+        return new Promise<Response>(() => undefined);
+      } else if (action === "release") {
+        releaseCalls += 1;
+      }
+      return successResponse(init, health);
+    };
+    const client = new OAuthBrokerClient({
+      rootDir,
+      namespaceId: access.namespaceId,
+      configuredPort: access.port,
+      requestTimeoutMs: 50,
+      connectTimeoutMs: 500,
+      reconnectIntervalMs: 20,
+      presencePulseMs: 10,
+      fetch,
+    });
+
+    client.start();
+    await client.ensureConnected();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(pulseCalls).toBe(1);
+    await vi.advanceTimersByTimeAsync(50);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(client.state).toBe("disconnected");
+    expect(releaseCalls).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(40);
+    await reconnectRegisterStarted.promise;
+    await client.ensureConnected();
+    expect(registerCalls).toBe(2);
+    expect(client.state).toBe("connected");
+    await client.close();
+  });
+
   it("freeze invalidates a late register and releases its presence incarnation", async () => {
     const { rootDir, access, health } = createFixture();
     await writeOAuthBrokerAccess(rootDir, access);

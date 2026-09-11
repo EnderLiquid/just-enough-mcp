@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { makePluginConfig } from "./support/model-fixtures.js";
+import { makePluginConfig, makeResolvedServerConfig } from "./support/model-fixtures.js";
 
 const mocks = vi.hoisted(() => ({
   loadPluginConfig: vi.fn(),
@@ -28,6 +28,48 @@ const mocks = vi.hoisted(() => ({
   registerMcpServerTool: vi.fn(),
   registerMcpTool: vi.fn(),
   createServerOverviewPrompt: vi.fn(),
+  getAgentDir: vi.fn(),
+  getOAuthBrokerDirectoryPath: vi.fn(),
+  createOAuthBrokerNamespace: vi.fn(),
+  oauthBrokerClientConstructor: vi.fn(),
+  oauthBrokerClientFreeze: vi.fn(),
+  oauthBrokerClientClose: vi.fn(),
+  createOAuthBrokerBootstrapper: vi.fn(),
+  oauthBrokerLauncherStart: vi.fn(),
+  notifyWarning: vi.fn(),
+}));
+
+vi.mock("@earendil-works/pi-coding-agent", async importOriginal => ({
+  ...(await importOriginal<typeof import("@earendil-works/pi-coding-agent")>()),
+  getAgentDir: mocks.getAgentDir,
+}));
+
+vi.mock("../extensions/config/paths.js", () => ({
+  getOAuthBrokerDirectoryPath: mocks.getOAuthBrokerDirectoryPath,
+}));
+
+vi.mock("../extensions/oauth/broker/namespace.js", () => ({
+  createOAuthBrokerNamespace: mocks.createOAuthBrokerNamespace,
+}));
+
+vi.mock("../extensions/oauth/broker/client.js", () => ({
+  OAuthBrokerClient: class MockOAuthBrokerClient {
+    constructor(options: unknown) {
+      mocks.oauthBrokerClientConstructor(options);
+    }
+
+    freeze() {
+      return mocks.oauthBrokerClientFreeze();
+    }
+
+    close() {
+      return mocks.oauthBrokerClientClose();
+    }
+  },
+}));
+
+vi.mock("../extensions/oauth/broker/bootstrapper.js", () => ({
+  createOAuthBrokerBootstrapper: mocks.createOAuthBrokerBootstrapper,
 }));
 
 vi.mock("../extensions/config/plugin-config.js", () => ({
@@ -56,6 +98,7 @@ vi.mock("../extensions/rendering/notifier.js", () => ({
   installNotifierSink: mocks.installNotifierSink,
   notifyInfo: mocks.notifyInfo,
   notifyError: mocks.notifyError,
+  notifyWarning: mocks.notifyWarning,
 }));
 
 vi.mock("../extensions/rendering/footer-status.js", () => ({
@@ -115,6 +158,19 @@ function createContext() {
   };
 }
 
+function createOauthPluginConfig() {
+  return makePluginConfig({
+    servers: [makeResolvedServerConfig({
+      definition: {
+        url: "https://mcp.example.test/rpc",
+        auth: "oauth",
+        headers: { "x-tenant": "alpha" },
+        oauth: { profile: "work", scope: "read write" },
+      },
+    })],
+  });
+}
+
 function createDeferred<T = void>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
   const promise = new Promise<T>(resolvePromise => {
@@ -152,6 +208,18 @@ describe("justEnoughMcp root 生命周期", () => {
     mocks.installFooterStatusSink.mockReturnValue(mocks.disposeFooter);
     mocks.refreshFooterStatus.mockResolvedValue(undefined);
     mocks.createServerOverviewPrompt.mockReturnValue("server overviews");
+    mocks.getAgentDir.mockReturnValue("C:/Users/Admin/.pi/agent");
+    mocks.getOAuthBrokerDirectoryPath.mockReturnValue("C:/Users/Admin/.pi/agent/just-enough-mcp/oauth");
+    mocks.createOAuthBrokerNamespace.mockResolvedValue({
+      namespaceId: `agent-dir:v1:${"d".repeat(64)}`,
+      canonicalAgentDir: "C:/Users/Admin/.pi/agent",
+    });
+    mocks.oauthBrokerClientFreeze.mockResolvedValue(undefined);
+    mocks.oauthBrokerClientClose.mockResolvedValue(undefined);
+    mocks.oauthBrokerLauncherStart.mockResolvedValue({});
+    mocks.createOAuthBrokerBootstrapper.mockReturnValue({
+      start: mocks.oauthBrokerLauncherStart,
+    });
   });
 
   it("factory 阶段只注册工具和生命周期 handler", () => {
@@ -195,6 +263,69 @@ describe("justEnoughMcp root 生命周期", () => {
     onCreated("demo");
     expect(mocks.notifyInfo).toHaveBeenCalledWith("Created MCP overview stub: demo");
     expect(ctx.ui.notify).not.toHaveBeenCalled();
+  });
+
+  it("OAuth session 非阻塞启动一个 root-owned broker client，并把借用能力注入 Registry", async () => {
+    const config = createOauthPluginConfig();
+    const launchGate = createDeferred<unknown>();
+    mocks.loadPluginConfig.mockReturnValue(config);
+    mocks.oauthBrokerLauncherStart.mockReturnValueOnce(launchGate.promise);
+    const { pi, handler } = createFakePi();
+    justEnoughMcp(pi);
+
+    await handler("session_start")({}, createContext());
+
+    expect(mocks.getAgentDir).toHaveBeenCalledTimes(1);
+    expect(mocks.createOAuthBrokerNamespace).toHaveBeenCalledWith("C:/Users/Admin/.pi/agent");
+    expect(mocks.oauthBrokerClientConstructor).toHaveBeenCalledWith({
+      rootDir: "C:/Users/Admin/.pi/agent/just-enough-mcp/oauth",
+      namespaceId: `agent-dir:v1:${"d".repeat(64)}`,
+      configuredPort: 33_418,
+    });
+    const bootstrapOptions = mocks.createOAuthBrokerBootstrapper.mock.calls[0]?.[0];
+    expect(bootstrapOptions).toMatchObject({
+      rootDir: "C:/Users/Admin/.pi/agent/just-enough-mcp/oauth",
+      namespaceId: `agent-dir:v1:${"d".repeat(64)}`,
+      requestedPort: 33_418,
+      client: expect.any(Object),
+      signal: expect.any(AbortSignal),
+      onWarning: expect.any(Function),
+    });
+    expect(mocks.oauthBrokerLauncherStart).toHaveBeenCalledTimes(1);
+    expect(mocks.createServerRegistry).toHaveBeenCalledWith(config.servers, {
+      oauth: {
+        brokerClient: bootstrapOptions.client,
+        namespaceId: `agent-dir:v1:${"d".repeat(64)}`,
+      },
+    });
+    expect(mocks.installCurrentServerRegistry).toHaveBeenCalledTimes(1);
+
+    await handler("session_shutdown")();
+    expect(bootstrapOptions.signal.aborted).toBe(true);
+    expect(mocks.oauthBrokerClientFreeze).toHaveBeenCalledTimes(1);
+    expect(mocks.oauthBrokerClientClose).toHaveBeenCalledTimes(1);
+    expectCalledBefore(mocks.disposeRegistry, mocks.oauthBrokerClientFreeze);
+    expectCalledBefore(mocks.oauthBrokerClientFreeze, mocks.closeAll);
+    expectCalledBefore(mocks.closeAll, mocks.oauthBrokerClientClose);
+    launchGate.resolve({});
+  });
+
+  it("OAuth candidate 初始化失败时冻结并关闭 broker client，且不发布 Registry", async () => {
+    const config = createOauthPluginConfig();
+    mocks.loadPluginConfig.mockReturnValue(config);
+    mocks.initialize.mockRejectedValueOnce(new Error("oauth registry failed"));
+    const { pi, handler } = createFakePi();
+    justEnoughMcp(pi);
+
+    await handler("session_start")({}, createContext());
+
+    const signal = mocks.createOAuthBrokerBootstrapper.mock.calls[0]?.[0]?.signal as AbortSignal;
+    expect(signal.aborted).toBe(true);
+    expect(mocks.installCurrentServerRegistry).not.toHaveBeenCalled();
+    expect(mocks.oauthBrokerClientFreeze).toHaveBeenCalledTimes(1);
+    expect(mocks.oauthBrokerClientClose).toHaveBeenCalledTimes(1);
+    expectCalledBefore(mocks.oauthBrokerClientFreeze, mocks.closeAll);
+    expectCalledBefore(mocks.closeAll, mocks.oauthBrokerClientClose);
   });
 
   it("footer 初始化失败时保留已提交的 config 和 Registry", async () => {

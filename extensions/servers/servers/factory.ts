@@ -1,5 +1,8 @@
 import type { ResolvedServerConfig, ServerDefinition } from "../../modeling/types.js";
-import { UnsupportedOauthServer } from "./unsupported-oauth-server.js";
+import {
+  UnsupportedOauthServer,
+  type UnsupportedOauthServerDependencies,
+} from "./unsupported-oauth-server.js";
 import { HttpPublicServer } from "./http-public-server.js";
 import { HttpTokenServer } from "./http-token-server.js";
 import { hasOauthAuthentication, rejectOauthWithStdio } from "./oauth-config.js";
@@ -59,8 +62,13 @@ function resolveTransportHint(config: ResolvedServerConfig): "stdio" | "http" {
   throw new Error(`Server "${config.name}" must provide command or url, or set transport to "stdio" or "http".`);
 }
 
+export interface McpServerFactoryDependencies {
+  readonly oauth?: UnsupportedOauthServerDependencies;
+}
+
 export function createMcpServer(
   config: ResolvedServerConfig,
+  dependencies: McpServerFactoryDependencies = {},
 ): McpServer {
   switch (resolveTransportHint(config)) {
     case "stdio":
@@ -68,7 +76,7 @@ export function createMcpServer(
       return new StdioPragmaticServer(config);
     case "http":
       if (hasOauthAuthentication(config.definition, config.name)) {
-        return new UnsupportedOauthServer(config);
+        return new UnsupportedOauthServer(config, dependencies.oauth);
       }
       return hasStaticAuth(config.definition)
         ? new HttpTokenServer(config)

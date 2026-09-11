@@ -12,12 +12,21 @@ import {
   OAUTH_BROKER_SESSION_ID_HEADER,
   parseOAuthBrokerAccessDescriptor,
   parseOAuthBrokerHealth,
+  parseOAuthBrokerLogoutResult,
   parseOAuthBrokerResponseEnvelope,
+  parseOAuthBrokerStatusResult,
+  parseOAuthBrokerTokenResult,
   type OAuthBrokerAccessDescriptor,
   type OAuthBrokerHealth,
+  type OAuthBrokerIdentityRequest,
+  type OAuthBrokerLogoutRequest,
+  type OAuthBrokerLogoutResult,
   type OAuthBrokerPresenceAction,
   type OAuthBrokerPresenceIdentity,
   type OAuthBrokerPresenceRequest,
+  type OAuthBrokerStatusResult,
+  type OAuthBrokerTokenRequest,
+  type OAuthBrokerTokenResult,
 } from "./protocol.ts";
 import { readOAuthBrokerAccess } from "./runtime-files.ts";
 
@@ -190,6 +199,42 @@ export class OAuthBrokerClient {
       timeoutMs: options.timeoutMs ?? this.requestTimeoutMs,
       fetch: this.fetchImplementation,
     });
+  }
+
+  async getOAuthStatus(
+    params: OAuthBrokerIdentityRequest,
+    options: OAuthBrokerRequestOptions = {},
+  ): Promise<OAuthBrokerStatusResult> {
+    const result = await this.request<unknown>(OAUTH_BROKER_ROUTES.oauthStatus, {
+      method: "POST",
+      params,
+      ...options,
+    });
+    return parseOAuthBrokerStatusResult(result);
+  }
+
+  async getOAuthToken(
+    params: OAuthBrokerTokenRequest,
+    options: OAuthBrokerRequestOptions = {},
+  ): Promise<OAuthBrokerTokenResult> {
+    const result = await this.request<unknown>(OAUTH_BROKER_ROUTES.oauthToken, {
+      method: "POST",
+      params,
+      ...options,
+    });
+    return parseOAuthBrokerTokenResult(result);
+  }
+
+  async logoutOAuth(
+    params: OAuthBrokerLogoutRequest,
+    options: OAuthBrokerRequestOptions = {},
+  ): Promise<OAuthBrokerLogoutResult> {
+    const result = await this.request<unknown>(OAUTH_BROKER_ROUTES.oauthLogout, {
+      method: "POST",
+      params,
+      ...options,
+    });
+    return parseOAuthBrokerLogoutResult(result);
   }
 
   /** Sends a future broker API request and counts a successful response as liveness. */

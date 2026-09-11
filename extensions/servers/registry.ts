@@ -7,7 +7,10 @@ import type {
 import { AsyncReadWriteLock } from "../concurrency/async-read-write-lock.js";
 import { pluralize } from "../formatting/english.js";
 import { notifyWarning } from "../rendering/notifier.js";
-import { createMcpServer } from "./servers/factory.js";
+import {
+  createMcpServer,
+  type McpServerFactoryDependencies,
+} from "./servers/factory.js";
 import { supportsOauthControls, type McpServer } from "./servers/types.js";
 
 export interface ServerRegistryStatus {
@@ -40,10 +43,11 @@ function isConnectedSnapshot(snapshot: ServerSnapshot): boolean {
 
 export function createServerRegistry(
   serverConfigs: readonly ResolvedServerConfig[],
+  dependencies: McpServerFactoryDependencies = {},
 ): ServerRegistry {
   const servers = new Map(serverConfigs.map(config => [
     config.name,
-    createMcpServer(config),
+    createMcpServer(config, dependencies),
   ]));
   const lifecycleLock = new AsyncReadWriteLock();
   let initializationPromise: Promise<void> | undefined;
@@ -84,10 +88,11 @@ export function createServerRegistry(
     },
 
     async getStatus() {
-      return lifecycleLock.withRead(() => {
-        const snapshots = [...servers.values()]
-            .map(server => server.snapshot())
-            .sort((left, right) => left.name.localeCompare(right.name));
+      return lifecycleLock.withRead(async () => {
+        const snapshots = await Promise.all(
+          [...servers.values()].map(server => server.status?.() ?? server.snapshot()),
+        );
+        snapshots.sort((left, right) => left.name.localeCompare(right.name));
         return {
           servers: snapshots,
           connectedCount: snapshots.filter(isConnectedSnapshot).length,
@@ -97,8 +102,9 @@ export function createServerRegistry(
     },
 
     async getServerSnapshot(name) {
-      return lifecycleLock.withRead(() => {
-        return servers.get(name)?.snapshot();
+      return lifecycleLock.withRead(async () => {
+        const server = servers.get(name);
+        return server ? await (server.status?.() ?? server.snapshot()) : undefined;
       });
     },
 
