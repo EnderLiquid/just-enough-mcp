@@ -44,10 +44,16 @@ import {
 import {
   OAuthAuthorizationRequiredError,
   OAuthCredentialChangedError,
-  OAuthRefreshUnavailableError,
+  OAuthScopeNotGrantedError,
+  OAuthTemporaryProtocolError,
   OAuthTokenCoordinator,
   type OAuthRefreshOperation,
 } from "./token-coordinator.ts";
+import {
+  createOAuthProtocolAdapter,
+  createOAuthRefreshOperation,
+} from "./oauth-protocol.ts";
+import type { FetchLike } from "@modelcontextprotocol/sdk/shared/transport.js";
 
 const MAX_REQUEST_BODY_BYTES = 64 * 1024;
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -60,8 +66,11 @@ export interface OAuthBrokerProcessOptions {
   readonly idleGraceMs: number;
   readonly lockStaleMs?: number;
   readonly lockUpdateMs?: number;
-  /** Protocol adapter injection point; production uses the explicit Phase 3 unavailable adapter. */
+  /** Test-only refresh injection; production uses the SDK-backed protocol adapter. */
   readonly refresh?: OAuthRefreshOperation;
+  /** Test-only fetch injection for the SDK-backed protocol adapter. */
+  readonly fetchFn?: FetchLike;
+  readonly protocolTimeoutMs?: number;
   /** Test-only repository injection. Standalone brokers use the file repository. */
   readonly credentialRepository?: OAuthCredentialRepository;
   readonly now?: () => number;
@@ -118,10 +127,26 @@ export async function runOAuthBrokerProcess(
       await lock.release().catch(() => undefined);
       throw error;
     });
+  const protocolAdapter = createOAuthProtocolAdapter({
+    ...(options.fetchFn ? { fetchFn: options.fetchFn } : {}),
+    ...(options.protocolTimeoutMs === undefined
+      ? {}
+      : { timeoutMs: options.protocolTimeoutMs }),
+  });
   const tokenCoordinator = new OAuthTokenCoordinator({
     repository,
-    refresh: options.refresh ?? (async () => {
-      throw new OAuthRefreshUnavailableError();
+    refresh: options.refresh ?? createOAuthRefreshOperation({
+      adapter: protocolAdapter,
+      ...(options.now ? { now: options.now } : {}),
+    }),
+    discover: request => protocolAdapter.discover(request.identity.resourceUrl),
+    register: request => protocolAdapter.register({
+      authorizationServerUrl: request.authorizationServerUrl,
+      clientMetadata: request.clientMetadata,
+      ...(request.authorizationServerMetadata
+        ? { metadata: request.authorizationServerMetadata }
+        : {}),
+      ...(request.scope === undefined ? {} : { scope: request.scope }),
     }),
     now: options.now,
   });
@@ -460,6 +485,7 @@ export async function runOAuthBrokerProcess(
       );
       sendSuccess(response, requestId, {
         applied: result.applied,
+        ...(result.reason === undefined ? {} : { reason: result.reason }),
         oauthState: credentialIsAuthorized(
           result.credential,
           params.scope,
@@ -587,15 +613,13 @@ function sendOAuthOperationError(
   requestId: string,
   error: unknown,
 ): void {
-  if (error instanceof OAuthAuthorizationRequiredError) {
+  if (error instanceof OAuthAuthorizationRequiredError
+    || error instanceof OAuthCredentialChangedError
+    || error instanceof OAuthScopeNotGrantedError) {
     sendError(response, requestId, 409, error.code, error.message);
     return;
   }
-  if (error instanceof OAuthCredentialChangedError) {
-    sendError(response, requestId, 409, error.code, error.message);
-    return;
-  }
-  if (error instanceof OAuthRefreshUnavailableError) {
+  if (error instanceof OAuthTemporaryProtocolError) {
     sendError(response, requestId, 503, error.code, error.message);
     return;
   }

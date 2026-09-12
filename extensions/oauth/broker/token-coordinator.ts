@@ -1,3 +1,11 @@
+import type {
+  AuthorizationServerMetadata,
+  OAuthClientMetadata,
+} from "@modelcontextprotocol/sdk/shared/auth.js";
+import type {
+  OAuthClientRegistration,
+  OAuthDiscoveryRecord,
+} from "./credential-record.ts";
 import type { OAuthIdentity } from "./identity.ts";
 import {
   applyOAuthAuthorization,
@@ -19,13 +27,26 @@ import {
   InMemoryOAuthCredentialRepository,
   type OAuthCredentialRepository,
 } from "./credential-repository.ts";
+import type {
+  OAuthDiscoveryOperation,
+  OAuthRegistrationOperation,
+} from "./oauth-protocol-types.ts";
+
+/** broker 侧额外 reserve 的 access token 剩余寿命；与调用方 minRemainingMs 相加。 */
+export const OAUTH_TOKEN_SAFETY_WINDOW_MS = 30_000;
+
+/** discovery 缓存 TTL；refresh/token 路径过期后重新 discovery，显式 authorize 总是实时获取。 */
+export const OAUTH_DISCOVERY_TTL_MS = 24 * 60 * 60 * 1_000;
 
 export interface OAuthRefreshRequest {
   readonly identity: OAuthIdentity;
   readonly refreshToken: string;
   readonly credentialRevision: number;
   readonly authEpoch: number;
-  readonly scope?: string;
+  /** DCR 注册记录；Phase 5 authorize 之前的旧记录可能缺失。 */
+  readonly registration?: OAuthClientRegistration;
+  /** 与 registration 对应 AS 一致的 discovery metadata。 */
+  readonly authorizationServerMetadata?: AuthorizationServerMetadata;
 }
 
 export type OAuthRefreshOperation = (
@@ -33,7 +54,7 @@ export type OAuthRefreshOperation = (
 ) => Promise<OAuthTokenUpdate>;
 
 export interface OAuthTokenAcquisitionOptions {
-  /** 要求返回的 access token 至少还剩多少毫秒。 */
+  /** 要求返回的 access token 至少还剩多少毫秒；broker 会再 reserve safety window。 */
   readonly minRemainingMs?: number;
   /** 该 revision 已经被 resource server 拒绝；相同 revision 不得直接再次发放。 */
   readonly rejectedCredentialRevision?: number;
@@ -45,8 +66,12 @@ export interface OAuthTokenAcquisitionOptions {
 
 export interface OAuthTokenCoordinatorOptions {
   readonly refresh: OAuthRefreshOperation;
+  readonly discover?: OAuthDiscoveryOperation;
+  readonly register?: OAuthRegistrationOperation;
   readonly repository?: OAuthCredentialRepository;
   readonly now?: () => number;
+  readonly tokenSafetyWindowMs?: number;
+  readonly discoveryTtlMs?: number;
 }
 
 export interface OAuthCredentialView {
@@ -58,20 +83,32 @@ export interface OAuthCredentialView {
   readonly scope?: string;
 }
 
+export type OAuthLogoutRefusalReason = "revision-superseded" | "refresh-in-flight";
+
 export interface OAuthLogoutResult {
   readonly applied: boolean;
+  /** 仅当 applied 为 false 时给出拒绝原因。 */
+  readonly reason?: OAuthLogoutRefusalReason;
   readonly credential: OAuthCredentialView;
 }
 
+export type OAuthAuthorizationRequiredReason = "credential-rejected" | "client-rejected";
+
 export class OAuthAuthorizationRequiredError extends Error {
   readonly code = "authorization-required" as const;
+  readonly reason?: OAuthAuthorizationRequiredReason;
 
-  constructor(options: { cause?: unknown } = {}) {
+  constructor(
+    options: { cause?: unknown; reason?: OAuthAuthorizationRequiredReason } = {},
+  ) {
     super(
       "OAuth authorization is required.",
       options.cause === undefined ? undefined : { cause: options.cause },
     );
     this.name = "OAuthAuthorizationRequiredError";
+    if (options.reason !== undefined) {
+      this.reason = options.reason;
+    }
   }
 }
 
@@ -94,33 +131,68 @@ export class OAuthPermanentRefreshError extends Error {
   }
 }
 
-export class OAuthRefreshUnavailableError extends Error {
-  readonly code = "refresh-unavailable" as const;
+/** Marks an AS response that permanently invalidates the client registration. */
+export class OAuthClientRejectedError extends Error {
+  readonly code = "client-rejected" as const;
 
-  constructor() {
-    super("OAuth refresh protocol is not available in this broker phase.");
-    this.name = "OAuthRefreshUnavailableError";
+  constructor(message = "OAuth client registration was rejected.", options: { cause?: unknown } = {}) {
+    super(message, options.cause === undefined ? undefined : { cause: options.cause });
+    this.name = "OAuthClientRejectedError";
+  }
+}
+
+/** 无法确认错误的协议失败：网络、timeout、5xx、无法解析的响应；不修改 credential。 */
+export class OAuthTemporaryProtocolError extends Error {
+  readonly code = "temporary-protocol-error" as const;
+
+  constructor(
+    message = "OAuth protocol operation failed temporarily.",
+    options: { cause?: unknown } = {},
+  ) {
+    super(message, options.cause === undefined ? undefined : { cause: options.cause });
+    this.name = "OAuthTemporaryProtocolError";
+  }
+}
+
+/** 请求的 scope 超出当前授权；broker 不发起 scope 扩张型 refresh。 */
+export class OAuthScopeNotGrantedError extends Error {
+  readonly code = "scope-not-granted" as const;
+  readonly scope: string;
+
+  constructor(scope: string) {
+    super("Requested OAuth scope is not granted by the current authorization.");
+    this.name = "OAuthScopeNotGrantedError";
+    this.scope = scope;
   }
 }
 
 /**
  * Broker credential coordinator. Repository commits are durable-before-visible and
- * refresh work stays outside the repository mutation queue. Revision + epoch CAS
- * prevents late refresh/authorization results from overwriting logout or newer grants.
+ * refresh/discovery/registration work stays outside the repository mutation queue.
+ * Revision + epoch CAS prevents late refresh/authorization results from overwriting
+ * logout or newer grants.
  */
 export class OAuthTokenCoordinator {
   private readonly refreshFlights = new Map<string, Promise<OAuthTokenSnapshot>>();
+  private readonly discoveryFlights = new Map<string, Promise<OAuthDiscoveryRecord | undefined>>();
+  private readonly registrationFlights = new Map<string, Promise<OAuthClientRegistration>>();
   private readonly options: OAuthTokenCoordinatorOptions;
   private readonly repository: OAuthCredentialRepository;
   private readonly now: () => number;
+  private readonly tokenSafetyWindowMs: number;
+  private readonly discoveryTtlMs: number;
 
   constructor(options: OAuthTokenCoordinatorOptions) {
     this.options = options;
     this.repository = options.repository ?? new InMemoryOAuthCredentialRepository();
     this.now = options.now ?? (() => Date.now());
+    this.tokenSafetyWindowMs = options.tokenSafetyWindowMs ?? OAUTH_TOKEN_SAFETY_WINDOW_MS;
+    this.discoveryTtlMs = options.discoveryTtlMs ?? OAUTH_DISCOVERY_TTL_MS;
+    assertNonNegativeFinite(this.tokenSafetyWindowMs, "tokenSafetyWindowMs");
+    assertNonNegativeFinite(this.discoveryTtlMs, "discoveryTtlMs");
   }
 
-  /** Seeds/restores one record. Production brokers normally load it through the repository. */
+  /** Seeds/restores one authorization record. Production brokers normally load it through the repository. */
   async restore(identity: OAuthIdentity, state: OAuthCredentialState): Promise<void> {
     const restored = cloneOAuthCredentialState(state);
     await this.repository.mutate(identity, () => ({ state: restored, result: undefined }));
@@ -179,23 +251,81 @@ export class OAuthTokenCoordinator {
     assertFinite(now, "now");
 
     if (token && !rejectedCurrentRevision
-      && token.accessTokenExpiresAt - now >= minRemainingMs
+      && token.accessTokenExpiresAt - now >= minRemainingMs + this.tokenSafetyWindowMs
       && state.tokens && oauthTokenSatisfiesScope(state.tokens, scope)) {
       return token;
+    }
+
+    // 请求 scope 超出已存授权时不得尝试 refresh：RFC 6749 refresh 不能扩张 scope，
+    // 只有显式 authorize 才能扩大授权。
+    if (state.tokens && scope !== undefined && !oauthTokenSatisfiesScope(state.tokens, scope)) {
+      throw new OAuthScopeNotGrantedError(scope);
     }
 
     if (!state.tokens?.refreshToken) {
       throw new OAuthAuthorizationRequiredError();
     }
 
-    const refreshed = await this.refresh(identity, scope);
+    const refreshed = await this.refresh(identity);
     const refreshedState = await this.repository.read(identity);
     if (!refreshedState.tokens
-      || refreshedState.credentialRevision !== refreshed.credentialRevision
-      || !oauthTokenSatisfiesScope(refreshedState.tokens, scope)) {
+      || refreshedState.credentialRevision !== refreshed.credentialRevision) {
       throw new OAuthAuthorizationRequiredError();
     }
+    if (scope !== undefined && !oauthTokenSatisfiesScope(refreshedState.tokens, scope)) {
+      throw new OAuthScopeNotGrantedError(scope);
+    }
     return refreshed;
+  }
+
+  /**
+   * 解析（或从缓存读取）identity 的 discovery 记录。缓存过期时重新获取；
+   * 获取失败但有缓存时沿用缓存（stale-if-error）；两者都不可用时抛错。
+   */
+  async ensureDiscovery(
+    identity: OAuthIdentity,
+    options: { force?: boolean } = {},
+  ): Promise<OAuthDiscoveryRecord | undefined> {
+    const key = identity.key;
+    const existing = this.discoveryFlights.get(key);
+    if (existing) {
+      return existing;
+    }
+    const flight = Promise.resolve().then(() => this.runDiscovery(identity, options.force === true));
+    this.discoveryFlights.set(key, flight);
+    flight.then(
+      () => this.clearFlight(this.discoveryFlights, key, flight),
+      () => this.clearFlight(this.discoveryFlights, key, flight),
+    );
+    return flight;
+  }
+
+  /**
+   * 确保 identity 有 client registration；DCR 按 identity single-flight。
+   * 显式 authorize 传入 force 时会先强制刷新 discovery。
+   */
+  async ensureRegistration(
+    identity: OAuthIdentity,
+    clientMetadata: OAuthClientMetadata,
+    options: { force?: boolean; scope?: string } = {},
+  ): Promise<OAuthClientRegistration> {
+    const key = identity.key;
+    const existing = this.registrationFlights.get(key);
+    if (existing) {
+      return existing;
+    }
+    const flight = Promise.resolve().then(() => this.runRegistration(
+      identity,
+      clientMetadata,
+      options.force === true,
+      options.scope,
+    ));
+    this.registrationFlights.set(key, flight);
+    flight.then(
+      () => this.clearFlight(this.registrationFlights, key, flight),
+      () => this.clearFlight(this.registrationFlights, key, flight),
+    );
+    return flight;
   }
 
   async logout(
@@ -206,20 +336,34 @@ export class OAuthTokenCoordinator {
       assertNonNegativeSafeInteger(expectedCredentialRevision, "expectedCredentialRevision");
     }
 
-    return this.repository.mutate(identity, current => {
-      const result = clearOAuthTokens(current, expectedCredentialRevision);
+    return this.repository.mutateRecord<OAuthLogoutResult>(identity, current => {
+      const currentView = this.toCredentialView(current.authorization);
+      if (expectedCredentialRevision !== undefined
+        && current.authorization.credentialRevision !== expectedCredentialRevision) {
+        return {
+          record: current,
+          result: { applied: false, reason: "revision-superseded", credential: currentView },
+          changed: false,
+        };
+      }
+      if (expectedCredentialRevision !== undefined && this.refreshFlights.has(identity.key)) {
+        return {
+          record: current,
+          result: { applied: false, reason: "refresh-in-flight", credential: currentView },
+          changed: false,
+        };
+      }
+
+      const result = clearOAuthTokens(current.authorization, expectedCredentialRevision);
       return {
-        state: result.state,
-        result: {
-          applied: result.applied,
-          credential: this.toCredentialView(result.state),
-        },
+        record: { ...current, authorization: result.state },
+        result: { applied: result.applied, credential: this.toCredentialView(result.state) },
         changed: result.applied,
       };
     });
   }
 
-  private refresh(identity: OAuthIdentity, scope: string | undefined): Promise<OAuthTokenSnapshot> {
+  private refresh(identity: OAuthIdentity): Promise<OAuthTokenSnapshot> {
     const key = identity.key;
     const existing = this.refreshFlights.get(key);
     if (existing) {
@@ -227,26 +371,30 @@ export class OAuthTokenCoordinator {
     }
 
     // Publish the flight before invoking user/OAuth code so synchronous re-entry joins it.
-    const flight = Promise.resolve().then(() => this.runRefresh(identity, scope));
+    const flight = Promise.resolve().then(() => this.runRefresh(identity));
     this.refreshFlights.set(key, flight);
     flight.then(
-      () => this.clearRefreshFlight(key, flight),
-      () => this.clearRefreshFlight(key, flight),
+      () => this.clearFlight(this.refreshFlights, key, flight),
+      () => this.clearFlight(this.refreshFlights, key, flight),
     );
     return flight;
   }
 
-  private async runRefresh(
-    identity: OAuthIdentity,
-    scope: string | undefined,
-  ): Promise<OAuthTokenSnapshot> {
-    const state = await this.repository.read(identity);
-    const refreshToken = state.tokens?.refreshToken;
+  private async runRefresh(identity: OAuthIdentity): Promise<OAuthTokenSnapshot> {
+    const record = await this.repository.readRecord(identity);
+    const refreshToken = record.authorization.tokens?.refreshToken;
     if (!refreshToken) {
       throw new OAuthAuthorizationRequiredError();
     }
 
-    const fence = captureOAuthCredentialFence(state);
+    const fence = captureOAuthCredentialFence(record.authorization);
+    const discovery = await this.ensureDiscovery(identity);
+    const registration = record.registration;
+    const metadata = discovery && registration
+      && discovery.authorizationServerUrl === registration.authorizationServerUrl
+      ? discovery.authorizationServerMetadata
+      : undefined;
+
     let update: OAuthTokenUpdate;
     try {
       update = await this.options.refresh({
@@ -254,23 +402,23 @@ export class OAuthTokenCoordinator {
         refreshToken,
         credentialRevision: fence.credentialRevision,
         authEpoch: fence.authEpoch,
-        ...(scope === undefined ? {} : { scope }),
+        ...(registration ? { registration } : {}),
+        ...(metadata ? { authorizationServerMetadata: metadata } : {}),
       });
     } catch (error) {
-      if (!(error instanceof OAuthPermanentRefreshError)) {
-        throw error;
-      }
-      const cleared = await this.repository.mutate(identity, current => {
-        if (!isOAuthCredentialFenceCurrent(current, fence)) {
-          return { state: current, result: false, changed: false };
+      if (error instanceof OAuthPermanentRefreshError) {
+        if (!await this.clearCredentials(identity, fence, "credential")) {
+          throw new OAuthCredentialChangedError();
         }
-        const result = clearOAuthTokens(current, fence.credentialRevision);
-        return { state: result.state, result: result.applied, changed: result.applied };
-      });
-      if (!cleared) {
-        throw new OAuthCredentialChangedError();
+        throw new OAuthAuthorizationRequiredError({ cause: error, reason: "credential-rejected" });
       }
-      throw new OAuthAuthorizationRequiredError({ cause: error });
+      if (error instanceof OAuthClientRejectedError) {
+        if (!await this.clearCredentials(identity, fence, "client")) {
+          throw new OAuthCredentialChangedError();
+        }
+        throw new OAuthAuthorizationRequiredError({ cause: error, reason: "client-rejected" });
+      }
+      throw error;
     }
 
     const canonicalUpdate = canonicalizeUpdate(update);
@@ -287,9 +435,106 @@ export class OAuthTokenCoordinator {
     });
   }
 
-  private clearRefreshFlight(key: string, flight: Promise<OAuthTokenSnapshot>): void {
-    if (this.refreshFlights.get(key) === flight) {
-      this.refreshFlights.delete(key);
+  private async runDiscovery(
+    identity: OAuthIdentity,
+    force: boolean,
+  ): Promise<OAuthDiscoveryRecord | undefined> {
+    const record = await this.repository.readRecord(identity);
+    const cached = record.discovery;
+    if (!force && cached && this.now() - cached.fetchedAt <= this.discoveryTtlMs) {
+      return cached;
+    }
+    const operation = this.options.discover;
+    if (!operation) {
+      return cached;
+    }
+
+    try {
+      const result = await operation({ identity });
+      const next: OAuthDiscoveryRecord = {
+        authorizationServerUrl: result.authorizationServerUrl,
+        fetchedAt: this.now(),
+        ...(result.authorizationServerMetadata
+          ? { authorizationServerMetadata: result.authorizationServerMetadata }
+          : {}),
+        ...(result.resourceMetadata ? { resourceMetadata: result.resourceMetadata } : {}),
+      };
+      return await this.repository.mutateRecord(identity, current => ({
+        record: { ...current, discovery: next },
+        result: next,
+      }));
+    } catch (error) {
+      if (cached) {
+        return cached;
+      }
+      throw error;
+    }
+  }
+
+  private async runRegistration(
+    identity: OAuthIdentity,
+    clientMetadata: OAuthClientMetadata,
+    force: boolean,
+    scope: string | undefined,
+  ): Promise<OAuthClientRegistration> {
+    const record = await this.repository.readRecord(identity);
+    if (!force && record.registration) {
+      return record.registration;
+    }
+    const discovery = await this.ensureDiscovery(identity, { force });
+    const operation = this.options.register;
+    if (!operation) {
+      throw new OAuthTemporaryProtocolError(
+        "OAuth client registration is not available in this broker.",
+      );
+    }
+
+    const authorizationServerUrl = discovery?.authorizationServerUrl ?? identity.resourceUrl;
+    const clientInformation = await operation({
+      identity,
+      authorizationServerUrl,
+      ...(discovery?.authorizationServerMetadata
+        ? { authorizationServerMetadata: discovery.authorizationServerMetadata }
+        : {}),
+      clientMetadata,
+      ...(scope === undefined ? {} : { scope }),
+    });
+    const registration: OAuthClientRegistration = {
+      strategy: "dcr",
+      authorizationServerUrl,
+      clientInformation,
+    };
+    return this.repository.mutateRecord(identity, current => ({
+      record: { ...current, registration },
+      result: registration,
+    }));
+  }
+
+  /** 按类别清除 credential；client 类别同时失效 registration 与 challengedScopes。 */
+  private clearCredentials(
+    identity: OAuthIdentity,
+    fence: OAuthCredentialFence,
+    kind: "credential" | "client",
+  ): Promise<boolean> {
+    return this.repository.mutateRecord(identity, current => {
+      if (!isOAuthCredentialFenceCurrent(current.authorization, fence)) {
+        return { record: current, result: false, changed: false };
+      }
+      const result = clearOAuthTokens(current.authorization, fence.credentialRevision);
+      const next = kind === "client"
+        ? { ...current, authorization: result.state, registration: undefined, challengedScopes: [] }
+        : { ...current, authorization: result.state };
+      return { record: next, result: result.applied, changed: result.applied };
+    });
+  }
+
+  private clearFlight<T>(
+    flights: Map<string, Promise<T>>,
+    key: string,
+    flight: Promise<T>,
+  ): void {
+    if (flights.get(key) === flight) {
+      flights.delete(key);
     }
   }
 

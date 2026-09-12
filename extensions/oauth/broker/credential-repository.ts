@@ -1,5 +1,18 @@
 import { randomBytes } from "node:crypto";
 import { readFile, rename, unlink, writeFile } from "node:fs/promises";
+import type {
+  AuthorizationServerMetadata,
+  OAuthClientInformationFull,
+  OAuthProtectedResourceMetadata,
+} from "@modelcontextprotocol/sdk/shared/auth.js";
+import {
+  cloneOAuthCredentialRecord,
+  createOAuthCredentialRecord,
+  normalizeChallengedScopes,
+  type OAuthClientRegistration,
+  type OAuthCredentialRecord,
+  type OAuthDiscoveryRecord,
+} from "./credential-record.ts";
 import {
   cloneOAuthCredentialState,
   createOAuthCredentialState,
@@ -21,24 +34,44 @@ export interface OAuthCredentialMutation<T> {
   readonly changed?: boolean;
 }
 
+export interface OAuthRecordMutation<T> {
+  readonly record: OAuthCredentialRecord;
+  readonly result: T;
+  /** false 表示 transition 只读取记录，不触发持久化。默认 true。 */
+  readonly changed?: boolean;
+}
+
 export interface OAuthCredentialRepository {
   read(identity: OAuthIdentity): Promise<OAuthCredentialState>;
   mutate<T>(
     identity: OAuthIdentity,
     transition: (state: OAuthCredentialState) => OAuthCredentialMutation<T>,
   ): Promise<T>;
+  readRecord(identity: OAuthIdentity): Promise<OAuthCredentialRecord>;
+  mutateRecord<T>(
+    identity: OAuthIdentity,
+    transition: (record: OAuthCredentialRecord) => OAuthRecordMutation<T>,
+  ): Promise<T>;
 }
 
 interface StoredCredentialRecord {
   readonly identity: OAuthIdentity;
-  readonly authorization: OAuthCredentialState;
+  readonly record: OAuthCredentialRecord;
 }
 
-interface StoredCredentialDocument {
+interface StoredCredentialRecordJson {
+  readonly identity: OAuthIdentity;
+  readonly authorization: OAuthCredentialState;
+  readonly registration?: OAuthClientRegistration;
+  readonly discovery?: OAuthDiscoveryRecord;
+  readonly challengedScopes?: readonly string[];
+}
+
+interface StoredCredentialDocumentJson {
   readonly format: typeof OAUTH_BROKER_CREDENTIAL_FORMAT;
   readonly version: typeof OAUTH_BROKER_CREDENTIAL_VERSION;
   readonly namespaceId: string;
-  readonly records: readonly StoredCredentialRecord[];
+  readonly records: readonly StoredCredentialRecordJson[];
 }
 
 /** Lightweight repository used by coordinator-only tests and protocol experiments. */
@@ -47,22 +80,43 @@ export class InMemoryOAuthCredentialRepository implements OAuthCredentialReposit
   private mutationTail: Promise<void> = Promise.resolve();
 
   async read(identity: OAuthIdentity): Promise<OAuthCredentialState> {
-    assertIdentityMatchesNamespace(identity, identity.namespaceId);
-    return cloneOAuthCredentialState(
-      this.records.get(identity.key)?.authorization ?? createOAuthCredentialState(),
-    );
+    return cloneOAuthCredentialState((await this.readRecord(identity)).authorization);
   }
 
   mutate<T>(
     identity: OAuthIdentity,
     transition: (state: OAuthCredentialState) => OAuthCredentialMutation<T>,
   ): Promise<T> {
+    return this.mutateRecord(identity, record => {
+      const mutation = transition(record.authorization);
+      return {
+        record: { ...record, authorization: mutation.state },
+        result: mutation.result,
+        ...(mutation.changed === undefined ? {} : { changed: mutation.changed }),
+      };
+    });
+  }
+
+  async readRecord(identity: OAuthIdentity): Promise<OAuthCredentialRecord> {
+    assertIdentityMatchesNamespace(identity, identity.namespaceId);
+    return cloneOAuthCredentialRecord(
+      this.records.get(identity.key)?.record ?? createOAuthCredentialRecord(),
+    );
+  }
+
+  mutateRecord<T>(
+    identity: OAuthIdentity,
+    transition: (record: OAuthCredentialRecord) => OAuthRecordMutation<T>,
+  ): Promise<T> {
+    assertIdentityMatchesNamespace(identity, identity.namespaceId);
     return this.enqueue(async () => {
-      const current = await this.read(identity);
+      const current = cloneOAuthCredentialRecord(
+        this.records.get(identity.key)?.record ?? createOAuthCredentialRecord(),
+      );
       const mutation = transition(current);
-      const next = cloneOAuthCredentialState(mutation.state);
+      const next = cloneOAuthCredentialRecord(mutation.record);
       if (mutation.changed !== false) {
-        this.records.set(identity.key, { identity, authorization: next });
+        this.records.set(identity.key, { identity, record: next });
       }
       return mutation.result;
     });
@@ -106,29 +160,47 @@ export class FileOAuthCredentialRepository implements OAuthCredentialRepository 
   }
 
   async read(identity: OAuthIdentity): Promise<OAuthCredentialState> {
-    assertIdentityMatchesNamespace(identity, this.namespaceId);
-    return cloneOAuthCredentialState(
-      this.records.get(identity.key)?.authorization ?? createOAuthCredentialState(),
-    );
+    return cloneOAuthCredentialState((await this.readRecord(identity)).authorization);
   }
 
   mutate<T>(
     identity: OAuthIdentity,
     transition: (state: OAuthCredentialState) => OAuthCredentialMutation<T>,
   ): Promise<T> {
+    return this.mutateRecord(identity, record => {
+      const mutation = transition(record.authorization);
+      return {
+        record: { ...record, authorization: mutation.state },
+        result: mutation.result,
+        ...(mutation.changed === undefined ? {} : { changed: mutation.changed }),
+      };
+    });
+  }
+
+  async readRecord(identity: OAuthIdentity): Promise<OAuthCredentialRecord> {
+    assertIdentityMatchesNamespace(identity, this.namespaceId);
+    return cloneOAuthCredentialRecord(
+      this.records.get(identity.key)?.record ?? createOAuthCredentialRecord(),
+    );
+  }
+
+  mutateRecord<T>(
+    identity: OAuthIdentity,
+    transition: (record: OAuthCredentialRecord) => OAuthRecordMutation<T>,
+  ): Promise<T> {
     assertIdentityMatchesNamespace(identity, this.namespaceId);
     return this.enqueue(async () => {
-      const current = cloneOAuthCredentialState(
-        this.records.get(identity.key)?.authorization ?? createOAuthCredentialState(),
+      const current = cloneOAuthCredentialRecord(
+        this.records.get(identity.key)?.record ?? createOAuthCredentialRecord(),
       );
       const mutation = transition(current);
-      const nextState = cloneOAuthCredentialState(mutation.state);
+      const nextRecord = cloneOAuthCredentialRecord(mutation.record);
       if (mutation.changed === false) {
         return mutation.result;
       }
 
       const nextRecords = new Map(this.records);
-      nextRecords.set(identity.key, { identity, authorization: nextState });
+      nextRecords.set(identity.key, { identity, record: nextRecord });
       await writeCredentialRecords(this.rootDir, this.namespaceId, nextRecords);
       this.records = nextRecords;
       return mutation.result;
@@ -163,8 +235,8 @@ async function readCredentialRecords(
   } catch (error) {
     throw new TypeError("OAuth broker credential file must contain valid JSON.", { cause: error });
   }
-  const document = parseCredentialDocument(value, namespaceId);
-  return new Map(document.records.map(record => [record.identity.key, record]));
+  const records = parseCredentialRecords(value, namespaceId);
+  return new Map(records.map(record => [record.identity.key, record]));
 }
 
 async function writeCredentialRecords(
@@ -174,16 +246,13 @@ async function writeCredentialRecords(
 ): Promise<void> {
   await ensureOAuthBrokerRuntimeDirectories(rootDir);
   const { credentialPath } = getOAuthBrokerRuntimePaths(rootDir);
-  const document: StoredCredentialDocument = {
+  const document: StoredCredentialDocumentJson = {
     format: OAUTH_BROKER_CREDENTIAL_FORMAT,
     version: OAUTH_BROKER_CREDENTIAL_VERSION,
     namespaceId,
     records: [...records.values()]
       .sort((left, right) => left.identity.key.localeCompare(right.identity.key))
-      .map(record => ({
-        identity: record.identity,
-        authorization: cloneOAuthCredentialState(record.authorization),
-      })),
+      .map(record => serializeStoredRecord(record)),
   };
   const temporaryPath = `${credentialPath}.tmp-${process.pid}-${randomBytes(8).toString("hex")}`;
   try {
@@ -199,7 +268,23 @@ async function writeCredentialRecords(
   }
 }
 
-function parseCredentialDocument(value: unknown, namespaceId: string): StoredCredentialDocument {
+function serializeStoredRecord(stored: StoredCredentialRecord): StoredCredentialRecordJson {
+  const { record } = stored;
+  return {
+    identity: stored.identity,
+    authorization: record.authorization,
+    ...(record.registration ? { registration: record.registration } : {}),
+    ...(record.discovery ? { discovery: record.discovery } : {}),
+    ...(record.challengedScopes.length > 0
+      ? { challengedScopes: record.challengedScopes }
+      : {}),
+  };
+}
+
+function parseCredentialRecords(
+  value: unknown,
+  namespaceId: string,
+): StoredCredentialRecord[] {
   const record = requireRecord(value, "OAuth broker credential document");
   if (record.format !== OAUTH_BROKER_CREDENTIAL_FORMAT) {
     throw new TypeError(`credential.format must be ${JSON.stringify(OAUTH_BROKER_CREDENTIAL_FORMAT)}.`);
@@ -215,7 +300,7 @@ function parseCredentialDocument(value: unknown, namespaceId: string): StoredCre
   }
 
   const seen = new Set<string>();
-  const records = record.records.map((item, index) => {
+  return record.records.map((item, index) => {
     const stored = requireRecord(item, `credential.records[${index}]`);
     const identity = parseOAuthIdentity(stored.identity);
     assertIdentityMatchesNamespace(identity, namespaceId);
@@ -223,21 +308,28 @@ function parseCredentialDocument(value: unknown, namespaceId: string): StoredCre
       throw new TypeError(`credential.records contains duplicate identity ${identity.key}.`);
     }
     seen.add(identity.key);
+
+    const fieldName = `credential.records[${index}]`;
     return {
       identity,
-      authorization: parseCredentialState(
-        stored.authorization,
-        `credential.records[${index}].authorization`,
-      ),
+      record: createOAuthCredentialRecord({
+        authorization: parseCredentialState(
+          stored.authorization,
+          `${fieldName}.authorization`,
+        ),
+        ...(stored.registration === undefined
+          ? {}
+          : { registration: parseRegistration(stored.registration, `${fieldName}.registration`) }),
+        ...(stored.discovery === undefined
+          ? {}
+          : { discovery: parseDiscovery(stored.discovery, `${fieldName}.discovery`) }),
+        challengedScopes: parseChallengedScopes(
+          stored.challengedScopes,
+          `${fieldName}.challengedScopes`,
+        ),
+      }),
     };
   });
-
-  return {
-    format: OAUTH_BROKER_CREDENTIAL_FORMAT,
-    version: OAUTH_BROKER_CREDENTIAL_VERSION,
-    namespaceId,
-    records,
-  };
 }
 
 function parseCredentialState(value: unknown, fieldName: string): OAuthCredentialState {
@@ -269,10 +361,90 @@ function parseTokens(value: unknown, fieldName: string) {
   };
 }
 
+function parseRegistration(value: unknown, fieldName: string): OAuthClientRegistration {
+  const record = requireRecord(value, fieldName);
+  if (record.strategy !== "dcr") {
+    throw new TypeError(`${fieldName}.strategy must be "dcr".`);
+  }
+  const clientInformation = requireRecord(
+    record.clientInformation,
+    `${fieldName}.clientInformation`,
+  );
+  requireNonEmpty(clientInformation.client_id, `${fieldName}.clientInformation.client_id`);
+  return {
+    strategy: "dcr",
+    authorizationServerUrl: canonicalizeHttpUrl(
+      record.authorizationServerUrl,
+      `${fieldName}.authorizationServerUrl`,
+    ),
+    clientInformation: clientInformation as unknown as OAuthClientInformationFull,
+  };
+}
+
+function parseDiscovery(value: unknown, fieldName: string): OAuthDiscoveryRecord {
+  const record = requireRecord(value, fieldName);
+  const fetchedAt = requireFinite(record.fetchedAt, `${fieldName}.fetchedAt`);
+  if (fetchedAt < 0) {
+    throw new TypeError(`${fieldName}.fetchedAt must be non-negative.`);
+  }
+  return {
+    authorizationServerUrl: canonicalizeHttpUrl(
+      record.authorizationServerUrl,
+      `${fieldName}.authorizationServerUrl`,
+    ),
+    fetchedAt,
+    ...(record.authorizationServerMetadata === undefined
+      ? {}
+      : {
+          authorizationServerMetadata: requireRecord(
+            record.authorizationServerMetadata,
+            `${fieldName}.authorizationServerMetadata`,
+          ) as unknown as AuthorizationServerMetadata,
+        }),
+    ...(record.resourceMetadata === undefined
+      ? {}
+      : {
+          resourceMetadata: requireRecord(
+            record.resourceMetadata,
+            `${fieldName}.resourceMetadata`,
+          ) as unknown as OAuthProtectedResourceMetadata,
+        }),
+  };
+}
+
+function parseChallengedScopes(value: unknown, fieldName: string): string[] {
+  if (value === undefined) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    throw new TypeError(`${fieldName} must be an array.`);
+  }
+  return normalizeChallengedScopes(value.map((item, index) => {
+    if (typeof item !== "string") {
+      throw new TypeError(`${fieldName}[${index}] must be a string.`);
+    }
+    return item;
+  }));
+}
+
 function assertIdentityMatchesNamespace(identity: OAuthIdentity, namespaceId: string): void {
   if (identity.namespaceId !== namespaceId) {
     throw new TypeError("OAuth identity namespace does not match the credential repository.");
   }
+}
+
+function canonicalizeHttpUrl(value: unknown, fieldName: string): string {
+  const raw = requireNonEmpty(value, fieldName);
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new TypeError(`${fieldName} must be an absolute HTTP URL.`);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new TypeError(`${fieldName} must use http or https.`);
+  }
+  return url.toString();
 }
 
 function requireRecord(value: unknown, fieldName: string): Record<string, unknown> {

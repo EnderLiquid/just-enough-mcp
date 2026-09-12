@@ -1,6 +1,7 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { normalizeOAuthScope } from "./credential-state.ts";
 import { parseOAuthIdentity, type OAuthIdentity } from "./identity.ts";
+import type { OAuthLogoutRefusalReason } from "./token-coordinator.ts";
 
 export const OAUTH_BROKER_PROTOCOL_VERSION = 1 as const;
 export const DEFAULT_OAUTH_BROKER_PORT = 33_418;
@@ -92,6 +93,8 @@ export interface OAuthBrokerTokenResult {
 
 export interface OAuthBrokerLogoutResult extends OAuthBrokerStatusResult {
   readonly applied: boolean;
+  /** 仅当 applied 为 false 时给出，用于区分 revision 已被取代和 refresh 在途。 */
+  readonly reason?: OAuthLogoutRefusalReason;
 }
 
 export interface OAuthBrokerRequestEnvelope<T> {
@@ -312,10 +315,21 @@ export function parseOAuthBrokerLogoutResult(value: unknown): OAuthBrokerLogoutR
   if (typeof record.applied !== "boolean") {
     throw new TypeError("oauth.applied must be a boolean.");
   }
+  if (record.applied && record.reason !== undefined) {
+    throw new TypeError("oauth.reason must be absent when oauth.applied is true.");
+  }
   return {
     ...parseOAuthBrokerStatusResult(record),
     applied: record.applied,
+    ...(record.reason === undefined ? {} : { reason: parseLogoutRefusalReason(record.reason) }),
   };
+}
+
+function parseLogoutRefusalReason(value: unknown): OAuthLogoutRefusalReason {
+  if (value !== "revision-superseded" && value !== "refresh-in-flight") {
+    throw new TypeError("oauth.reason is invalid.");
+  }
+  return value;
 }
 
 export function parseOAuthBrokerRequestEnvelope<T>(

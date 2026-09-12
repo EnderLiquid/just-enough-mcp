@@ -158,4 +158,119 @@ describe("OAuth broker credential repository", () => {
     await expect(FileOAuthCredentialRepository.open(rootDir, namespaceId))
       .rejects.toThrow("namespace does not match");
   });
+
+  it("持久化 registration、discovery 与追加 scope，并在 reopen 后恢复", async () => {
+    const rootDir = tempDirs.create();
+    const identity = makeIdentity();
+    const repository = await FileOAuthCredentialRepository.open(rootDir, namespaceId);
+    await repository.mutateRecord(identity, record => ({
+      record: {
+        ...record,
+        registration: {
+          strategy: "dcr",
+          authorizationServerUrl: "https://as.example.test",
+          clientInformation: {
+            client_id: "client-1",
+            redirect_uris: ["http://127.0.0.1:33418/oauth/callback"],
+          },
+        },
+        discovery: {
+          authorizationServerUrl: "https://as.example.test",
+          fetchedAt: 1_000,
+          authorizationServerMetadata: {
+            issuer: "https://as.example.test",
+            authorization_endpoint: "https://as.example.test/authorize",
+            token_endpoint: "https://as.example.test/token",
+            response_types_supported: ["code"],
+          },
+          resourceMetadata: { resource: "https://mcp.example.test/rpc" },
+        },
+        challengedScopes: ["write", "admin"],
+      },
+      result: undefined,
+    }));
+
+    const reopened = await FileOAuthCredentialRepository.open(rootDir, namespaceId);
+    const restored = await reopened.readRecord(identity);
+    expect(restored.registration).toEqual({
+      strategy: "dcr",
+      authorizationServerUrl: "https://as.example.test/",
+      clientInformation: {
+        client_id: "client-1",
+        redirect_uris: ["http://127.0.0.1:33418/oauth/callback"],
+      },
+    });
+    expect(restored.discovery).toMatchObject({
+      authorizationServerUrl: "https://as.example.test/",
+      fetchedAt: 1_000,
+      authorizationServerMetadata: {
+        token_endpoint: "https://as.example.test/token",
+      },
+      resourceMetadata: { resource: "https://mcp.example.test/rpc" },
+    });
+    expect(restored.challengedScopes).toEqual(["admin", "write"]);
+  });
+
+  it("空 challengedScopes 不写入 JSON，旧格式记录仍可读", async () => {
+    const rootDir = tempDirs.create();
+    const identity = makeIdentity();
+    const repository = await FileOAuthCredentialRepository.open(rootDir, namespaceId);
+    await repository.mutateRecord(identity, record => ({ record, result: undefined }));
+    const path = getOAuthBrokerRuntimePaths(rootDir).credentialPath;
+    expect(await readFile(path, "utf8")).not.toContain("challengedScopes");
+
+    const legacy = await FileOAuthCredentialRepository.open(rootDir, namespaceId);
+    const record = await legacy.readRecord(identity);
+    expect(record.challengedScopes).toEqual([]);
+    expect(record.registration).toBeUndefined();
+    expect(record.discovery).toBeUndefined();
+  });
+
+  it("拒绝损坏的 registration、discovery 与追加 scope 记录", async () => {
+    const rootDir = tempDirs.create();
+    const identity = makeIdentity();
+    const repository = await FileOAuthCredentialRepository.open(rootDir, namespaceId);
+    await repository.mutateRecord(identity, record => ({ record, result: undefined }));
+    const path = getOAuthBrokerRuntimePaths(rootDir).credentialPath;
+    const authorization = { credentialRevision: 0, authEpoch: 0 };
+
+    await writeFile(path, JSON.stringify({
+      format: OAUTH_BROKER_CREDENTIAL_FORMAT,
+      version: OAUTH_BROKER_CREDENTIAL_VERSION,
+      namespaceId,
+      records: [{
+        identity,
+        authorization,
+        registration: {
+          strategy: "cimd",
+          authorizationServerUrl: "https://as.example.test",
+          clientInformation: { client_id: "client-1" },
+        },
+      }],
+    }), "utf8");
+    await expect(FileOAuthCredentialRepository.open(rootDir, namespaceId))
+      .rejects.toThrow('registration.strategy must be "dcr"');
+
+    await writeFile(path, JSON.stringify({
+      format: OAUTH_BROKER_CREDENTIAL_FORMAT,
+      version: OAUTH_BROKER_CREDENTIAL_VERSION,
+      namespaceId,
+      records: [{
+        identity,
+        authorization,
+        discovery: { authorizationServerUrl: "https://as.example.test", fetchedAt: -1 },
+      }],
+    }), "utf8");
+    await expect(FileOAuthCredentialRepository.open(rootDir, namespaceId))
+      .rejects.toThrow("fetchedAt must be non-negative");
+
+    await writeFile(path, JSON.stringify({
+      format: OAUTH_BROKER_CREDENTIAL_FORMAT,
+      version: OAUTH_BROKER_CREDENTIAL_VERSION,
+      namespaceId,
+      records: [{ identity, authorization, challengedScopes: ["bad scope"] }],
+    }), "utf8");
+    await expect(FileOAuthCredentialRepository.open(rootDir, namespaceId))
+      .rejects.toThrow("must be a valid OAuth scope token");
+  });
 });

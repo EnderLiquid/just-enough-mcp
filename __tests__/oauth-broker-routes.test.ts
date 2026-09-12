@@ -8,6 +8,7 @@ import { runOAuthBrokerProcess } from "../extensions/oauth/broker/broker-process
 import { OAUTH_BROKER_ROUTES } from "../extensions/oauth/broker/protocol.js";
 import { readOAuthBrokerAccess } from "../extensions/oauth/broker/runtime-files.js";
 import type { OAuthRefreshOperation } from "../extensions/oauth/broker/token-coordinator.js";
+import { OAuthTemporaryProtocolError } from "../extensions/oauth/broker/token-coordinator.js";
 import { createTempDirFixture } from "./support/temp-dir.js";
 
 const tempDirs = createTempDirFixture("just-enough-mcp-oauth-broker-routes");
@@ -61,7 +62,7 @@ describe("OAuth broker credential routes", () => {
       }),
       result: undefined,
     }));
-    const temporaryFailure = new Error("temporary endpoint outage");
+    const temporaryFailure = new OAuthTemporaryProtocolError("temporary endpoint outage");
     const refresh = vi.fn<OAuthRefreshOperation>()
       .mockRejectedValueOnce(temporaryFailure)
       .mockResolvedValueOnce({
@@ -106,8 +107,8 @@ describe("OAuth broker credential routes", () => {
         minRemainingMs: 100,
       })).rejects.toMatchObject({
         code: "broker-remote-error",
-        status: 500,
-        remoteCode: "credential-operation-failed",
+        status: 503,
+        remoteCode: "temporary-protocol-error",
       });
       expect(await repository.read(identity)).toMatchObject({
         credentialRevision: 5,
@@ -130,6 +131,7 @@ describe("OAuth broker credential routes", () => {
         expectedCredentialRevision: 5,
       })).resolves.toEqual({
         applied: false,
+        reason: "revision-superseded",
         oauthState: "authorized",
         credentialRevision: 6,
       });

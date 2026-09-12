@@ -52,7 +52,12 @@ function makeCoordinator(
   refresh: OAuthRefreshOperation,
   now = 1_000,
 ): OAuthTokenCoordinator {
-  return new OAuthTokenCoordinator({ refresh, now: () => now });
+  // 这些用例针对状态机语义；safety window 由专门的用例覆盖。
+  return new OAuthTokenCoordinator({
+    refresh,
+    now: () => now,
+    tokenSafetyWindowMs: 0,
+  });
 }
 
 describe("OAuth credential state", () => {
@@ -337,6 +342,7 @@ describe("OAuth credential state", () => {
 
     expect(await coordinator.logout(identity, 8)).toEqual({
       applied: false,
+      reason: "revision-superseded",
       credential: {
         credentialRevision: 9,
         authEpoch: 2,
@@ -378,7 +384,7 @@ describe("OAuth credential state", () => {
     });
   });
 
-  it("logout 不等待 refresh，且迟到的 refresh 结果被 revision/epoch fence 丢弃", async () => {
+  it("条件 logout 在 refresh 在途时拒绝；显式 logout 不等待 refresh 且迟到结果被 fence 丢弃", async () => {
     const identity = makeIdentity();
     const gate = deferred<OAuthTokenUpdate>();
     const refresh = vi.fn<OAuthRefreshOperation>(async () => gate.promise);
@@ -387,7 +393,11 @@ describe("OAuth credential state", () => {
 
     const pending = coordinator.getAccessToken(identity, { minRemainingMs: 100 });
     await vi.waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
-    expect(await coordinator.logout(identity, 6)).toMatchObject({ applied: true });
+    expect(await coordinator.logout(identity, 6)).toMatchObject({
+      applied: false,
+      reason: "refresh-in-flight",
+    });
+    expect(await coordinator.logout(identity)).toMatchObject({ applied: true });
 
     gate.resolve({
       accessToken: "access-stale",
