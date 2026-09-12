@@ -1,114 +1,266 @@
-import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { createOAuthIdentity } from "../extensions/oauth/broker/identity.js";
 import {
-  createOAuthBrokerRequestEnvelope,
-  createOAuthBrokerSecret,
-  OAUTH_BROKER_ACCESS_FORMAT,
-  OAUTH_BROKER_PROTOCOL_VERSION,
-  parseOAuthBrokerAccessDescriptor,
-  parseOAuthBrokerResponseEnvelope,
-  type OAuthBrokerAccessDescriptor,
-} from "../extensions/oauth/broker/protocol.js";
+  createOAuthProtocolAdapter,
+  createOAuthRefreshOperation,
+} from "../extensions/oauth/broker/oauth-protocol.js";
 import {
-  ensureOAuthBrokerRuntimeDirectories,
-  getOAuthBrokerRuntimePaths,
-  readOAuthBrokerAccess,
-  writeOAuthBrokerAccess,
-} from "../extensions/oauth/broker/runtime-files.js";
-import { createOAuthBrokerNamespace } from "../extensions/oauth/broker/namespace.js";
-import { requestOAuthBrokerJson } from "../extensions/oauth/broker/client.js";
-import { createTempDirFixture } from "./support/temp-dir.js";
+  OAuthAuthorizationRequiredError,
+  OAuthClientRejectedError,
+  OAuthPermanentRefreshError,
+  OAuthTemporaryProtocolError,
+} from "../extensions/oauth/broker/token-coordinator.js";
+import {
+  FakeOAuthAuthorizationServer,
+  type FakeOAuthAuthorizationServerOptions,
+} from "./support/fake-oauth-as.js";
 
-const tempDirs = createTempDirFixture("just-enough-mcp-oauth-broker-protocol");
+const servers: FakeOAuthAuthorizationServer[] = [];
 
-function makeAccess(port = 33418, namespaceId = "agent-dir:v1:" + "a".repeat(64)): OAuthBrokerAccessDescriptor {
-  return {
-    format: OAUTH_BROKER_ACCESS_FORMAT,
-    protocolVersion: OAUTH_BROKER_PROTOCOL_VERSION,
-    namespaceId,
-    instanceId: randomUUID(),
-    port,
-    startedAt: Date.now(),
-    secret: createOAuthBrokerSecret(),
-  };
+afterEach(async () => {
+  await Promise.all(servers.splice(0).map(server => server.close()));
+});
+
+async function startFakeAs(
+  options: FakeOAuthAuthorizationServerOptions = {},
+): Promise<FakeOAuthAuthorizationServer> {
+  const server = await FakeOAuthAuthorizationServer.start(options);
+  servers.push(server);
+  return server;
 }
 
-describe("OAuth broker simplified protocol", () => {
-  it("namespace is stable after path canonicalization and isolated between directories", async () => {
-    const firstDir = tempDirs.create();
-    const secondDir = tempDirs.create();
-    const first = await createOAuthBrokerNamespace(`${firstDir}/.`);
-    const same = await createOAuthBrokerNamespace(firstDir);
-    const second = await createOAuthBrokerNamespace(secondDir);
-
-    expect(same.namespaceId).toBe(first.namespaceId);
-    expect(second.namespaceId).not.toBe(first.namespaceId);
-    expect(first.namespaceId).toMatch(/^agent-dir:v1:[0-9a-f]{64}$/);
+function makeIdentity(resourceUrl: string) {
+  return createOAuthIdentity({
+    namespaceId: `agent-dir:v1:${"d".repeat(64)}`,
+    resourceUrl,
+    profile: "default",
   });
+}
 
-  it("access snapshots are atomically replaceable and stale files remain readable", async () => {
-    const rootDir = tempDirs.create();
-    await ensureOAuthBrokerRuntimeDirectories(rootDir);
-    const first = makeAccess(34101);
-    const second = makeAccess(34101, first.namespaceId);
-    await writeOAuthBrokerAccess(rootDir, first);
-    expect(await readOAuthBrokerAccess(rootDir)).toMatchObject({
-      instanceId: first.instanceId,
-      secret: first.secret,
+const clientInformation = {
+  client_id: "fake-client",
+  redirect_uris: ["http://127.0.0.1:33418/oauth/callback"],
+};
+
+describe("OAuth protocol adapter", () => {
+  it("通过 PRM 与 AS metadata discovery 返回 authorization server 信息", async () => {
+    const as = await startFakeAs({ scopesSupported: ["read", "write", "admin"] });
+    const adapter = createOAuthProtocolAdapter();
+
+    const result = await adapter.discover(as.resourceUrl);
+    expect(result.authorizationServerUrl).toBe(as.authorizationServerUrl);
+    expect(result.authorizationServerMetadata).toMatchObject({
+      issuer: as.authorizationServerUrl,
+      token_endpoint: as.tokenEndpoint,
+      registration_endpoint: as.registrationEndpoint,
     });
-    await writeOAuthBrokerAccess(rootDir, second);
-    expect(await readOAuthBrokerAccess(rootDir)).toMatchObject({
-      instanceId: second.instanceId,
-      secret: second.secret,
+    expect(result.resourceMetadata).toMatchObject({
+      resource: as.resourceUrl,
+      authorization_servers: [as.authorizationServerUrl],
+      scopes_supported: ["read", "write", "admin"],
     });
-    expect(await readFile(getOAuthBrokerRuntimePaths(rootDir).accessPath, "utf8")).toContain(second.instanceId);
   });
 
-  it("rejects malformed access snapshots and preserves request correlation", () => {
-    expect(() => parseOAuthBrokerAccessDescriptor({
-      ...makeAccess(),
-      secret: "not-a-secret",
-    })).toThrow(/access\.secret/);
+  it("discovery 失败且无法确认结果时归一化为临时协议错误", async () => {
+    const as = await startFakeAs();
+    as.setProtectedResourceMetadataResponse({ status: 503 });
+    as.setAuthorizationServerMetadataResponse({ status: 503 });
+    const adapter = createOAuthProtocolAdapter();
 
-    const requestId = randomUUID();
-    const envelope = createOAuthBrokerRequestEnvelope(requestId, { ok: true });
-    expect(parseOAuthBrokerResponseEnvelope({
-      protocolVersion: OAUTH_BROKER_PROTOCOL_VERSION,
-      requestId,
-      ok: true,
-      result: envelope.params,
-    }, requestId)).toMatchObject({ ok: true, requestId });
-    expect(() => parseOAuthBrokerResponseEnvelope({
-      protocolVersion: OAUTH_BROKER_PROTOCOL_VERSION,
-      requestId: randomUUID(),
-      ok: true,
-      result: null,
-    }, requestId)).toThrow(/requestId/);
+    await expect(adapter.discover(as.resourceUrl)).rejects.toBeInstanceOf(
+      OAuthTemporaryProtocolError,
+    );
   });
 
-  it("maps caller abort and timeout independently at the low-level request boundary", async () => {
-    const access = makeAccess(34102);
-    const abortController = new AbortController();
-    abortController.abort(new Error("caller stopped"));
-    await expect(requestOAuthBrokerJson(access, "/v1/test", {
-      signal: abortController.signal,
-      fetch: async (_url, init) => {
-        if (init?.signal?.aborted) {
-          throw new DOMException("aborted", "AbortError");
-        }
-        return new Promise<Response>(() => undefined);
+  it("DCR 使用 registration endpoint 并转发 client metadata 与 scope", async () => {
+    const as = await startFakeAs();
+    const adapter = createOAuthProtocolAdapter();
+
+    const registration = await adapter.register({
+      authorizationServerUrl: as.authorizationServerUrl,
+      clientMetadata: {
+        redirect_uris: ["http://127.0.0.1:33418/oauth/callback"],
+        client_name: "just-enough-mcp",
       },
-      timeoutMs: 100,
-    })).rejects.toMatchObject({ code: "broker-request-aborted" });
+      scope: "read write",
+    });
+    expect(registration).toMatchObject({
+      client_id: "fake-client",
+      redirect_uris: ["http://127.0.0.1:33418/oauth/callback"],
+      client_name: "just-enough-mcp",
+    });
+    expect(as.registrationRequests).toHaveLength(1);
+    expect(as.registrationRequests[0]).toMatchObject({
+      redirect_uris: ["http://127.0.0.1:33418/oauth/callback"],
+      scope: "read write",
+    });
+  });
 
-    await expect(requestOAuthBrokerJson(access, "/v1/test", {
-      fetch: async () => ({
-        ok: true,
-        status: 200,
-        text: () => new Promise<string>(() => undefined),
-      } as Response),
-      timeoutMs: 20,
-    })).rejects.toMatchObject({ code: "broker-timeout" });
+  it("DCR 错误按临时协议错误处理，不误判为凭证失败", async () => {
+    const as = await startFakeAs();
+    as.enqueueRegistrationOutcome({ kind: "oauth-error", error: "invalid_client_metadata" });
+    const adapter = createOAuthProtocolAdapter();
+
+    const error = await adapter.register({
+      authorizationServerUrl: as.authorizationServerUrl,
+      clientMetadata: { redirect_uris: ["http://127.0.0.1:33418/oauth/callback"] },
+    }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(OAuthTemporaryProtocolError);
+  });
+
+  it("refresh 返回 token 并保留服务端未轮转的 refresh token", async () => {
+    const as = await startFakeAs();
+    const adapter = createOAuthProtocolAdapter();
+
+    const tokens = await adapter.refresh({
+      authorizationServerUrl: as.authorizationServerUrl,
+      clientInformation,
+      refreshToken: "refresh-old",
+      resource: new URL(as.resourceUrl),
+    });
+    expect(tokens).toMatchObject({
+      access_token: "access-1",
+      token_type: "Bearer",
+      expires_in: 3_600,
+      refresh_token: "refresh-1",
+      scope: "read write",
+    });
+    expect(as.tokenRequests).toEqual([{
+      grantType: "refresh_token",
+      refreshToken: "refresh-old",
+      clientId: "fake-client",
+      resource: as.resourceUrl,
+    }]);
+
+    as.enqueueTokenOutcome({ kind: "tokens", accessToken: "access-2", refreshToken: null });
+    const rotated = await adapter.refresh({
+      authorizationServerUrl: as.authorizationServerUrl,
+      clientInformation,
+      refreshToken: "refresh-1",
+    });
+    expect(rotated.refresh_token).toBe("refresh-1");
+  });
+
+  it("invalid_grant 与 invalid_scope 归一化为永久凭证失败", async () => {
+    const as = await startFakeAs();
+    const adapter = createOAuthProtocolAdapter();
+
+    for (const errorCode of ["invalid_grant", "invalid_scope"]) {
+      as.enqueueTokenOutcome({ kind: "oauth-error", error: errorCode });
+      await expect(adapter.refresh({
+        authorizationServerUrl: as.authorizationServerUrl,
+        clientInformation,
+        refreshToken: "refresh-old",
+      })).rejects.toBeInstanceOf(OAuthPermanentRefreshError);
+    }
+  });
+
+  it("invalid_client 与 unauthorized_client 归一化为 client 注册失败", async () => {
+    const as = await startFakeAs();
+    const adapter = createOAuthProtocolAdapter();
+
+    for (const errorCode of ["invalid_client", "unauthorized_client"]) {
+      as.enqueueTokenOutcome({ kind: "oauth-error", error: errorCode });
+      await expect(adapter.refresh({
+        authorizationServerUrl: as.authorizationServerUrl,
+        clientInformation,
+        refreshToken: "refresh-old",
+      })).rejects.toBeInstanceOf(OAuthClientRejectedError);
+    }
+  });
+
+  it("5xx、网络错误与 timeout 归一化为临时协议错误", async () => {
+    const as = await startFakeAs();
+    const adapter = createOAuthProtocolAdapter({ timeoutMs: 200 });
+
+    as.enqueueTokenOutcome({ kind: "status", status: 503 });
+    await expect(adapter.refresh({
+      authorizationServerUrl: as.authorizationServerUrl,
+      clientInformation,
+      refreshToken: "refresh-old",
+    })).rejects.toBeInstanceOf(OAuthTemporaryProtocolError);
+
+    as.enqueueTokenOutcome({ kind: "network-error" });
+    await expect(adapter.refresh({
+      authorizationServerUrl: as.authorizationServerUrl,
+      clientInformation,
+      refreshToken: "refresh-old",
+    })).rejects.toBeInstanceOf(OAuthTemporaryProtocolError);
+
+    as.enqueueTokenOutcome({ kind: "hang" });
+    await expect(adapter.refresh({
+      authorizationServerUrl: as.authorizationServerUrl,
+      clientInformation,
+      refreshToken: "refresh-old",
+    })).rejects.toBeInstanceOf(OAuthTemporaryProtocolError);
+  });
+});
+
+describe("OAuth refresh operation", () => {
+  it("把 token response 归一化为 credential update，并携带 resource indicator", async () => {
+    const as = await startFakeAs();
+    const adapter = createOAuthProtocolAdapter();
+    const operation = createOAuthRefreshOperation({ adapter, now: () => 1_000 });
+    const identity = makeIdentity(as.resourceUrl);
+
+    const update = await operation({
+      identity,
+      refreshToken: "refresh-old",
+      credentialRevision: 1,
+      authEpoch: 0,
+      registration: {
+        strategy: "dcr",
+        authorizationServerUrl: as.authorizationServerUrl,
+        clientInformation,
+      },
+    });
+    expect(update).toEqual({
+      accessToken: "access-1",
+      accessTokenExpiresAt: 1_000 + 3_600_000,
+      refreshToken: "refresh-1",
+      scope: "read write",
+    });
+    expect(as.tokenRequests[0]?.resource).toBe(as.resourceUrl);
+  });
+
+  it("expires_in 缺失或非法时使用 1 小时 fallback", async () => {
+    const as = await startFakeAs();
+    const adapter = createOAuthProtocolAdapter();
+    const operation = createOAuthRefreshOperation({ adapter, now: () => 5_000 });
+    const identity = makeIdentity(as.resourceUrl);
+
+    as.enqueueTokenOutcome({ kind: "tokens", expiresIn: 0, refreshToken: null });
+    const update = await operation({
+      identity,
+      refreshToken: "refresh-old",
+      credentialRevision: 1,
+      authEpoch: 0,
+      registration: {
+        strategy: "dcr",
+        authorizationServerUrl: as.authorizationServerUrl,
+        clientInformation,
+      },
+    });
+    expect(update).toEqual({
+      accessToken: "access-1",
+      accessTokenExpiresAt: 5_000 + 3_600_000,
+      refreshToken: "refresh-old",
+      scope: "read write",
+    });
+  });
+
+  it("缺少 registration 时返回 authorization-required 而不发起网络请求", async () => {
+    const as = await startFakeAs();
+    const adapter = createOAuthProtocolAdapter();
+    const operation = createOAuthRefreshOperation({ adapter });
+    const identity = makeIdentity(as.resourceUrl);
+
+    await expect(operation({
+      identity,
+      refreshToken: "refresh-old",
+      credentialRevision: 1,
+      authEpoch: 0,
+    })).rejects.toBeInstanceOf(OAuthAuthorizationRequiredError);
+    expect(as.tokenRequests).toHaveLength(0);
   });
 });

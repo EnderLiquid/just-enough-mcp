@@ -72,7 +72,8 @@ export interface OAuthBrokerIdentityRequest {
 }
 
 export interface OAuthBrokerTokenRequest extends OAuthBrokerIdentityRequest {
-  readonly minRemainingMs: number;
+  /** 省略时为 0；broker 仍会 reserve 自己的 safety window。 */
+  readonly minRemainingMs?: number;
   readonly rejectedCredentialRevision?: number;
 }
 

@@ -6,11 +6,16 @@ import {
 } from "../extensions/oauth/broker/credential-state.js";
 import {
   OAuthAuthorizationRequiredError,
+  OAuthClientRejectedError,
   OAuthCredentialChangedError,
   OAuthPermanentRefreshError,
+  OAuthScopeNotGrantedError,
+  OAuthTemporaryProtocolError,
   OAuthTokenCoordinator,
   type OAuthRefreshOperation,
+  type OAuthRefreshRequest,
 } from "../extensions/oauth/broker/token-coordinator.js";
+import { InMemoryOAuthCredentialRepository } from "../extensions/oauth/broker/credential-repository.js";
 
 function makeIdentity(name = "demo"): OAuthIdentity {
   return createOAuthIdentity({
@@ -36,6 +41,18 @@ function makeState(
       refreshToken,
     },
   });
+}
+
+function makeDiscoveryResult(authorizationServerUrl = "https://as.example.test") {
+  return {
+    authorizationServerUrl,
+    authorizationServerMetadata: {
+      issuer: authorizationServerUrl,
+      authorization_endpoint: `${authorizationServerUrl}/authorize`,
+      token_endpoint: `${authorizationServerUrl}/token`,
+      response_types_supported: ["code"],
+    },
+  };
 }
 
 function deferred<T>() {
@@ -467,5 +484,371 @@ describe("OAuth credential state", () => {
       authEpoch: 7,
       accessTokenExpiresAt: 7_000,
     });
+  });
+
+  it("默认 safety window 要求 token 至少剩余 30 秒", async () => {
+    const identity = makeIdentity();
+    const refresh = vi.fn<OAuthRefreshOperation>(async () => ({
+      accessToken: "access-refreshed",
+      accessTokenExpiresAt: 1_000 + 3_600_000,
+    }));
+    const coordinator = new OAuthTokenCoordinator({ refresh, now: () => 1_000 });
+
+    await coordinator.restore(identity, makeState("access-near", 1_000 + 31_000, "refresh-old", 1, 0));
+    await expect(coordinator.getAccessToken(identity)).resolves.toMatchObject({
+      accessToken: "access-near",
+      credentialRevision: 1,
+    });
+    expect(refresh).not.toHaveBeenCalled();
+
+    await coordinator.restore(identity, makeState("access-near", 1_000 + 29_000, "refresh-old", 1, 0));
+    await expect(coordinator.getAccessToken(identity)).resolves.toMatchObject({
+      accessToken: "access-refreshed",
+      credentialRevision: 2,
+    });
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("请求 scope 超出已存授权时直接失败，绝不发起扩张型 refresh", async () => {
+    const identity = makeIdentity();
+    const refresh = vi.fn<OAuthRefreshOperation>();
+    const coordinator = makeCoordinator(refresh);
+    await coordinator.restore(identity, createOAuthCredentialState({
+      credentialRevision: 3,
+      authEpoch: 0,
+      tokens: {
+        accessToken: "access-current",
+        accessTokenExpiresAt: 50_000,
+        refreshToken: "refresh-old",
+        scope: "read",
+      },
+    }));
+
+    await expect(coordinator.getAccessToken(identity, { scope: "read write" }))
+      .rejects.toBeInstanceOf(OAuthScopeNotGrantedError);
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("refresh 返回的 scope 收窄时返回 scope-not-granted", async () => {
+    const identity = makeIdentity();
+    const refresh = vi.fn<OAuthRefreshOperation>(async () => ({
+      accessToken: "access-refreshed",
+      accessTokenExpiresAt: 60_000,
+      refreshToken: "refresh-new",
+      scope: "read",
+    }));
+    const coordinator = makeCoordinator(refresh);
+    await coordinator.restore(identity, createOAuthCredentialState({
+      credentialRevision: 3,
+      authEpoch: 0,
+      tokens: {
+        accessToken: "access-old",
+        accessTokenExpiresAt: 0,
+        refreshToken: "refresh-old",
+        scope: "read write",
+      },
+    }));
+
+    await expect(coordinator.getAccessToken(identity, { scope: "read write" }))
+      .rejects.toBeInstanceOf(OAuthScopeNotGrantedError);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("discovery 在 TTL 内复用缓存，过期后刷新，失败时沿用缓存", async () => {
+    const identity = makeIdentity();
+    const repository = new InMemoryOAuthCredentialRepository();
+    let now = 1_000_000;
+    const discover = vi.fn(async () => makeDiscoveryResult());
+    const coordinator = new OAuthTokenCoordinator({
+      repository,
+      refresh: async () => { throw new Error("unused"); },
+      discover,
+      now: () => now,
+      discoveryTtlMs: 86_400_000,
+    });
+
+    await expect(coordinator.ensureDiscovery(identity)).resolves.toMatchObject({ fetchedAt: 1_000_000 });
+    expect(discover).toHaveBeenCalledTimes(1);
+    await expect(coordinator.ensureDiscovery(identity)).resolves.toMatchObject({ fetchedAt: 1_000_000 });
+    expect(discover).toHaveBeenCalledTimes(1);
+
+    now += 86_400_001;
+    discover.mockRejectedValueOnce(new OAuthTemporaryProtocolError("discovery down"));
+    await expect(coordinator.ensureDiscovery(identity)).resolves.toMatchObject({ fetchedAt: 1_000_000 });
+
+    discover.mockResolvedValueOnce(makeDiscoveryResult());
+    await expect(coordinator.ensureDiscovery(identity)).resolves.toMatchObject({ fetchedAt: now });
+    expect(discover).toHaveBeenCalledTimes(3);
+  });
+
+  it("无缓存时 discovery 失败按临时协议错误上抛，并发只发起一次", async () => {
+    const identity = makeIdentity();
+    const repository = new InMemoryOAuthCredentialRepository();
+    let rejectDiscovery!: (error: unknown) => void;
+    const discover = vi.fn(() => new Promise<never>((_resolve, rejectPromise) => {
+      rejectDiscovery = rejectPromise;
+    }));
+    const coordinator = new OAuthTokenCoordinator({
+      repository,
+      refresh: async () => { throw new Error("unused"); },
+      discover,
+      now: () => 1_000,
+    });
+
+    const first = coordinator.ensureDiscovery(identity);
+    const second = coordinator.ensureDiscovery(identity);
+    await vi.waitFor(() => expect(discover).toHaveBeenCalledTimes(1));
+    rejectDiscovery(new OAuthTemporaryProtocolError("discovery down"));
+    await expect(first).rejects.toBeInstanceOf(OAuthTemporaryProtocolError);
+    await expect(second).rejects.toBeInstanceOf(OAuthTemporaryProtocolError);
+    expect(discover).toHaveBeenCalledTimes(1);
+  });
+
+  it("DCR 按 identity single-flight，并同时保存 discovery 与 registration", async () => {
+    const identity = makeIdentity();
+    const repository = new InMemoryOAuthCredentialRepository();
+    const discover = vi.fn(async () => makeDiscoveryResult());
+    const register = vi.fn(async () => ({
+      client_id: "client-1",
+      redirect_uris: ["http://127.0.0.1:33418/oauth/callback"],
+    }));
+    const coordinator = new OAuthTokenCoordinator({
+      repository,
+      refresh: async () => { throw new Error("unused"); },
+      discover,
+      register,
+      now: () => 1_000,
+    });
+    const clientMetadata = {
+      redirect_uris: ["http://127.0.0.1:33418/oauth/callback"],
+    };
+
+    const [first, second] = await Promise.all([
+      coordinator.ensureRegistration(identity, clientMetadata),
+      coordinator.ensureRegistration(identity, clientMetadata),
+    ]);
+    expect(register).toHaveBeenCalledTimes(1);
+    expect(first).toEqual(second);
+    expect(first).toMatchObject({
+      strategy: "dcr",
+      authorizationServerUrl: "https://as.example.test",
+      clientInformation: { client_id: "client-1" },
+    });
+    const record = await repository.readRecord(identity);
+    expect(record.registration).toEqual(first);
+    expect(record.discovery).toMatchObject({ fetchedAt: 1_000 });
+  });
+
+  it("refresh 请求携带 registration 与匹配的 AS metadata", async () => {
+    const identity = makeIdentity();
+    const repository = new InMemoryOAuthCredentialRepository();
+    const requests: OAuthRefreshRequest[] = [];
+    const refresh = vi.fn<OAuthRefreshOperation>(async request => {
+      requests.push(request);
+      return {
+        accessToken: "access-refreshed",
+        accessTokenExpiresAt: 60_000,
+        refreshToken: "refresh-new",
+      };
+    });
+    const clientInformation = {
+      client_id: "client-1",
+      redirect_uris: ["http://127.0.0.1:33418/oauth/callback"],
+    };
+    const registration = {
+      strategy: "dcr" as const,
+      authorizationServerUrl: "https://as.example.test",
+      clientInformation,
+    };
+    const metadata = makeDiscoveryResult().authorizationServerMetadata;
+    await repository.mutateRecord(identity, record => ({
+      record: {
+        ...record,
+        authorization: makeState("access-old", 0, "refresh-old", 1, 0),
+        registration,
+        discovery: {
+          authorizationServerUrl: "https://as.example.test",
+          fetchedAt: 1_000,
+          authorizationServerMetadata: metadata,
+        },
+      },
+      result: undefined,
+    }));
+    const coordinator = new OAuthTokenCoordinator({
+      repository,
+      refresh,
+      now: () => 1_000,
+      tokenSafetyWindowMs: 0,
+    });
+
+    await coordinator.getAccessToken(identity);
+    expect(requests[0]?.registration).toEqual(registration);
+    expect(requests[0]?.authorizationServerMetadata).toEqual(metadata);
+  });
+
+  it("discovery 的 AS URL 与 registration 不一致时 refresh 省略 metadata", async () => {
+    const identity = makeIdentity();
+    const repository = new InMemoryOAuthCredentialRepository();
+    const requests: OAuthRefreshRequest[] = [];
+    const refresh = vi.fn<OAuthRefreshOperation>(async request => {
+      requests.push(request);
+      return { accessToken: "access-refreshed", accessTokenExpiresAt: 60_000 };
+    });
+    await repository.mutateRecord(identity, record => ({
+      record: {
+        ...record,
+        authorization: makeState("access-old", 0, "refresh-old", 1, 0),
+        registration: {
+          strategy: "dcr",
+          authorizationServerUrl: "https://as.example.test",
+          clientInformation: {
+            client_id: "client-1",
+            redirect_uris: ["http://127.0.0.1:33418/oauth/callback"],
+          },
+        },
+        discovery: {
+          authorizationServerUrl: "https://other-as.example.test",
+          fetchedAt: 1_000,
+        },
+      },
+      result: undefined,
+    }));
+    const coordinator = new OAuthTokenCoordinator({
+      repository,
+      refresh,
+      now: () => 1_000,
+      tokenSafetyWindowMs: 0,
+    });
+
+    await coordinator.getAccessToken(identity);
+    expect(requests[0]?.registration).toBeDefined();
+    expect(requests[0]?.authorizationServerMetadata).toBeUndefined();
+  });
+
+  it("invalid_client 清除 token、registration 与追加 scope，保留 discovery", async () => {
+    const identity = makeIdentity();
+    const repository = new InMemoryOAuthCredentialRepository();
+    await repository.mutateRecord(identity, record => ({
+      record: {
+        ...record,
+        authorization: makeState("access-old", 0, "refresh-old", 2, 1),
+        registration: {
+          strategy: "dcr",
+          authorizationServerUrl: "https://as.example.test",
+          clientInformation: {
+            client_id: "client-1",
+            redirect_uris: ["http://127.0.0.1:33418/oauth/callback"],
+          },
+        },
+        discovery: { authorizationServerUrl: "https://as.example.test", fetchedAt: 1_000 },
+        challengedScopes: ["write"],
+      },
+      result: undefined,
+    }));
+    const coordinator = new OAuthTokenCoordinator({
+      repository,
+      refresh: async () => { throw new OAuthClientRejectedError("invalid_client"); },
+      now: () => 1_000,
+      tokenSafetyWindowMs: 0,
+    });
+
+    await expect(coordinator.getAccessToken(identity)).rejects.toMatchObject({
+      code: "authorization-required",
+      reason: "client-rejected",
+    });
+    const record = await repository.readRecord(identity);
+    expect(record.authorization).toEqual(createOAuthCredentialState({
+      credentialRevision: 3,
+      authEpoch: 2,
+    }));
+    expect(record.registration).toBeUndefined();
+    expect(record.challengedScopes).toEqual([]);
+    expect(record.discovery).toMatchObject({ fetchedAt: 1_000 });
+  });
+
+  it("invalid_grant 只清 token，保留 registration、discovery 与追加 scope", async () => {
+    const identity = makeIdentity();
+    const repository = new InMemoryOAuthCredentialRepository();
+    await repository.mutateRecord(identity, record => ({
+      record: {
+        ...record,
+        authorization: makeState("access-old", 0, "refresh-old", 2, 1),
+        registration: {
+          strategy: "dcr",
+          authorizationServerUrl: "https://as.example.test",
+          clientInformation: {
+            client_id: "client-1",
+            redirect_uris: ["http://127.0.0.1:33418/oauth/callback"],
+          },
+        },
+        challengedScopes: ["write"],
+      },
+      result: undefined,
+    }));
+    const coordinator = new OAuthTokenCoordinator({
+      repository,
+      refresh: async () => { throw new OAuthPermanentRefreshError("invalid_grant"); },
+      now: () => 1_000,
+      tokenSafetyWindowMs: 0,
+    });
+
+    await expect(coordinator.getAccessToken(identity)).rejects.toMatchObject({
+      code: "authorization-required",
+      reason: "credential-rejected",
+    });
+    const record = await repository.readRecord(identity);
+    expect(record.authorization.tokens).toBeUndefined();
+    expect(record.registration).toBeDefined();
+    expect(record.challengedScopes).toEqual(["write"]);
+  });
+
+  it("临时协议错误保留全部 credential 与 client 状态", async () => {
+    const identity = makeIdentity();
+    const repository = new InMemoryOAuthCredentialRepository();
+    await repository.mutateRecord(identity, record => ({
+      record: {
+        ...record,
+        authorization: makeState("access-old", 0, "refresh-old", 2, 1),
+        registration: {
+          strategy: "dcr",
+          authorizationServerUrl: "https://as.example.test",
+          clientInformation: {
+            client_id: "client-1",
+            redirect_uris: ["http://127.0.0.1:33418/oauth/callback"],
+          },
+        },
+      },
+      result: undefined,
+    }));
+    const failure = new OAuthTemporaryProtocolError("token endpoint down");
+    const coordinator = new OAuthTokenCoordinator({
+      repository,
+      refresh: async () => { throw failure; },
+      now: () => 1_000,
+      tokenSafetyWindowMs: 0,
+    });
+
+    await expect(coordinator.getAccessToken(identity)).rejects.toBe(failure);
+    const record = await repository.readRecord(identity);
+    expect(record.authorization).toEqual(makeState("access-old", 0, "refresh-old", 2, 1));
+    expect(record.registration).toBeDefined();
+  });
+
+  it("revision 不匹配优先于 refresh 在途返回 revision-superseded", async () => {
+    const identity = makeIdentity();
+    const gate = deferred<OAuthTokenUpdate>();
+    const refresh = vi.fn<OAuthRefreshOperation>(async () => gate.promise);
+    const coordinator = makeCoordinator(refresh);
+    await coordinator.restore(identity, makeState("access-old", 0, "refresh-old", 5, 1));
+
+    const pending = coordinator.getAccessToken(identity, { minRemainingMs: 100 });
+    await vi.waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    expect(await coordinator.logout(identity, 4)).toMatchObject({
+      applied: false,
+      reason: "revision-superseded",
+    });
+
+    gate.resolve({ accessToken: "access-new", accessTokenExpiresAt: 9_000 });
+    await pending;
   });
 });
