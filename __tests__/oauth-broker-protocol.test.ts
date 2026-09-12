@@ -141,17 +141,23 @@ describe("OAuth protocol adapter", () => {
     expect(rotated.refresh_token).toBe("refresh-1");
   });
 
-  it("invalid_grant 与 invalid_scope 归一化为永久凭证失败", async () => {
+  it("invalid_grant 与 invalid_scope 归一化为可区分的永久凭证失败", async () => {
     const as = await startFakeAs();
     const adapter = createOAuthProtocolAdapter();
 
-    for (const errorCode of ["invalid_grant", "invalid_scope"]) {
+    const cases = [
+      { errorCode: "invalid_grant", reason: "invalid-grant" },
+      { errorCode: "invalid_scope", reason: "invalid-scope" },
+    ] as const;
+    for (const { errorCode, reason } of cases) {
       as.enqueueTokenOutcome({ kind: "oauth-error", error: errorCode });
-      await expect(adapter.refresh({
+      const failure = adapter.refresh({
         authorizationServerUrl: as.authorizationServerUrl,
         clientInformation,
         refreshToken: "refresh-old",
-      })).rejects.toBeInstanceOf(OAuthPermanentRefreshError);
+      });
+      await expect(failure).rejects.toBeInstanceOf(OAuthPermanentRefreshError);
+      await expect(failure).rejects.toMatchObject({ reason });
     }
   });
 

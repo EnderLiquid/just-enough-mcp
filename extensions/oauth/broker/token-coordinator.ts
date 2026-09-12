@@ -122,12 +122,19 @@ export class OAuthCredentialChangedError extends Error {
 }
 
 /** Marks an OAuth token endpoint response that permanently invalidates the refresh credential. */
+export type OAuthPermanentRefreshReason = "invalid-grant" | "invalid-scope";
+
 export class OAuthPermanentRefreshError extends Error {
   readonly code = "permanent-refresh-error" as const;
+  readonly reason: OAuthPermanentRefreshReason;
 
-  constructor(message = "OAuth refresh credential was rejected.", options: { cause?: unknown } = {}) {
+  constructor(
+    message = "OAuth refresh credential was rejected.",
+    options: { cause?: unknown; reason?: OAuthPermanentRefreshReason } = {},
+  ) {
     super(message, options.cause === undefined ? undefined : { cause: options.cause });
     this.name = "OAuthPermanentRefreshError";
+    this.reason = options.reason ?? "invalid-grant";
   }
 }
 
@@ -407,7 +414,8 @@ export class OAuthTokenCoordinator {
       });
     } catch (error) {
       if (error instanceof OAuthPermanentRefreshError) {
-        if (!await this.clearCredentials(identity, fence, "credential")) {
+        const kind = error.reason === "invalid-scope" ? "scope" : "credential";
+        if (!await this.clearCredentials(identity, fence, kind)) {
           throw new OAuthCredentialChangedError();
         }
         throw new OAuthAuthorizationRequiredError({ cause: error, reason: "credential-rejected" });
@@ -510,11 +518,11 @@ export class OAuthTokenCoordinator {
     }));
   }
 
-  /** 按类别清除 credential；client 类别同时失效 registration 与 challengedScopes。 */
+  /** 按类别清除 credential；client 类别同时失效 registration 与 challengedScopes，scope 类别只清 challengedScopes。 */
   private clearCredentials(
     identity: OAuthIdentity,
     fence: OAuthCredentialFence,
-    kind: "credential" | "client",
+    kind: "credential" | "client" | "scope",
   ): Promise<boolean> {
     return this.repository.mutateRecord(identity, current => {
       if (!isOAuthCredentialFenceCurrent(current.authorization, fence)) {
@@ -523,7 +531,9 @@ export class OAuthTokenCoordinator {
       const result = clearOAuthTokens(current.authorization, fence.credentialRevision);
       const next = kind === "client"
         ? { ...current, authorization: result.state, registration: undefined, challengedScopes: [] }
-        : { ...current, authorization: result.state };
+        : kind === "scope"
+          ? { ...current, authorization: result.state, challengedScopes: [] }
+          : { ...current, authorization: result.state };
       return { record: next, result: result.applied, changed: result.applied };
     });
   }

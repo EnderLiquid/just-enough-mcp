@@ -802,6 +802,46 @@ describe("OAuth credential state", () => {
     expect(record.challengedScopes).toEqual(["write"]);
   });
 
+  it("token endpoint 的 invalid_scope 清 token 与追加 scope，保留 registration 与 discovery", async () => {
+    const identity = makeIdentity();
+    const repository = new InMemoryOAuthCredentialRepository();
+    await repository.mutateRecord(identity, record => ({
+      record: {
+        ...record,
+        authorization: makeState("access-old", 0, "refresh-old", 2, 1),
+        registration: {
+          strategy: "dcr",
+          authorizationServerUrl: "https://as.example.test",
+          clientInformation: {
+            client_id: "client-1",
+            redirect_uris: ["http://127.0.0.1:33418/oauth/callback"],
+          },
+        },
+        discovery: { authorizationServerUrl: "https://as.example.test", fetchedAt: 1_000 },
+        challengedScopes: ["write"],
+      },
+      result: undefined,
+    }));
+    const coordinator = new OAuthTokenCoordinator({
+      repository,
+      refresh: async () => {
+        throw new OAuthPermanentRefreshError("invalid_scope", { reason: "invalid-scope" });
+      },
+      now: () => 1_000,
+      tokenSafetyWindowMs: 0,
+    });
+
+    await expect(coordinator.getAccessToken(identity)).rejects.toMatchObject({
+      code: "authorization-required",
+      reason: "credential-rejected",
+    });
+    const record = await repository.readRecord(identity);
+    expect(record.authorization.tokens).toBeUndefined();
+    expect(record.registration).toBeDefined();
+    expect(record.discovery).toMatchObject({ fetchedAt: 1_000 });
+    expect(record.challengedScopes).toEqual([]);
+  });
+
   it("临时协议错误保留全部 credential 与 client 状态", async () => {
     const identity = makeIdentity();
     const repository = new InMemoryOAuthCredentialRepository();

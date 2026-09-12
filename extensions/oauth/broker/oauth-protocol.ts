@@ -169,10 +169,16 @@ function createTimedFetch(baseFetch: FetchLike, timeoutMs: number): FetchLike {
 }
 
 function classifyProtocolError(error: unknown): Error {
-  if (error instanceof InvalidGrantError || error instanceof InvalidScopeError) {
+  if (error instanceof InvalidGrantError) {
     return new OAuthPermanentRefreshError(
       "OAuth refresh credential was rejected by the authorization server.",
-      { cause: error },
+      { cause: error, reason: "invalid-grant" },
+    );
+  }
+  if (error instanceof InvalidScopeError) {
+    return new OAuthPermanentRefreshError(
+      "OAuth authorization server rejected the scope set of the current grant.",
+      { cause: error, reason: "invalid-scope" },
     );
   }
   if (error instanceof InvalidClientError || error instanceof UnauthorizedClientError) {
