@@ -18,9 +18,9 @@
 - `extensions/modeling/`：跨模块共享的核心类型。
 - `extensions/concurrency/`：Registry 和 SDK session 生命周期使用的异步读写锁。
 - `extensions/servers/`：MCP server registry 与 current registry reference。
-- `extensions/servers/servers/`：transport 推断、具体 stdio/HTTP server 组装、SDK session 生命周期与工具过滤。
+- `extensions/servers/servers/`：transport 推断、具体 stdio/HTTP server 组装、SDK session 生命周期与工具过滤；OAuth server 只在该层注入 authenticated fetch，不自行实现 OAuth 编排。
 - `extensions/oauth/`：OAuth broker 的协议、identity、credential persistence、授权事务与 session-side adapter 依赖；broker runtime/client 按 ownership 分层组织。
-- `extensions/oauth/broker/`：broker identity/credential 内核、broker-owned credential persistence、token/status/logout HTTP API、session client/launcher 与 standalone process；commit `ecc3434` 的 claim/election/endpoint publication 已由简化 Phase 2 取代。当前已包含基于 SDK 低层函数的 discovery/DCR/refresh 协议 adapter 与 fake AS 测试基建，但仍未包含 authorize/callback transaction 或 authenticated MCP connection。
+- `extensions/oauth/broker/`：broker identity/credential 内核、broker-owned credential persistence、token/status/logout/authorize/scope-challenge HTTP API、session client/launcher 与 standalone process；commit `ecc3434` 的 claim/election/endpoint publication 已由简化 Phase 2 取代。已包含基于 SDK 低层函数的 discovery/DCR/refresh/authorize/code-exchange 协议 adapter、内存 authorize 事务与 callback 路由、平台 browser opener，以及 session 侧 authenticated fetch 与 `OauthHttpServer`；真实浏览器与真实 AS 的端到端授权仍未手工验证。
 - `extensions/tools/`：暴露给 Pi 的 `mcp_server` 与 `mcp_tool` 工具入口。
 - `extensions/artifacts/`：工具调用结果物化、payload 提取/归一化、artifact 存储、manifest 与模型 summary 生成。
 - `extensions/rendering/`：TUI 工具调用/结果渲染、footer status 与用户可见通知。
