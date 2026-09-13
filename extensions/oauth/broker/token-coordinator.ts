@@ -220,18 +220,53 @@ export class OAuthTokenCoordinator {
     });
   }
 
+  /**
+   * 提交授权结果；成功提交时同时清空该 identity 的追加 scope 集合。
+   */
   async commitAuthorization(
     identity: OAuthIdentity,
     fence: OAuthCredentialFence,
     update: OAuthTokenUpdate,
   ): Promise<boolean> {
-    return this.repository.mutate(identity, current => {
-      const committed = applyOAuthAuthorization(current, fence, canonicalizeUpdate(update));
+    return this.repository.mutateRecord(identity, current => {
+      const committed = applyOAuthAuthorization(
+        current.authorization,
+        fence,
+        canonicalizeUpdate(update),
+      );
       if (!committed) {
-        return { state: current, result: false, changed: false };
+        return { record: current, result: false, changed: false };
       }
-      return { state: committed, result: true };
+      return {
+        record: { ...current, authorization: committed, challengedScopes: [] },
+        result: true,
+      };
     });
+  }
+
+  /** authorize 解析 scope 时读取该 identity 的追加集合。 */
+  async getChallengedScopes(identity: OAuthIdentity): Promise<readonly string[]> {
+    const record = await this.repository.readRecord(identity);
+    return [...record.challengedScopes];
+  }
+
+  /** AS 在 authorize 事务里拒绝 scope 时只清空追加集合；token 与 registration 不动。 */
+  async discardChallengedScopes(identity: OAuthIdentity): Promise<void> {
+    await this.repository.mutateRecord(identity, current => ({
+      record: current.challengedScopes.length === 0
+        ? current
+        : { ...current, challengedScopes: [] },
+      result: undefined,
+      changed: current.challengedScopes.length > 0,
+    }));
+  }
+
+  /** authorize 事务发现 client 身份被拒时，按 fence 清 token + registration + challengedScopes。 */
+  async clearClientAuthorization(
+    identity: OAuthIdentity,
+    fence: OAuthCredentialFence,
+  ): Promise<boolean> {
+    return this.clearCredentials(identity, fence, "client");
   }
 
   async getAccessToken(
@@ -291,14 +326,18 @@ export class OAuthTokenCoordinator {
    */
   async ensureDiscovery(
     identity: OAuthIdentity,
-    options: { force?: boolean } = {},
+    options: { force?: boolean; resourceMetadataUrl?: string } = {},
   ): Promise<OAuthDiscoveryRecord | undefined> {
     const key = identity.key;
     const existing = this.discoveryFlights.get(key);
     if (existing) {
       return existing;
     }
-    const flight = Promise.resolve().then(() => this.runDiscovery(identity, options.force === true));
+    const flight = Promise.resolve().then(() => this.runDiscovery(
+      identity,
+      options.force === true,
+      options.resourceMetadataUrl,
+    ));
     this.discoveryFlights.set(key, flight);
     flight.then(
       () => this.clearFlight(this.discoveryFlights, key, flight),
@@ -446,6 +485,7 @@ export class OAuthTokenCoordinator {
   private async runDiscovery(
     identity: OAuthIdentity,
     force: boolean,
+    resourceMetadataUrl?: string,
   ): Promise<OAuthDiscoveryRecord | undefined> {
     const record = await this.repository.readRecord(identity);
     const cached = record.discovery;
@@ -458,7 +498,10 @@ export class OAuthTokenCoordinator {
     }
 
     try {
-      const result = await operation({ identity });
+      const result = await operation({
+        identity,
+        ...(resourceMetadataUrl === undefined ? {} : { resourceMetadataUrl }),
+      });
       const next: OAuthDiscoveryRecord = {
         authorizationServerUrl: result.authorizationServerUrl,
         fetchedAt: this.now(),

@@ -74,6 +74,7 @@ export class FakeOAuthAuthorizationServer {
   private readonly hangingResponses = new Set<ServerResponse>();
   private readonly recordedTokenRequests: FakeOAuthTokenRequestRecord[] = [];
   private readonly recordedRegistrationRequests: Record<string, unknown>[] = [];
+  private readonly recordedProtectedResourceMetadataUrls: string[] = [];
   private tokenCounter = 0;
   private protectedResourceMetadataResponse: FakeHttpResponse | undefined;
   private authorizationServerMetadataResponse: FakeHttpResponse | undefined;
@@ -128,6 +129,11 @@ export class FakeOAuthAuthorizationServer {
 
   get registrationRequests(): readonly Record<string, unknown>[] {
     return [...this.recordedRegistrationRequests];
+  }
+
+  /** 记录收到的 PRM 请求（原始 path+query），用于验证显式 PRM URL 优先级。 */
+  get protectedResourceMetadataRequests(): readonly string[] {
+    return [...this.recordedProtectedResourceMetadataUrls];
   }
 
   enqueueTokenOutcome(outcome: FakeOAuthTokenOutcome): void {
@@ -186,6 +192,7 @@ export class FakeOAuthAuthorizationServer {
     const pathname = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
 
     if (request.method === "GET" && pathname.startsWith("/.well-known/oauth-protected-resource")) {
+      this.recordedProtectedResourceMetadataUrls.push(request.url ?? "/");
       this.sendConfiguredResponse(
         response,
         this.protectedResourceMetadataResponse,

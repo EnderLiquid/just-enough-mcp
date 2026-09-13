@@ -1,7 +1,9 @@
 import {
   discoverOAuthServerInfo,
+  exchangeAuthorization,
   refreshAuthorization,
   registerClient,
+  startAuthorization,
 } from "@modelcontextprotocol/sdk/client/auth.js";
 import {
   InvalidClientError,
@@ -17,7 +19,12 @@ import type {
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import type { FetchLike } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { OAuthTokenUpdate } from "./credential-state.ts";
-import type { OAuthDiscoveryResult } from "./oauth-protocol-types.ts";
+import type {
+  OAuthAuthorizationUrlRequest,
+  OAuthAuthorizationUrlResult,
+  OAuthCodeExchangeRequest,
+  OAuthDiscoveryResult,
+} from "./oauth-protocol-types.ts";
 import {
   OAuthAuthorizationRequiredError,
   OAuthClientRejectedError,
@@ -34,7 +41,10 @@ export const DEFAULT_OAUTH_ACCESS_TOKEN_LIFETIME_MS = 60 * 60 * 1_000;
  * OAuth domain error 一律映射为 token-coordinator 的错误类型。
  */
 export interface OAuthProtocolAdapter {
-  discover(resourceUrl: string): Promise<OAuthDiscoveryResult>;
+  discover(
+    resourceUrl: string,
+    options?: { readonly resourceMetadataUrl?: string },
+  ): Promise<OAuthDiscoveryResult>;
   register(params: {
     readonly authorizationServerUrl: string;
     readonly clientMetadata: OAuthClientMetadata;
@@ -48,6 +58,8 @@ export interface OAuthProtocolAdapter {
     readonly metadata?: AuthorizationServerMetadata;
     readonly resource?: URL;
   }): Promise<OAuthTokens>;
+  createAuthorizationUrl(params: OAuthAuthorizationUrlRequest): Promise<OAuthAuthorizationUrlResult>;
+  exchangeCode(params: OAuthCodeExchangeRequest): Promise<OAuthTokens>;
 }
 
 export interface OAuthProtocolAdapterOptions {
@@ -65,9 +77,14 @@ export function createOAuthProtocolAdapter(
   const fetchFn = createTimedFetch(options.fetchFn ?? fetch, timeoutMs);
 
   return {
-    async discover(resourceUrl) {
+    async discover(resourceUrl, options = {}) {
       try {
-        const info = await discoverOAuthServerInfo(resourceUrl, { fetchFn });
+        const info = await discoverOAuthServerInfo(resourceUrl, {
+          ...(options.resourceMetadataUrl === undefined
+            ? {}
+            : { resourceMetadataUrl: new URL(options.resourceMetadataUrl) }),
+          fetchFn,
+        });
         return {
           authorizationServerUrl: info.authorizationServerUrl,
           ...(info.authorizationServerMetadata
@@ -100,6 +117,45 @@ export function createOAuthProtocolAdapter(
           clientInformation: params.clientInformation,
           refreshToken: params.refreshToken,
           ...(params.resource ? { resource: params.resource } : {}),
+          fetchFn,
+        });
+      } catch (error) {
+        throw classifyProtocolError(error);
+      }
+    },
+
+    async createAuthorizationUrl(params) {
+      try {
+        const result = await startAuthorization(params.authorizationServerUrl, {
+          ...(params.authorizationServerMetadata
+            ? { metadata: params.authorizationServerMetadata }
+            : {}),
+          clientInformation: params.clientInformation,
+          redirectUrl: params.redirectUrl,
+          state: params.state,
+          ...(params.scope === undefined ? {} : { scope: params.scope }),
+          resource: new URL(params.identity.resourceUrl),
+        });
+        return {
+          authorizationUrl: result.authorizationUrl.toString(),
+          codeVerifier: result.codeVerifier,
+        };
+      } catch (error) {
+        throw classifyProtocolError(error);
+      }
+    },
+
+    async exchangeCode(params) {
+      try {
+        return await exchangeAuthorization(params.authorizationServerUrl, {
+          ...(params.authorizationServerMetadata
+            ? { metadata: params.authorizationServerMetadata }
+            : {}),
+          clientInformation: params.clientInformation,
+          authorizationCode: params.code,
+          codeVerifier: params.codeVerifier,
+          redirectUri: params.redirectUrl,
+          resource: params.resource,
           fetchFn,
         });
       } catch (error) {

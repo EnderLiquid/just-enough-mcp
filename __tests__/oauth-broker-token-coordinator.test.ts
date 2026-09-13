@@ -891,4 +891,80 @@ describe("OAuth credential state", () => {
     gate.resolve({ accessToken: "access-new", accessTokenExpiresAt: 9_000 });
     await pending;
   });
+
+  it("commitAuthorization 成功提交时清空追加 scope 集合", async () => {
+    const identity = makeIdentity();
+    const repository = new InMemoryOAuthCredentialRepository();
+    await repository.mutateRecord(identity, record => ({
+      record: { ...record, challengedScopes: ["admin"] },
+      result: undefined,
+    }));
+    const coordinator = new OAuthTokenCoordinator({ refresh: vi.fn<OAuthRefreshOperation>(), repository });
+    const fence = await coordinator.beginAuthorization(identity);
+
+    expect(await coordinator.commitAuthorization(identity, fence, {
+      accessToken: "access-authorized",
+      accessTokenExpiresAt: 60_000,
+      refreshToken: "refresh-authorized",
+    })).toBe(true);
+    const record = await repository.readRecord(identity);
+    expect(record.challengedScopes).toEqual([]);
+    expect(record.authorization.tokens?.accessToken).toBe("access-authorized");
+  });
+
+  it("clearClientAuthorization 按 fence 清 token、registration 与追加 scope", async () => {
+    const identity = makeIdentity();
+    const repository = new InMemoryOAuthCredentialRepository();
+    await repository.mutateRecord(identity, record => ({
+      record: {
+        ...record,
+        authorization: makeState("access-old", 0, "refresh-old", 2, 1),
+        registration: {
+          strategy: "dcr",
+          authorizationServerUrl: "https://as.example.test",
+          clientInformation: {
+            client_id: "client-1",
+            redirect_uris: ["http://127.0.0.1:33418/oauth/callback"],
+          },
+        },
+        challengedScopes: ["admin"],
+      },
+      result: undefined,
+    }));
+    const coordinator = new OAuthTokenCoordinator({ refresh: vi.fn<OAuthRefreshOperation>(), repository });
+    const fence = { credentialRevision: 2, authEpoch: 1 };
+
+    expect(await coordinator.clearClientAuthorization(identity, fence)).toBe(true);
+    const record = await repository.readRecord(identity);
+    expect(record.registration).toBeUndefined();
+    expect(record.challengedScopes).toEqual([]);
+    expect(record.authorization.tokens).toBeUndefined();
+    expect(await coordinator.clearClientAuthorization(identity, fence)).toBe(false);
+  });
+
+  it("ensureDiscovery 把转发的 resource metadata URL 传给 discovery 操作", async () => {
+    const identity = makeIdentity();
+    const requests: Array<{ resourceMetadataUrl?: string }> = [];
+    const coordinator = new OAuthTokenCoordinator({
+      repository: new InMemoryOAuthCredentialRepository(),
+      refresh: vi.fn<OAuthRefreshOperation>(),
+      discover: async request => {
+        requests.push({
+          ...(request.resourceMetadataUrl === undefined
+            ? {}
+            : { resourceMetadataUrl: request.resourceMetadataUrl }),
+        });
+        return makeDiscoveryResult();
+      },
+      now: () => 1_000,
+    });
+
+    await coordinator.ensureDiscovery(identity, {
+      force: true,
+      resourceMetadataUrl: "http://127.0.0.1:9/oauth-protected-resource",
+    });
+    expect(requests).toEqual([
+      { resourceMetadataUrl: "http://127.0.0.1:9/oauth-protected-resource" },
+    ]);
+  });
 });

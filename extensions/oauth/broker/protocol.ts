@@ -13,6 +13,8 @@ export const DEFAULT_OAUTH_BROKER_PRESENCE_TTL_MS = 30_000;
 export const DEFAULT_OAUTH_BROKER_IDLE_GRACE_MS = 5_000;
 export const DEFAULT_OAUTH_BROKER_LOCK_STALE_MS = 30_000;
 export const DEFAULT_OAUTH_BROKER_LOCK_UPDATE_MS = 10_000;
+export const DEFAULT_OAUTH_BROKER_AUTHORIZE_TIMEOUT_MS = 300_000;
+export const DEFAULT_OAUTH_BROKER_AUTHORIZE_CALLER_MARGIN_MS = 15_000;
 
 export const OAUTH_BROKER_ACCESS_FORMAT = "just-enough-mcp.oauth-broker-access" as const;
 export const OAUTH_BROKER_REQUEST_ID_HEADER = "x-just-enough-mcp-request-id";
@@ -26,6 +28,7 @@ export const OAUTH_BROKER_ROUTES = {
   oauthStatus: "/v1/oauth/status",
   oauthToken: "/v1/oauth/token",
   oauthLogout: "/v1/oauth/logout",
+  oauthAuthorize: "/v1/oauth/authorize",
 } as const;
 
 export type OAuthBrokerPresenceAction = "register" | "pulse" | "release";
@@ -81,6 +84,13 @@ export interface OAuthBrokerLogoutRequest extends OAuthBrokerIdentityRequest {
   readonly expectedCredentialRevision?: number;
 }
 
+export interface OAuthBrokerAuthorizeRequest extends OAuthBrokerIdentityRequest {
+  /** session 观察到的初始 401 challenge `scope`，作为 base 候选。 */
+  readonly initialChallengeScope?: string;
+  /** 同一 401 challenge 的 PRM URL，作为 live discovery 的首选路径。 */
+  readonly resourceMetadataUrl?: string;
+}
+
 export interface OAuthBrokerStatusResult {
   readonly oauthState: OAuthBrokerKnownState;
   readonly credentialRevision: number;
@@ -96,6 +106,13 @@ export interface OAuthBrokerLogoutResult extends OAuthBrokerStatusResult {
   readonly applied: boolean;
   /** 仅当 applied 为 false 时给出，用于区分 revision 已被取代和 refresh 在途。 */
   readonly reason?: OAuthLogoutRefusalReason;
+}
+
+export interface OAuthBrokerAuthorizeResult {
+  readonly oauthState: "authorized";
+  readonly credentialRevision: number;
+  /** token response 返回的 granted scope；AS 省略时为本次请求的 final scope。 */
+  readonly scope?: string;
 }
 
 export interface OAuthBrokerRequestEnvelope<T> {
@@ -288,6 +305,28 @@ export function parseOAuthBrokerLogoutRequest(value: unknown): OAuthBrokerLogout
   };
 }
 
+export function parseOAuthBrokerAuthorizeRequest(value: unknown): OAuthBrokerAuthorizeRequest {
+  const record = requireRecord(value, "OAuth broker authorize request");
+  return {
+    ...parseOAuthBrokerIdentityRequest(record),
+    ...(record.initialChallengeScope === undefined
+      ? {}
+      : {
+          initialChallengeScope: normalizeOAuthScope(
+            assertString(record.initialChallengeScope, "oauth.initialChallengeScope"),
+          ),
+        }),
+    ...(record.resourceMetadataUrl === undefined
+      ? {}
+      : {
+          resourceMetadataUrl: assertAbsoluteHttpUrl(
+            record.resourceMetadataUrl,
+            "oauth.resourceMetadataUrl",
+          ),
+        }),
+  };
+}
+
 export function parseOAuthBrokerStatusResult(value: unknown): OAuthBrokerStatusResult {
   const record = requireRecord(value, "OAuth broker status result");
   return {
@@ -323,6 +362,21 @@ export function parseOAuthBrokerLogoutResult(value: unknown): OAuthBrokerLogoutR
     ...parseOAuthBrokerStatusResult(record),
     applied: record.applied,
     ...(record.reason === undefined ? {} : { reason: parseLogoutRefusalReason(record.reason) }),
+  };
+}
+
+export function parseOAuthBrokerAuthorizeResult(value: unknown): OAuthBrokerAuthorizeResult {
+  const record = requireRecord(value, "OAuth broker authorize result");
+  const status = parseOAuthBrokerStatusResult(record);
+  if (status.oauthState !== "authorized") {
+    throw new TypeError("oauth.oauthState must be authorized for a successful authorize result.");
+  }
+  return {
+    oauthState: "authorized",
+    credentialRevision: status.credentialRevision,
+    ...(record.scope === undefined
+      ? {}
+      : { scope: normalizeOAuthScope(assertString(record.scope, "oauth.scope")) }),
   };
 }
 
@@ -408,6 +462,20 @@ export function isProcessAlive(pid: number): boolean {
   } catch (error) {
     return isErrorWithCode(error) && error.code === "EPERM";
   }
+}
+
+function assertAbsoluteHttpUrl(value: unknown, fieldName: string): string {
+  const raw = assertNonEmptyString(value, fieldName);
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new TypeError(`${fieldName} must be an absolute URL.`);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new TypeError(`${fieldName} must use http or https.`);
+  }
+  return url.toString();
 }
 
 function requireRecord(value: unknown, fieldName: string): Record<string, unknown> {

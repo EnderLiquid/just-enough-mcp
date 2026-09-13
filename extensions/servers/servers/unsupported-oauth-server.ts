@@ -89,8 +89,16 @@ export class UnsupportedOauthServer implements McpServer {
     throw this.unsupported();
   }
 
-  async authorize(): Promise<ServerSnapshot> {
-    throw this.unsupported();
+  async authorize(signal?: AbortSignal): Promise<ServerSnapshot> {
+    if (!this.brokerClient || !this.identity) {
+      throw this.unsupported();
+    }
+    const result = await this.brokerClient.authorizeOAuth({
+      identity: this.identity,
+      ...(this.scope === undefined ? {} : { scope: this.scope }),
+    }, signal === undefined ? {} : { signal });
+    this.knownOauthState = result.oauthState;
+    return this.snapshot();
   }
 
   async logout(): Promise<ServerSnapshot> {

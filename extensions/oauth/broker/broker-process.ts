@@ -6,12 +6,14 @@ import {
   createOAuthBrokerErrorEnvelope,
   createOAuthBrokerSecret,
   createOAuthBrokerSuccessEnvelope,
+  getOAuthBrokerUrl,
   OAUTH_BROKER_ACCESS_FORMAT,
   OAUTH_BROKER_PRESENCE_ID_HEADER,
   OAUTH_BROKER_PROTOCOL_VERSION,
   OAUTH_BROKER_REQUEST_ID_HEADER,
   OAUTH_BROKER_ROUTES,
   OAUTH_BROKER_SESSION_ID_HEADER,
+  parseOAuthBrokerAuthorizeRequest,
   parseOAuthBrokerLogoutRequest,
   parseOAuthBrokerPresenceIdentity,
   parseOAuthBrokerPresenceRequest,
@@ -53,6 +55,14 @@ import {
   createOAuthProtocolAdapter,
   createOAuthRefreshOperation,
 } from "./oauth-protocol.ts";
+import {
+  OAuthAuthorizationError,
+  OAuthAuthorizationTransactions,
+  type OAuthCallbackPage,
+} from "./authorization-transaction.ts";
+import { createPlatformBrowserOpener, type BrowserOpener } from "./browser-opener.ts";
+import { DEFAULT_OAUTH_BROKER_AUTHORIZE_TIMEOUT_MS } from "./protocol.ts";
+import type { OAuthClientMetadata } from "@modelcontextprotocol/sdk/shared/auth.js";
 import type { FetchLike } from "@modelcontextprotocol/sdk/shared/transport.js";
 
 const MAX_REQUEST_BODY_BYTES = 64 * 1024;
@@ -71,6 +81,10 @@ export interface OAuthBrokerProcessOptions {
   /** Test-only fetch injection for the SDK-backed protocol adapter. */
   readonly fetchFn?: FetchLike;
   readonly protocolTimeoutMs?: number;
+  /** Interactive authorization transaction timeout; covered by the client's own long-request timeout. */
+  readonly authorizeTimeoutMs?: number;
+  /** Test-only browser opener injection; production uses the platform opener. */
+  readonly openBrowser?: BrowserOpener;
   /** Test-only repository injection. Standalone brokers use the file repository. */
   readonly credentialRepository?: OAuthCredentialRepository;
   readonly now?: () => number;
@@ -139,7 +153,11 @@ export async function runOAuthBrokerProcess(
       adapter: protocolAdapter,
       ...(options.now ? { now: options.now } : {}),
     }),
-    discover: request => protocolAdapter.discover(request.identity.resourceUrl),
+    discover: request => protocolAdapter.discover(request.identity.resourceUrl, {
+      ...(request.resourceMetadataUrl === undefined
+        ? {}
+        : { resourceMetadataUrl: request.resourceMetadataUrl }),
+    }),
     register: request => protocolAdapter.register({
       authorizationServerUrl: request.authorizationServerUrl,
       clientMetadata: request.clientMetadata,
@@ -149,6 +167,24 @@ export async function runOAuthBrokerProcess(
       ...(request.scope === undefined ? {} : { scope: request.scope }),
     }),
     now: options.now,
+  });
+  const redirectUri = getOAuthBrokerUrl(options.configuredPort, OAUTH_BROKER_ROUTES.callback);
+  const clientMetadata: OAuthClientMetadata = {
+    redirect_uris: [redirectUri],
+    client_name: "just-enough-mcp",
+    grant_types: ["authorization_code", "refresh_token"],
+    response_types: ["code"],
+    token_endpoint_auth_method: "none",
+  };
+  const authorizations = new OAuthAuthorizationTransactions({
+    coordinator: tokenCoordinator,
+    authorize: request => protocolAdapter.createAuthorizationUrl(request),
+    exchangeCode: request => protocolAdapter.exchangeCode(request),
+    redirectUri,
+    clientMetadata,
+    openBrowser: options.openBrowser ?? createPlatformBrowserOpener(),
+    transactionTimeoutMs: options.authorizeTimeoutMs ?? DEFAULT_OAUTH_BROKER_AUTHORIZE_TIMEOUT_MS,
+    ...(options.now ? { now: options.now } : {}),
   });
 
   const instanceId = randomUUID();
@@ -191,7 +227,7 @@ export async function runOAuthBrokerProcess(
       return;
     }
     expirePresence();
-    if (sessions.size > 0 || pendingOperationCount > 0) {
+    if (sessions.size > 0 || pendingOperationCount > 0 || authorizations.pendingCount > 0) {
       clearIdleDeadline();
       return;
     }
@@ -241,6 +277,7 @@ export async function runOAuthBrokerProcess(
       clearInterval(idleTimer);
       idleTimer = undefined;
     }
+    authorizations.cancelAll();
     shutdownPromise = (async () => {
       await closeServer();
       await lock.release().catch(() => undefined);
@@ -312,8 +349,25 @@ export async function runOAuthBrokerProcess(
     const requestId = getRequestId(request);
     const pathname = getPathname(request);
 
-    if (pathname === OAUTH_BROKER_ROUTES.callback && request.method === "GET") {
-      sendCallbackUnavailable(response);
+    if (pathname === OAUTH_BROKER_ROUTES.callback) {
+      if (request.method !== "GET") {
+        sendCallbackPage(response, {
+          status: 405,
+          title: "Method not allowed",
+          message: "The OAuth callback only supports GET requests.",
+        });
+        return;
+      }
+      const parameters = new URL(request.url ?? "/", "http://127.0.0.1").searchParams;
+      const page = await authorizations.handleCallback({
+        ...(parameters.get("state") === null ? {} : { state: parameters.get("state")! }),
+        ...(parameters.get("code") === null ? {} : { code: parameters.get("code")! }),
+        ...(parameters.get("error") === null ? {} : { error: parameters.get("error")! }),
+        ...(parameters.get("error_description") === null
+          ? {}
+          : { errorDescription: parameters.get("error_description")! }),
+      });
+      sendCallbackPage(response, page);
       return;
     }
 
@@ -404,7 +458,8 @@ export async function runOAuthBrokerProcess(
 
     const isOAuthRoute = pathname === OAUTH_BROKER_ROUTES.oauthStatus
       || pathname === OAUTH_BROKER_ROUTES.oauthToken
-      || pathname === OAUTH_BROKER_ROUTES.oauthLogout;
+      || pathname === OAUTH_BROKER_ROUTES.oauthLogout
+      || pathname === OAUTH_BROKER_ROUTES.oauthAuthorize;
     if (!isOAuthRoute || request.method !== "POST") {
       sendError(response, requestId, 404, "route-not-found", "OAuth broker route was not found.");
       return;
@@ -429,11 +484,37 @@ export async function runOAuthBrokerProcess(
         }
         const credential = await tokenCoordinator.getCredentialView(params.identity);
         sendSuccess(response, requestId, {
-          oauthState: credentialIsAuthorized(credential, params.scope, options.now?.() ?? Date.now())
-            ? "authorized"
-            : "authorization-required",
+          oauthState: authorizations.hasPending(params.identity)
+            ? "authorizing"
+            : credentialIsAuthorized(credential, params.scope, options.now?.() ?? Date.now())
+              ? "authorized"
+              : "authorization-required",
           credentialRevision: credential.credentialRevision,
         });
+        return;
+      }
+
+      if (pathname === OAUTH_BROKER_ROUTES.oauthAuthorize) {
+        const params = await parseRequestParams(
+          request,
+          requestId,
+          parseOAuthBrokerAuthorizeRequest,
+          response,
+        );
+        if (!params || !validateIdentityNamespace(
+          params,
+          options.namespaceId,
+          requestId,
+          response,
+        )) {
+          return;
+        }
+        try {
+          const result = await authorizations.authorize(params);
+          sendSuccess(response, requestId, result);
+        } catch (error) {
+          sendOAuthAuthorizationError(response, requestId, error);
+        }
         return;
       }
 
@@ -483,6 +564,9 @@ export async function runOAuthBrokerProcess(
         params.identity,
         params.expectedCredentialRevision,
       );
+      if (result.applied) {
+        authorizations.cancel(params.identity);
+      }
       sendSuccess(response, requestId, {
         applied: result.applied,
         ...(result.reason === undefined ? {} : { reason: result.reason }),
@@ -632,6 +716,36 @@ function sendOAuthOperationError(
   );
 }
 
+function sendOAuthAuthorizationError(
+  response: ServerResponse,
+  requestId: string,
+  error: unknown,
+): void {
+  if (error instanceof OAuthAuthorizationError) {
+    const status = AUTHORIZATION_ERROR_STATUS[error.code];
+    sendError(response, requestId, status, error.code, error.message);
+    return;
+  }
+  sendError(
+    response,
+    requestId,
+    500,
+    "broker-internal-error",
+    "OAuth broker authorization operation failed.",
+  );
+}
+
+const AUTHORIZATION_ERROR_STATUS: Record<OAuthAuthorizationError["code"], number> = {
+  "authorization-denied": 409,
+  "authorization-timeout": 504,
+  "authorization-superseded": 409,
+  "authorization-scope-rejected": 409,
+  "authorization-code-rejected": 409,
+  "authorization-client-rejected": 409,
+  "browser-open-failed": 500,
+  "temporary-protocol-error": 503,
+};
+
 function listen(
   server: ReturnType<typeof createServer>,
   port: number,
@@ -737,15 +851,39 @@ function sendJson(response: ServerResponse, status: number, payload: unknown): v
   response.end(body);
 }
 
-function sendCallbackUnavailable(response: ServerResponse): void {
-  const body = "OAuth authorization transaction was not found.";
-  response.writeHead(400, {
+function sendCallbackPage(response: ServerResponse, page: OAuthCallbackPage): void {
+  if (response.destroyed || response.writableEnded) {
+    return;
+  }
+  const body = callbackPageHtml(page);
+  response.writeHead(page.status, {
     "cache-control": "no-store",
-    "content-type": "text/plain; charset=utf-8",
+    "content-type": "text/html; charset=utf-8",
     "content-length": Buffer.byteLength(body),
     connection: "close",
   });
   response.end(body);
+}
+
+function callbackPageHtml(page: OAuthCallbackPage): string {
+  const escape = (value: string): string => value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escape(page.title)}</title>
+</head>
+<body style="font-family: system-ui, sans-serif; margin: 3rem auto; max-width: 32rem; line-height: 1.5;">
+<h1>${escape(page.title)}</h1>
+<p>${escape(page.message)}</p>
+</body>
+</html>
+`;
 }
 
 function parsePositiveInteger(value: string | undefined, fieldName: string): number {
@@ -777,6 +915,9 @@ async function main(): Promise<void> {
     configuredPort: parsePositiveInteger(args.port, "port"),
     presenceTtlMs: parsePositiveInteger(args["presence-ttl-ms"], "presence-ttl-ms"),
     idleGraceMs: parsePositiveInteger(args["idle-grace-ms"], "idle-grace-ms"),
+    ...(args["authorize-timeout-ms"] === undefined
+      ? {}
+      : { authorizeTimeoutMs: parsePositiveInteger(args["authorize-timeout-ms"], "authorize-timeout-ms") }),
     lockStaleMs: args["lock-stale-ms"] === undefined
       ? undefined
       : parsePositiveInteger(args["lock-stale-ms"], "lock-stale-ms"),

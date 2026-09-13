@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import {
   createOAuthBrokerRequestEnvelope,
+  DEFAULT_OAUTH_BROKER_AUTHORIZE_CALLER_MARGIN_MS,
+  DEFAULT_OAUTH_BROKER_AUTHORIZE_TIMEOUT_MS,
   DEFAULT_OAUTH_BROKER_CONNECT_TIMEOUT_MS,
   DEFAULT_OAUTH_BROKER_PRESENCE_PULSE_MS,
   DEFAULT_OAUTH_BROKER_RECONNECT_INTERVAL_MS,
@@ -11,12 +13,15 @@ import {
   OAUTH_BROKER_ROUTES,
   OAUTH_BROKER_SESSION_ID_HEADER,
   parseOAuthBrokerAccessDescriptor,
+  parseOAuthBrokerAuthorizeResult,
   parseOAuthBrokerHealth,
   parseOAuthBrokerLogoutResult,
   parseOAuthBrokerResponseEnvelope,
   parseOAuthBrokerStatusResult,
   parseOAuthBrokerTokenResult,
   type OAuthBrokerAccessDescriptor,
+  type OAuthBrokerAuthorizeRequest,
+  type OAuthBrokerAuthorizeResult,
   type OAuthBrokerHealth,
   type OAuthBrokerIdentityRequest,
   type OAuthBrokerLogoutRequest,
@@ -75,6 +80,8 @@ export interface OAuthBrokerClientOptions {
   readonly connectTimeoutMs?: number;
   readonly reconnectIntervalMs?: number;
   readonly presencePulseMs?: number;
+  /** authorize 是长请求；默认 transaction timeout 加少量回调/交换余量。 */
+  readonly authorizeTimeoutMs?: number;
   readonly fetch?: typeof globalThis.fetch;
   readonly onStateChange?: (state: OAuthBrokerClientState) => void;
 }
@@ -111,6 +118,7 @@ export class OAuthBrokerClient {
   private readonly connectTimeoutMs: number;
   private readonly reconnectIntervalMs: number;
   private readonly presencePulseMs: number;
+  private readonly authorizeTimeoutMs: number;
   private readonly fetchImplementation: typeof globalThis.fetch;
   private readonly onStateChange?: (state: OAuthBrokerClientState) => void;
 
@@ -146,6 +154,11 @@ export class OAuthBrokerClient {
     this.presencePulseMs = requirePositiveFinite(
       options.presencePulseMs ?? DEFAULT_OAUTH_BROKER_PRESENCE_PULSE_MS,
       "presencePulseMs",
+    );
+    this.authorizeTimeoutMs = requirePositiveFinite(
+      options.authorizeTimeoutMs
+        ?? DEFAULT_OAUTH_BROKER_AUTHORIZE_TIMEOUT_MS + DEFAULT_OAUTH_BROKER_AUTHORIZE_CALLER_MARGIN_MS,
+      "authorizeTimeoutMs",
     );
     this.fetchImplementation = options.fetch ?? globalThis.fetch;
     this.onStateChange = options.onStateChange;
@@ -235,6 +248,24 @@ export class OAuthBrokerClient {
       ...options,
     });
     return parseOAuthBrokerLogoutResult(result);
+  }
+
+  /**
+   * Opens the interactive authorization flow. The broker keeps the HTTP response
+   * pending until the transaction reaches a terminal state, so this call uses the
+   * dedicated long-request timeout unless the caller overrides it.
+   */
+  async authorizeOAuth(
+    params: OAuthBrokerAuthorizeRequest,
+    options: OAuthBrokerRequestOptions = {},
+  ): Promise<OAuthBrokerAuthorizeResult> {
+    const result = await this.request<unknown>(OAUTH_BROKER_ROUTES.oauthAuthorize, {
+      method: "POST",
+      params,
+      ...options,
+      timeoutMs: options.timeoutMs ?? this.authorizeTimeoutMs,
+    });
+    return parseOAuthBrokerAuthorizeResult(result);
   }
 
   /** Sends a future broker API request and counts a successful response as liveness. */
