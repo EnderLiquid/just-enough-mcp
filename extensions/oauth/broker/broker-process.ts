@@ -18,6 +18,7 @@ import {
   parseOAuthBrokerPresenceIdentity,
   parseOAuthBrokerPresenceRequest,
   parseOAuthBrokerRequestEnvelope,
+  parseOAuthBrokerScopeChallengeRequest,
   parseOAuthBrokerTokenRequest,
   parseOAuthBrokerIdentityRequest,
   parseOAuthBrokerAccessDescriptor,
@@ -459,7 +460,8 @@ export async function runOAuthBrokerProcess(
     const isOAuthRoute = pathname === OAUTH_BROKER_ROUTES.oauthStatus
       || pathname === OAUTH_BROKER_ROUTES.oauthToken
       || pathname === OAUTH_BROKER_ROUTES.oauthLogout
-      || pathname === OAUTH_BROKER_ROUTES.oauthAuthorize;
+      || pathname === OAUTH_BROKER_ROUTES.oauthAuthorize
+      || pathname === OAUTH_BROKER_ROUTES.oauthScopeChallenge;
     if (!isOAuthRoute || request.method !== "POST") {
       sendError(response, requestId, 404, "route-not-found", "OAuth broker route was not found.");
       return;
@@ -491,6 +493,55 @@ export async function runOAuthBrokerProcess(
               : "authorization-required",
           credentialRevision: credential.credentialRevision,
         });
+        return;
+      }
+
+      if (pathname === OAUTH_BROKER_ROUTES.oauthScopeChallenge) {
+        const params = await parseRequestParams(
+          request,
+          requestId,
+          parseOAuthBrokerScopeChallengeRequest,
+          response,
+        );
+        if (!params || !validateIdentityNamespace(
+          params,
+          options.namespaceId,
+          requestId,
+          response,
+        )) {
+          return;
+        }
+        try {
+          const challenge = await tokenCoordinator.challengeScope(
+            params.identity,
+            params.challengedScope,
+            params.observedCredentialRevision,
+          );
+          if (challenge.repeat) {
+            sendError(
+              response,
+              requestId,
+              409,
+              "scope-not-grantable",
+              "The MCP server requires a scope that the current authorization cannot be granted.",
+            );
+            return;
+          }
+          const credential = await tokenCoordinator.getCredentialView(params.identity);
+          sendSuccess(response, requestId, {
+            outcome: challenge.credentialsCleared ? "appended-credential-cleared" : "appended",
+            challengedScopes: challenge.challengedScopes,
+            appendedScopes: challenge.appendedScopes,
+            oauthState: credentialIsAuthorized(
+              credential,
+              params.scope,
+              options.now?.() ?? Date.now(),
+            ) ? "authorized" : "authorization-required",
+            credentialRevision: challenge.credentialRevision,
+          });
+        } catch (error) {
+          sendOAuthOperationError(response, requestId, error);
+        }
         return;
       }
 

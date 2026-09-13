@@ -5,7 +5,7 @@ import { createMcpServer } from "../extensions/servers/servers/factory.js";
 import { HttpPublicServer } from "../extensions/servers/servers/http-public-server.js";
 import { HttpTokenServer } from "../extensions/servers/servers/http-token-server.js";
 import { StdioPragmaticServer } from "../extensions/servers/servers/stdio-pragmatic-server.js";
-import { UnsupportedOauthServer } from "../extensions/servers/servers/unsupported-oauth-server.js";
+import { OauthHttpServer } from "../extensions/servers/servers/oauth-http-server.js";
 
 function makeConfig(definition: ServerDefinition, overrides: Partial<ResolvedServerConfig> = {}): ResolvedServerConfig {
   return {
@@ -82,7 +82,7 @@ describe("createMcpServer", () => {
       },
     });
 
-    expect(server).toBeInstanceOf(UnsupportedOauthServer);
+    expect(server).toBeInstanceOf(OauthHttpServer);
     expect(server.snapshot()).toMatchObject({ oauthState: "unknown" });
     await expect(server.status?.()).resolves.toMatchObject({ oauthState: "authorized" });
     expect(getOAuthStatus).toHaveBeenCalledWith({

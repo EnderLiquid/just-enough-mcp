@@ -29,6 +29,7 @@ export const OAUTH_BROKER_ROUTES = {
   oauthToken: "/v1/oauth/token",
   oauthLogout: "/v1/oauth/logout",
   oauthAuthorize: "/v1/oauth/authorize",
+  oauthScopeChallenge: "/v1/oauth/scope-challenge",
 } as const;
 
 export type OAuthBrokerPresenceAction = "register" | "pulse" | "release";
@@ -113,6 +114,26 @@ export interface OAuthBrokerAuthorizeResult {
   readonly credentialRevision: number;
   /** token response 返回的 granted scope；AS 省略时为本次请求的 final scope。 */
   readonly scope?: string;
+}
+
+export interface OAuthBrokerScopeChallengeRequest extends OAuthBrokerIdentityRequest {
+  /** `insufficient_scope` challenge 中提取的 challenged scope（NQCHAR 列表）。 */
+  readonly challengedScope: string;
+  /** session 发起原请求时实际使用的 token revision，用于条件清理。 */
+  readonly observedCredentialRevision?: number;
+}
+
+export type OAuthScopeChallengeOutcome =
+  | "appended"
+  | "appended-credential-cleared"
+  | "already-challenged";
+
+export interface OAuthBrokerScopeChallengeResult {
+  readonly outcome: OAuthScopeChallengeOutcome;
+  readonly challengedScopes: readonly string[];
+  readonly appendedScopes: readonly string[];
+  readonly oauthState: OAuthBrokerKnownState;
+  readonly credentialRevision: number;
 }
 
 export interface OAuthBrokerRequestEnvelope<T> {
@@ -325,6 +346,53 @@ export function parseOAuthBrokerAuthorizeRequest(value: unknown): OAuthBrokerAut
           ),
         }),
   };
+}
+
+export function parseOAuthBrokerScopeChallengeRequest(value: unknown): OAuthBrokerScopeChallengeRequest {
+  const record = requireRecord(value, "OAuth broker scope challenge request");
+  return {
+    ...parseOAuthBrokerIdentityRequest(record),
+    challengedScope: normalizeOAuthScope(
+      assertString(record.challengedScope, "oauth.challengedScope"),
+      "oauth.challengedScope",
+    ),
+    ...(record.observedCredentialRevision === undefined
+      ? {}
+      : {
+          observedCredentialRevision: assertNonNegativeSafeInteger(
+            record.observedCredentialRevision,
+            "oauth.observedCredentialRevision",
+          ),
+        }),
+  };
+}
+
+export function parseOAuthBrokerScopeChallengeResult(value: unknown): OAuthBrokerScopeChallengeResult {
+  const record = requireRecord(value, "OAuth broker scope challenge result");
+  const outcome = record.outcome;
+  if (outcome !== "appended" && outcome !== "appended-credential-cleared" && outcome !== "already-challenged") {
+    throw new TypeError(
+      "oauth.outcome must be appended, appended-credential-cleared or already-challenged.",
+    );
+  }
+  return {
+    outcome,
+    challengedScopes: parseScopeList(record.challengedScopes, "oauth.challengedScopes"),
+    appendedScopes: parseScopeList(record.appendedScopes, "oauth.appendedScopes"),
+    oauthState: parseKnownState(record.oauthState),
+    credentialRevision: assertNonNegativeSafeInteger(
+      record.credentialRevision,
+      "oauth.credentialRevision",
+    ),
+  };
+}
+
+function parseScopeList(value: unknown, fieldName: string): readonly string[] {
+  if (!Array.isArray(value)) {
+    throw new TypeError(`${fieldName} must be an array of scope values.`);
+  }
+  const scopes = value.map(entry => assertString(entry, fieldName));
+  return scopes.length === 0 ? [] : normalizeOAuthScope(scopes.join(" "), fieldName).split(" ");
 }
 
 export function parseOAuthBrokerStatusResult(value: unknown): OAuthBrokerStatusResult {

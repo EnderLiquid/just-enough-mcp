@@ -16,6 +16,7 @@ import {
   parseOAuthBrokerAuthorizeResult,
   parseOAuthBrokerHealth,
   parseOAuthBrokerLogoutResult,
+  parseOAuthBrokerScopeChallengeResult,
   parseOAuthBrokerResponseEnvelope,
   parseOAuthBrokerStatusResult,
   parseOAuthBrokerTokenResult,
@@ -26,6 +27,8 @@ import {
   type OAuthBrokerIdentityRequest,
   type OAuthBrokerLogoutRequest,
   type OAuthBrokerLogoutResult,
+  type OAuthBrokerScopeChallengeRequest,
+  type OAuthBrokerScopeChallengeResult,
   type OAuthBrokerPresenceAction,
   type OAuthBrokerPresenceIdentity,
   type OAuthBrokerPresenceRequest,
@@ -248,6 +251,22 @@ export class OAuthBrokerClient {
       ...options,
     });
     return parseOAuthBrokerLogoutResult(result);
+  }
+
+  /**
+   * 转发 403 `insufficient_scope` 的 scope challenge。challenged scope 已在追加集合中时
+   * broker 返回 409 `scope-not-grantable`，表示无法通过重复授权循环满足。
+   */
+  async challengeScope(
+    params: OAuthBrokerScopeChallengeRequest,
+    options: OAuthBrokerRequestOptions = {},
+  ): Promise<OAuthBrokerScopeChallengeResult> {
+    const result = await this.request<unknown>(OAUTH_BROKER_ROUTES.oauthScopeChallenge, {
+      method: "POST",
+      params,
+      ...options,
+    });
+    return parseOAuthBrokerScopeChallengeResult(result);
   }
 
   /**

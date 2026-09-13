@@ -174,6 +174,18 @@ export class OAuthScopeNotGrantedError extends Error {
 }
 
 /**
+ * 403 `insufficient_scope` 的 scope challenge 结果。
+ * `repeat` 表示 challenged scope 已在追加集合中，调用方应报告无法授予而不清理凭证。
+ */
+export interface OAuthScopeChallengeResult {
+  readonly challengedScopes: readonly string[];
+  readonly appendedScopes: readonly string[];
+  readonly credentialsCleared: boolean;
+  readonly repeat: boolean;
+  readonly credentialRevision: number;
+}
+
+/**
  * Broker credential coordinator. Repository commits are durable-before-visible and
  * refresh/discovery/registration work stays outside the repository mutation queue.
  * Revision + epoch CAS prevents late refresh/authorization results from overwriting
@@ -248,6 +260,79 @@ export class OAuthTokenCoordinator {
   async getChallengedScopes(identity: OAuthIdentity): Promise<readonly string[]> {
     const record = await this.repository.readRecord(identity);
     return [...record.challengedScopes];
+  }
+
+  /**
+   * 处理 403 `insufficient_scope` 的 scope challenge：追加 challenged scope，
+   * 并在 fence 仍匹配且无在途 refresh 时条件清除 token。
+   * challenged scope 已全部在追加集合中时不做任何变更，由调用方报告循环上界错误。
+   */
+  async challengeScope(
+    identity: OAuthIdentity,
+    challengedScope: string,
+    observedCredentialRevision?: number,
+  ): Promise<OAuthScopeChallengeResult> {
+    const normalized = normalizeOAuthScope(challengedScope, "challengedScope");
+    if (observedCredentialRevision !== undefined) {
+      assertNonNegativeSafeInteger(observedCredentialRevision, "observedCredentialRevision");
+    }
+
+    return this.repository.mutateRecord<OAuthScopeChallengeResult>(identity, current => {
+      const alreadyKnown = new Set(current.challengedScopes);
+      const incoming = normalized.split(" ");
+      const appended = incoming.filter(value => !alreadyKnown.has(value));
+      const allKnown = appended.length === 0;
+
+      const challengedScopes = allKnown
+        ? [...current.challengedScopes]
+        : normalizeOAuthScope(
+            [...current.challengedScopes, ...appended].join(" "),
+            "challengedScopes",
+          ).split(" ");
+
+      // 循环上界：重复的 challenge 不再清凭证，调用方报告服务器要求的 scope 无法授予。
+      if (allKnown) {
+        return {
+          record: current,
+          result: {
+            challengedScopes,
+            appendedScopes: [],
+            credentialsCleared: false,
+            repeat: true,
+            credentialRevision: current.authorization.credentialRevision,
+          },
+          changed: false,
+        };
+      }
+
+      const fenceCurrent = observedCredentialRevision === undefined
+        || current.authorization.credentialRevision === observedCredentialRevision;
+      const refreshInFlight = observedCredentialRevision !== undefined
+        && this.refreshFlights.has(identity.key);
+      const cleared = fenceCurrent && !refreshInFlight
+        ? clearOAuthTokens(current.authorization, observedCredentialRevision)
+        : undefined;
+
+      return {
+        record: {
+          ...current,
+          ...(cleared === undefined || !cleared.applied
+            ? {}
+            : { authorization: cleared.state }),
+          challengedScopes,
+        },
+        result: {
+          challengedScopes,
+          appendedScopes: appended,
+          credentialsCleared: cleared?.applied === true,
+          repeat: false,
+          credentialRevision: cleared?.applied === true
+            ? cleared.state.credentialRevision
+            : current.authorization.credentialRevision,
+        },
+        changed: true,
+      };
+    });
   }
 
   /** AS 在 authorize 事务里拒绝 scope 时只清空追加集合；token 与 registration 不动。 */
