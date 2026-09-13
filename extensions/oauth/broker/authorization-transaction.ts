@@ -95,6 +95,7 @@ interface PendingTransaction {
   readonly resolve: (result: OAuthAuthorizationResult) => void;
   readonly reject: (error: OAuthAuthorizationError) => void;
   settled: boolean;
+  processing: boolean;
   timer: ReturnType<typeof setTimeout> | undefined;
 }
 
@@ -115,6 +116,7 @@ export class OAuthAuthorizationTransactions {
   private readonly now: () => number;
   private readonly transactionsByState = new Map<string, PendingTransaction>();
   private readonly transactionsByIdentity = new Map<string, PendingTransaction>();
+  private readonly startFlights = new Map<string, Promise<OAuthAuthorizationResult>>();
 
   constructor(options: OAuthAuthorizationTransactionsOptions) {
     this.coordinator = options.coordinator;
@@ -140,12 +142,18 @@ export class OAuthAuthorizationTransactions {
     request: OAuthAuthorizationRequest,
     signal?: AbortSignal,
   ): Promise<OAuthAuthorizationResult> {
-    const existing = this.transactionsByIdentity.get(request.identity.key);
+    const existing = this.transactionsByIdentity.get(request.identity.key)?.promise
+      ?? this.startFlights.get(request.identity.key);
     if (existing) {
-      return withCallerAbort(existing.promise, signal);
+      return withCallerAbort(existing, signal);
     }
-    const promise = this.startTransaction(request);
-    return withCallerAbort(promise, signal);
+    const flight = this.startTransaction(request);
+    this.startFlights.set(request.identity.key, flight);
+    flight.then(
+      () => this.clearStartFlight(request.identity.key, flight),
+      () => this.clearStartFlight(request.identity.key, flight),
+    );
+    return withCallerAbort(flight, signal);
   }
 
   /** logout 或替换授权时终止 pending 事务。 */
@@ -183,6 +191,14 @@ export class OAuthAuthorizationTransactions {
     if (!transaction) {
       return callbackNotFoundPage();
     }
+    if (transaction.processing) {
+      return {
+        status: 200,
+        title: "Authorization in progress",
+        message: "This authorization transaction is already being completed.",
+      };
+    }
+    transaction.processing = true;
     this.stopTimer(transaction);
 
     if (params.error !== undefined) {
@@ -242,9 +258,10 @@ export class OAuthAuthorizationTransactions {
     request: OAuthAuthorizationRequest,
   ): Promise<OAuthAuthorizationResult> {
     const identity = request.identity;
+    let fence: OAuthCredentialFence | undefined;
     let transaction: PendingTransaction | undefined;
     try {
-      const fence = await this.coordinator.beginAuthorization(identity);
+      fence = await this.coordinator.beginAuthorization(identity);
       const discovery = await this.coordinator.ensureDiscovery(identity, {
         force: true,
         ...(request.resourceMetadataUrl === undefined
@@ -314,6 +331,9 @@ export class OAuthAuthorizationTransactions {
       }
     } catch (error) {
       const failure = normalizeStartError(error);
+      if (failure.code === "authorization-client-rejected" && fence !== undefined) {
+        await this.coordinator.clearClientAuthorization(identity, fence).catch(() => undefined);
+      }
       if (transaction) {
         this.settle(transaction, { error: failure });
       } else {
@@ -371,7 +391,7 @@ export class OAuthAuthorizationTransactions {
             : { scope: transaction.requestedScope }),
       },
     );
-    if (!committed) {
+    if (committed === undefined) {
       throw new OAuthAuthorizationError(
         "authorization-superseded",
         "The OAuth authorization transaction was superseded before it could commit.",
@@ -380,7 +400,7 @@ export class OAuthAuthorizationTransactions {
 
     return {
       oauthState: "authorized",
-      credentialRevision: await this.readCredentialRevision(transaction.identity),
+      credentialRevision: committed,
       ...(tokens.scope === undefined
         ? transaction.requestedScope === undefined
           ? {}
@@ -443,9 +463,10 @@ export class OAuthAuthorizationTransactions {
     }
   }
 
-  private async readCredentialRevision(identity: OAuthIdentity): Promise<number> {
-    const view = await this.coordinator.getCredentialView(identity);
-    return view.credentialRevision;
+  private clearStartFlight(identityKey: string, flight: Promise<OAuthAuthorizationResult>): void {
+    if (this.startFlights.get(identityKey) === flight) {
+      this.startFlights.delete(identityKey);
+    }
   }
 
   private settle(
@@ -500,6 +521,7 @@ function createPendingTransaction(init: {
     resolve,
     reject,
     settled: false,
+    processing: false,
     timer: undefined,
   };
 }

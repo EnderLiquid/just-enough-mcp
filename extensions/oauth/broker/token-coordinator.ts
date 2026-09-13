@@ -221,13 +221,13 @@ export class OAuthTokenCoordinator {
   }
 
   /**
-   * 提交授权结果；成功提交时同时清空该 identity 的追加 scope 集合。
+   * 提交授权结果；成功时返回新的 `credentialRevision` 并清空追加 scope 集合。
    */
   async commitAuthorization(
     identity: OAuthIdentity,
     fence: OAuthCredentialFence,
     update: OAuthTokenUpdate,
-  ): Promise<boolean> {
+  ): Promise<number | undefined> {
     return this.repository.mutateRecord(identity, current => {
       const committed = applyOAuthAuthorization(
         current.authorization,
@@ -235,11 +235,11 @@ export class OAuthTokenCoordinator {
         canonicalizeUpdate(update),
       );
       if (!committed) {
-        return { record: current, result: false, changed: false };
+        return { record: current, result: undefined, changed: false };
       }
       return {
         record: { ...current, authorization: committed, challengedScopes: [] },
-        result: true,
+        result: committed.credentialRevision,
       };
     });
   }

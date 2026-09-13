@@ -289,6 +289,97 @@ describe("OAuth broker authorize routes", () => {
     }
   }, 15_000);
 
+  it("浏览器打开失败返回 browser-open-failed", async () => {
+    const rootDir = tempDirs.create();
+    const as = await startFakeAs();
+    const identity = makeIdentity(as);
+    const port = await allocatePort();
+    const { client, running } = startBroker(rootDir, port, {
+      openBrowser: async () => {
+        throw new Error("no browser");
+      },
+    });
+
+    try {
+      client.start();
+      await client.ensureConnected();
+      await expect(client.authorizeOAuth({ identity })).rejects.toMatchObject({
+        remoteCode: "browser-open-failed",
+        status: 500,
+      });
+    } finally {
+      await client.close();
+      await running;
+    }
+  }, 15_000);
+
+  it("code exchange 的 invalid_grant 返回 authorization-code-rejected 且不写 credential", async () => {
+    const rootDir = tempDirs.create();
+    const as = await startFakeAs();
+    const identity = makeIdentity(as);
+    const port = await allocatePort();
+    const openedUrls: string[] = [];
+    const { client, running } = startBroker(rootDir, port, { openedUrls });
+
+    try {
+      client.start();
+      await client.ensureConnected();
+      as.enqueueTokenOutcome({ kind: "oauth-error", error: "invalid_grant" });
+
+      const pending = client.authorizeOAuth({ identity });
+      void pending.catch(() => undefined);
+      const authorizationUrl = await waitForOpenedUrl(openedUrls);
+      const state = await readStateParameter(authorizationUrl);
+      const callback = await triggerCallback(port, `code=bad-code&state=${state}`);
+      expect(callback.body).toContain("Authorization failed");
+
+      await expect(pending).rejects.toMatchObject({
+        remoteCode: "authorization-code-rejected",
+        status: 409,
+      });
+      await expect(client.getOAuthStatus({ identity })).resolves.toMatchObject({
+        oauthState: "authorization-required",
+        credentialRevision: 0,
+      });
+    } finally {
+      await client.close();
+      await running;
+    }
+  }, 15_000);
+
+  it("code exchange 的 invalid_client 返回 authorization-client-rejected 并失效 registration", async () => {
+    const rootDir = tempDirs.create();
+    const as = await startFakeAs();
+    const identity = makeIdentity(as);
+    const port = await allocatePort();
+    const openedUrls: string[] = [];
+    const { client, running } = startBroker(rootDir, port, { openedUrls });
+
+    try {
+      client.start();
+      await client.ensureConnected();
+      as.enqueueTokenOutcome({ kind: "oauth-error", error: "invalid_client" });
+
+      const pending = client.authorizeOAuth({ identity });
+      void pending.catch(() => undefined);
+      const authorizationUrl = await waitForOpenedUrl(openedUrls);
+      const state = await readStateParameter(authorizationUrl);
+      await triggerCallback(port, `code=test-code&state=${state}`);
+
+      await expect(pending).rejects.toMatchObject({
+        remoteCode: "authorization-client-rejected",
+        status: 409,
+      });
+      const repository = await FileOAuthCredentialRepository.open(rootDir, namespaceId);
+      const record = await repository.readRecord(identity);
+      expect(record.registration).toBeUndefined();
+      expect(record.discovery).toBeDefined();
+    } finally {
+      await client.close();
+      await running;
+    }
+  }, 15_000);
+
   it("用户拒绝时返回 authorization-denied，且不写 credential", async () => {
     const rootDir = tempDirs.create();
     const as = await startFakeAs();

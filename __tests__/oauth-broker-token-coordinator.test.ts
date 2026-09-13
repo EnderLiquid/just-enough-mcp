@@ -338,7 +338,7 @@ describe("OAuth credential state", () => {
       accessToken: "access-new",
       accessTokenExpiresAt: 8_000,
       refreshToken: "refresh-new",
-    })).toBe(true);
+    })).toBe(5);
     gate.reject(new OAuthPermanentRefreshError("stale invalid_grant"));
 
     await expect(pending).rejects.toBeInstanceOf(OAuthCredentialChangedError);
@@ -448,7 +448,7 @@ describe("OAuth credential state", () => {
       accessToken: "access-authorized",
       accessTokenExpiresAt: 8_000,
       refreshToken: "refresh-authorized",
-    })).toBe(true);
+    })).toBe(3);
 
     gate.resolve({ accessToken: "access-stale", accessTokenExpiresAt: 9_000 });
     await expect(pending).rejects.toBeInstanceOf(OAuthCredentialChangedError);
@@ -473,12 +473,12 @@ describe("OAuth credential state", () => {
       accessToken: "access-stale",
       accessTokenExpiresAt: 6_000,
       refreshToken: "refresh-stale",
-    })).toBe(false);
+    })).toBeUndefined();
     expect(await coordinator.commitAuthorization(identity, newFence, {
       accessToken: "access-current",
       accessTokenExpiresAt: 7_000,
       refreshToken: "refresh-current",
-    })).toBe(true);
+    })).toBe(3);
     expect(await coordinator.getCredentialView(identity)).toMatchObject({
       credentialRevision: 3,
       authEpoch: 7,
@@ -906,7 +906,7 @@ describe("OAuth credential state", () => {
       accessToken: "access-authorized",
       accessTokenExpiresAt: 60_000,
       refreshToken: "refresh-authorized",
-    })).toBe(true);
+    })).toBe(1);
     const record = await repository.readRecord(identity);
     expect(record.challengedScopes).toEqual([]);
     expect(record.authorization.tokens?.accessToken).toBe("access-authorized");
