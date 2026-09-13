@@ -289,6 +289,72 @@ describe("OAuth broker authorize routes", () => {
     }
   }, 15_000);
 
+  it("并发 authorize 共享同一浏览器事务与 code exchange", async () => {
+    const rootDir = tempDirs.create();
+    const as = await startFakeAs();
+    const identity = makeIdentity(as);
+    const port = await allocatePort();
+    const openedUrls: string[] = [];
+    const { client, running } = startBroker(rootDir, port, { openedUrls });
+
+    try {
+      client.start();
+      await client.ensureConnected();
+      const first = client.authorizeOAuth({ identity });
+      const second = client.authorizeOAuth({ identity });
+      void first.catch(() => undefined);
+      void second.catch(() => undefined);
+
+      const authorizationUrl = await waitForOpenedUrl(openedUrls);
+      await new Promise(resolveWait => setTimeout(resolveWait, 50));
+      expect(openedUrls).toHaveLength(1);
+
+      const state = await readStateParameter(authorizationUrl);
+      await triggerCallback(port, `code=test-code&state=${state}`);
+      const [firstResult, secondResult] = await Promise.all([first, second]);
+      expect(firstResult).toEqual(secondResult);
+      expect(firstResult).toMatchObject({ oauthState: "authorized", credentialRevision: 1 });
+      expect(as.registrationRequests).toHaveLength(1);
+      expect(as.tokenRequests).toHaveLength(1);
+    } finally {
+      await client.close();
+      await running;
+    }
+  }, 15_000);
+
+  it("caller 取消只结束自己的等待，不影响共享事务", async () => {
+    const rootDir = tempDirs.create();
+    const as = await startFakeAs();
+    const identity = makeIdentity(as);
+    const port = await allocatePort();
+    const openedUrls: string[] = [];
+    const { client, running } = startBroker(rootDir, port, { openedUrls });
+
+    try {
+      client.start();
+      await client.ensureConnected();
+      const controller = new AbortController();
+      const cancelled = client.authorizeOAuth({ identity }, { signal: controller.signal });
+      const waiting = client.authorizeOAuth({ identity });
+      void cancelled.catch(() => undefined);
+      void waiting.catch(() => undefined);
+
+      const authorizationUrl = await waitForOpenedUrl(openedUrls);
+      controller.abort();
+      await expect(cancelled).rejects.toMatchObject({ code: "broker-request-aborted" });
+
+      const state = await readStateParameter(authorizationUrl);
+      await triggerCallback(port, `code=test-code&state=${state}`);
+      await expect(waiting).resolves.toMatchObject({
+        oauthState: "authorized",
+        credentialRevision: 1,
+      });
+    } finally {
+      await client.close();
+      await running;
+    }
+  }, 15_000);
+
   it("浏览器打开失败返回 browser-open-failed", async () => {
     const rootDir = tempDirs.create();
     const as = await startFakeAs();
