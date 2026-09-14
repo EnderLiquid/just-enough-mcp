@@ -610,4 +610,38 @@ describe("OAuth broker authorize routes", () => {
       await running;
     }
   }, 15_000);
+
+  it("pending 事务阻止 idle 退出，事务结束后才排空", async () => {
+    const rootDir = tempDirs.create();
+    const as = await startFakeAs();
+    const identity = makeIdentity(as);
+    const port = await allocatePort();
+    const openedUrls: string[] = [];
+    const { client, running } = startBroker(rootDir, port, { openedUrls });
+
+    try {
+      client.start();
+      await client.ensureConnected();
+      const pending = client.authorizeOAuth({ identity });
+      void pending.catch(() => undefined);
+      const authorizationUrl = await waitForOpenedUrl(openedUrls);
+
+      // 事务存续期间 broker 不进入 idle：没有 deadline。
+      await expect(client.health()).resolves.toMatchObject({ idleDeadline: null });
+      // 超过 idleGraceMs（startBroker 设为 500ms）后依然存活。
+      await new Promise(resolveWait => setTimeout(resolveWait, 700));
+      await expect(client.health()).resolves.toMatchObject({ idleDeadline: null });
+
+      const state = await readStateParameter(authorizationUrl);
+      await triggerCallback(port, `code=test-code&state=${state}`);
+      await expect(pending).resolves.toMatchObject({ oauthState: "authorized" });
+
+      // 事务结束后 release presence，broker 才能按 idle grace 退出。
+      await client.close();
+      await expect(running).resolves.toBeUndefined();
+    } finally {
+      await client.close();
+      await running;
+    }
+  }, 15_000);
 });

@@ -206,6 +206,61 @@ describe("mcpServerTool.execute", () => {
     await expect(executeMcpServer({ action: "disconnect", server: "missing" })).rejects.toBe(error);
     expect(refreshFooter).toHaveBeenCalledTimes(1);
   });
+
+  it("显式授权并转发 AbortSignal", async () => {
+    const signal = new AbortController().signal;
+    const refreshFooter = vi.fn();
+    const authorizeServer = vi.fn().mockResolvedValue(
+      makeServerSnapshot({ oauthState: "authorized" }),
+    );
+    useRuntime({ refreshFooter, registry: { authorizeServer } });
+
+    const result = await executeMcpServer({ action: "authorize", server: "demo" }, signal);
+
+    expect(authorizeServer).toHaveBeenCalledWith("demo", signal);
+    expect(refreshFooter).toHaveBeenCalledTimes(1);
+    expect(result.content[0]).toEqual({ type: "text", text: "authorized" });
+    expect(result.details).toEqual({ kind: "authorize" });
+  });
+
+  it("授权被取消后仍刷新 footer", async () => {
+    const refreshFooter = vi.fn();
+    const error = new DOMException("aborted", "AbortError");
+    useRuntime({
+      refreshFooter,
+      registry: { authorizeServer: vi.fn().mockRejectedValue(error) },
+    });
+
+    await expect(executeMcpServer({ action: "authorize", server: "demo" })).rejects.toBe(error);
+    expect(refreshFooter).toHaveBeenCalledTimes(1);
+  });
+
+  it("登出本地凭证并刷新 footer", async () => {
+    const refreshFooter = vi.fn();
+    const logoutServer = vi.fn().mockResolvedValue(
+      makeServerSnapshot({ oauthState: "authorization-required" }),
+    );
+    useRuntime({ refreshFooter, registry: { logoutServer } });
+
+    const result = await executeMcpServer({ action: "logout", server: "demo" });
+
+    expect(logoutServer).toHaveBeenCalledWith("demo");
+    expect(refreshFooter).toHaveBeenCalledTimes(1);
+    expect(result.content[0]).toEqual({ type: "text", text: "logged out" });
+    expect(result.details).toEqual({ kind: "logout" });
+  });
+
+  it("登出失败后仍刷新 footer", async () => {
+    const refreshFooter = vi.fn();
+    const error = new Error("broker is unavailable");
+    useRuntime({
+      refreshFooter,
+      registry: { logoutServer: vi.fn().mockRejectedValue(error) },
+    });
+
+    await expect(executeMcpServer({ action: "logout", server: "demo" })).rejects.toBe(error);
+    expect(refreshFooter).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("registerMcpServerTool", () => {

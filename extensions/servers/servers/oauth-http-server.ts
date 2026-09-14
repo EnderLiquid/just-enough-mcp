@@ -73,9 +73,7 @@ export class OauthHttpServer implements McpServer {
     return {
       name: this.name,
       ...this.session.snapshot(),
-      ...(this.brokerClient === undefined
-        ? {}
-        : { oauthState: this.knownOauthState ?? "unknown" }),
+      ...this.snapshotOauthState(),
     };
   }
 
@@ -114,7 +112,11 @@ export class OauthHttpServer implements McpServer {
     try {
       const catalog = await this.session.getTools(signal);
       return {
-        server: { name: this.name, ...catalog.snapshot, oauthState: this.currentOauthState() },
+        server: {
+          name: this.name,
+          ...catalog.snapshot,
+          ...this.snapshotOauthState(),
+        },
         tools: catalog.tools,
       };
     } catch (error) {
@@ -133,7 +135,7 @@ export class OauthHttpServer implements McpServer {
         server: {
           name: this.name,
           ...execution.snapshot,
-          oauthState: this.currentOauthState(),
+          ...this.snapshotOauthState(),
         },
         toolName: name,
         args,
@@ -204,8 +206,9 @@ export class OauthHttpServer implements McpServer {
     }) as typeof fetch;
   }
 
-  private currentOauthState(): ServerOauthState {
-    return this.brokerClient === undefined ? "unknown" : this.knownOauthState ?? "unknown";
+  /** OAuth server 的 oauthState 总是有意义；缺少 broker 时降为 unknown。 */
+  private snapshotOauthState(): Pick<ServerSnapshot, "oauthState"> {
+    return { oauthState: this.knownOauthState ?? "unknown" };
   }
 
   private normalizeAuthenticationError(error: unknown): Error {
