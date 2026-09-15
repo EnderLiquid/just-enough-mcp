@@ -81,6 +81,24 @@ describe("OAuth broker credential routes", () => {
       lockUpdateMs: 1_000,
       credentialRepository: repository,
       refresh,
+      // discovery 不可注入，只能用 fetch 短路；否则 broker 会向
+      // https://mcp.example.test 发真实请求并等满 protocolTimeoutMs。
+      // 返回一份可缓存的 AS metadata，使 discovery 不进入后续 refresh 的路径。
+      fetchFn: async (url: string | URL) => {
+        const target = String(url);
+        if (target.includes("oauth-authorization-server")) {
+          return new Response(JSON.stringify({
+            issuer: "https://mcp.example.test",
+            authorization_endpoint: "https://mcp.example.test/authorize",
+            token_endpoint: "https://mcp.example.test/token",
+            response_types_supported: ["code"],
+          }), { status: 200, headers: { "content-type": "application/json" } });
+        }
+        return new Response(JSON.stringify({
+          resource: "https://mcp.example.test/rpc",
+          authorization_servers: ["https://mcp.example.test"],
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      },
       now: () => 1_000,
     });
     const client = new OAuthBrokerClient({
