@@ -8,6 +8,7 @@ import { runOAuthBrokerProcess } from "../extensions/oauth/broker/broker-process
 import { OAUTH_BROKER_ROUTES } from "../extensions/oauth/broker/protocol.js";
 import { readOAuthBrokerAccess } from "../extensions/oauth/broker/runtime-files.js";
 import type { OAuthRefreshOperation } from "../extensions/oauth/broker/token-coordinator.js";
+import type { OAuthDiscoveryOperation } from "../extensions/oauth/broker/oauth-protocol-types.js";
 import { OAuthTemporaryProtocolError } from "../extensions/oauth/broker/token-coordinator.js";
 import { createTempDirFixture } from "./support/temp-dir.js";
 
@@ -71,6 +72,9 @@ describe("OAuth broker credential routes", () => {
         refreshToken: "refresh-rotated",
         scope: "write read",
       });
+    const discover = vi.fn<OAuthDiscoveryOperation>(async () => ({
+      authorizationServerUrl: "https://mcp.example.test",
+    }));
     const running = runOAuthBrokerProcess({
       rootDir,
       namespaceId,
@@ -81,24 +85,7 @@ describe("OAuth broker credential routes", () => {
       lockUpdateMs: 1_000,
       credentialRepository: repository,
       refresh,
-      // discovery 不可注入，只能用 fetch 短路；否则 broker 会向
-      // https://mcp.example.test 发真实请求并等满 protocolTimeoutMs。
-      // 返回一份可缓存的 AS metadata，使 discovery 不进入后续 refresh 的路径。
-      fetchFn: async (url: string | URL) => {
-        const target = String(url);
-        if (target.includes("oauth-authorization-server")) {
-          return new Response(JSON.stringify({
-            issuer: "https://mcp.example.test",
-            authorization_endpoint: "https://mcp.example.test/authorize",
-            token_endpoint: "https://mcp.example.test/token",
-            response_types_supported: ["code"],
-          }), { status: 200, headers: { "content-type": "application/json" } });
-        }
-        return new Response(JSON.stringify({
-          resource: "https://mcp.example.test/rpc",
-          authorization_servers: ["https://mcp.example.test"],
-        }), { status: 200, headers: { "content-type": "application/json" } });
-      },
+      discover,
       now: () => 1_000,
     });
     const client = new OAuthBrokerClient({
@@ -143,6 +130,7 @@ describe("OAuth broker credential routes", () => {
         credentialRevision: 6,
       });
       expect(refresh).toHaveBeenCalledTimes(2);
+      expect(discover).toHaveBeenCalledTimes(1);
 
       await expect(client.logoutOAuth({
         identity,

@@ -64,6 +64,10 @@ import {
 import { createPlatformBrowserOpener, type BrowserOpener } from "./browser-opener.ts";
 import { DEFAULT_OAUTH_BROKER_AUTHORIZE_TIMEOUT_MS } from "./protocol.ts";
 import type { OAuthClientMetadata } from "@modelcontextprotocol/sdk/shared/auth.js";
+import type {
+  OAuthDiscoveryOperation,
+  OAuthRegistrationOperation,
+} from "./oauth-protocol-types.ts";
 import type { FetchLike } from "@modelcontextprotocol/sdk/shared/transport.js";
 
 const MAX_REQUEST_BODY_BYTES = 64 * 1024;
@@ -79,6 +83,10 @@ export interface OAuthBrokerProcessOptions {
   readonly lockUpdateMs?: number;
   /** Test-only refresh injection; production uses the SDK-backed protocol adapter. */
   readonly refresh?: OAuthRefreshOperation;
+  /** Test-only discovery injection; production uses the SDK-backed protocol adapter. */
+  readonly discover?: OAuthDiscoveryOperation;
+  /** Test-only registration injection; production uses the SDK-backed protocol adapter. */
+  readonly register?: OAuthRegistrationOperation;
   /** Test-only fetch injection for the SDK-backed protocol adapter. */
   readonly fetchFn?: FetchLike;
   readonly protocolTimeoutMs?: number;
@@ -154,19 +162,19 @@ export async function runOAuthBrokerProcess(
       adapter: protocolAdapter,
       ...(options.now ? { now: options.now } : {}),
     }),
-    discover: request => protocolAdapter.discover(request.identity.resourceUrl, {
+    discover: options.discover ?? (request => protocolAdapter.discover(request.identity.resourceUrl, {
       ...(request.resourceMetadataUrl === undefined
         ? {}
         : { resourceMetadataUrl: request.resourceMetadataUrl }),
-    }),
-    register: request => protocolAdapter.register({
+    })),
+    register: options.register ?? (request => protocolAdapter.register({
       authorizationServerUrl: request.authorizationServerUrl,
       clientMetadata: request.clientMetadata,
       ...(request.authorizationServerMetadata
         ? { metadata: request.authorizationServerMetadata }
         : {}),
       ...(request.scope === undefined ? {} : { scope: request.scope }),
-    }),
+    })),
     now: options.now,
   });
   const redirectUri = getOAuthBrokerUrl(options.configuredPort, OAUTH_BROKER_ROUTES.callback);
