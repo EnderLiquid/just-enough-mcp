@@ -26,7 +26,6 @@ import type {
   OAuthDiscoveryResult,
 } from "./oauth-protocol-types.ts";
 import {
-  OAuthAuthorizationRequiredError,
   OAuthClientRejectedError,
   OAuthPermanentRefreshError,
   OAuthTemporaryProtocolError,
@@ -185,10 +184,6 @@ export function createOAuthRefreshOperation(
 
   return async request => {
     const registration = request.registration;
-    if (!registration) {
-      // 没有 registration 说明本进程从未为该 identity 完成过授权；只有显式 authorize 能恢复。
-      throw new OAuthAuthorizationRequiredError();
-    }
     const tokens = await options.adapter.refresh({
       authorizationServerUrl: registration.authorizationServerUrl,
       clientInformation: registration.clientInformation,

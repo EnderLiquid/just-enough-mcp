@@ -64,7 +64,7 @@ interface StoredCredentialRecordJson {
   readonly authorization: OAuthCredentialState;
   readonly registration?: OAuthClientRegistration;
   readonly discovery?: OAuthDiscoveryRecord;
-  readonly challengedScopes?: readonly string[];
+  readonly challengedScopes: readonly string[];
 }
 
 interface StoredCredentialDocumentJson {
@@ -275,9 +275,7 @@ function serializeStoredRecord(stored: StoredCredentialRecord): StoredCredential
     authorization: record.authorization,
     ...(record.registration ? { registration: record.registration } : {}),
     ...(record.discovery ? { discovery: record.discovery } : {}),
-    ...(record.challengedScopes.length > 0
-      ? { challengedScopes: record.challengedScopes }
-      : {}),
+    challengedScopes: record.challengedScopes,
   };
 }
 
@@ -413,9 +411,6 @@ function parseDiscovery(value: unknown, fieldName: string): OAuthDiscoveryRecord
 }
 
 function parseChallengedScopes(value: unknown, fieldName: string): string[] {
-  if (value === undefined) {
-    return [];
-  }
   if (!Array.isArray(value)) {
     throw new TypeError(`${fieldName} must be an array.`);
   }

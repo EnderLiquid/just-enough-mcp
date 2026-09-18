@@ -27,6 +27,7 @@ export interface OAuthDiscoveryRecord {
 /** 单个 identity 在 broker credential document 中的完整记录。 */
 export interface OAuthCredentialRecord {
   readonly authorization: OAuthCredentialState;
+  /** 尚未完成 DCR 或 client registration 已失效时缺失；存在 token 时必须同时存在。 */
   readonly registration?: OAuthClientRegistration;
   readonly discovery?: OAuthDiscoveryRecord;
   /** 403 `insufficient_scope` 追加的 scope 需求；随 registration 失效一起清空。 */
@@ -39,7 +40,7 @@ export function createOAuthCredentialRecord(init: {
   discovery?: OAuthDiscoveryRecord;
   challengedScopes?: readonly string[];
 } = {}): OAuthCredentialRecord {
-  return {
+  const record: OAuthCredentialRecord = {
     authorization: init.authorization
       ? cloneOAuthCredentialState(init.authorization)
       : createOAuthCredentialState(),
@@ -47,15 +48,25 @@ export function createOAuthCredentialRecord(init: {
     ...(init.registration ? { registration: cloneRegistration(init.registration) } : {}),
     ...(init.discovery ? { discovery: cloneDiscovery(init.discovery) } : {}),
   };
+  assertOAuthCredentialRecord(record);
+  return record;
 }
 
 export function cloneOAuthCredentialRecord(record: OAuthCredentialRecord): OAuthCredentialRecord {
-  return {
+  const cloned: OAuthCredentialRecord = {
     authorization: cloneOAuthCredentialState(record.authorization),
     challengedScopes: [...record.challengedScopes],
     ...(record.registration ? { registration: cloneRegistration(record.registration) } : {}),
     ...(record.discovery ? { discovery: cloneDiscovery(record.discovery) } : {}),
   };
+  assertOAuthCredentialRecord(cloned);
+  return cloned;
+}
+
+function assertOAuthCredentialRecord(record: OAuthCredentialRecord): void {
+  if (record.authorization.tokens && !record.registration) {
+    throw new TypeError("OAuth token credentials must include a client registration.");
+  }
 }
 
 export function cloneRegistration(registration: OAuthClientRegistration): OAuthClientRegistration {

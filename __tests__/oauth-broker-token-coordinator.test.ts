@@ -2,8 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import { createOAuthIdentity, type OAuthIdentity } from "../extensions/oauth/broker/identity.js";
 import {
   createOAuthCredentialState,
+  type OAuthCredentialState,
   type OAuthTokenUpdate,
 } from "../extensions/oauth/broker/credential-state.js";
+import {
+  createOAuthCredentialRecord,
+  type OAuthClientRegistration,
+  type OAuthCredentialRecord,
+} from "../extensions/oauth/broker/credential-record.js";
 import {
   OAuthAuthorizationRequiredError,
   OAuthClientRejectedError,
@@ -40,6 +46,24 @@ function makeState(
       accessTokenExpiresAt,
       refreshToken,
     },
+  });
+}
+
+function makeRegistration(): OAuthClientRegistration {
+  return {
+    strategy: "dcr",
+    authorizationServerUrl: "https://as.example.test/",
+    clientInformation: {
+      client_id: "client-1",
+      redirect_uris: ["http://127.0.0.1:33418/oauth/callback"],
+    },
+  };
+}
+
+function makeRecord(authorization: OAuthCredentialState): OAuthCredentialRecord {
+  return createOAuthCredentialRecord({
+    authorization,
+    registration: makeRegistration(),
   });
 }
 
@@ -82,7 +106,10 @@ describe("OAuth credential state", () => {
     const identity = makeIdentity();
     const refresh = vi.fn<OAuthRefreshOperation>();
     const coordinator = makeCoordinator(refresh);
-    await coordinator.restore(identity, makeState("access-current", 2_000, "refresh-secret", 7, 2));
+    await coordinator.restore(
+      identity,
+      makeRecord(makeState("access-current", 2_000, "refresh-secret", 7, 2)),
+    );
 
     await expect(coordinator.getAccessToken(identity, { minRemainingMs: 100 })).resolves.toEqual({
       accessToken: "access-current",
@@ -109,7 +136,7 @@ describe("OAuth credential state", () => {
       return gate.promise;
     });
     const coordinator = makeCoordinator(refresh);
-    await coordinator.restore(identity, makeState("access-old", 0, "refresh-old", 4, 3));
+    await coordinator.restore(identity, makeRecord(makeState("access-old", 0, "refresh-old", 4, 3)));
 
     const first = coordinator.getAccessToken(identity, { minRemainingMs: 100 });
     const second = coordinator.getAccessToken(makeIdentity(), { minRemainingMs: 100 });
@@ -164,7 +191,7 @@ describe("OAuth credential state", () => {
       };
     });
     coordinator = makeCoordinator(refresh);
-    await coordinator.restore(identity, makeState("access-old", 0, "refresh-old", 1, 0));
+    await coordinator.restore(identity, makeRecord(makeState("access-old", 0, "refresh-old", 1, 0)));
 
     await expect(coordinator.getAccessToken(identity, { minRemainingMs: 100 })).resolves.toEqual({
       accessToken: "access-new",
@@ -187,7 +214,7 @@ describe("OAuth credential state", () => {
       accessTokenExpiresAt: 4_000,
     }));
     const coordinator = makeCoordinator(refresh);
-    await coordinator.restore(identity, makeState("access-rejected", 4_000, "refresh-old", 8, 1));
+    await coordinator.restore(identity, makeRecord(makeState("access-rejected", 4_000, "refresh-old", 8, 1)));
 
     await expect(coordinator.getAccessToken(identity, {
       minRemainingMs: 100,
@@ -207,7 +234,7 @@ describe("OAuth credential state", () => {
       accessTokenExpiresAt: 4_000,
     }));
     const coordinator = makeCoordinator(refresh);
-    await coordinator.restore(identity, makeState("access-new", 4_000, "refresh-new", 9, 1));
+    await coordinator.restore(identity, makeRecord(makeState("access-new", 4_000, "refresh-new", 9, 1)));
 
     await expect(coordinator.getAccessToken(identity, {
       minRemainingMs: 100,
@@ -227,14 +254,14 @@ describe("OAuth credential state", () => {
       accessTokenExpiresAt: 4_000,
     }));
     const coordinator = makeCoordinator(refresh);
-    await coordinator.restore(identity, createOAuthCredentialState({
+    await coordinator.restore(identity, makeRecord(createOAuthCredentialState({
       credentialRevision: 2,
       authEpoch: 1,
       tokens: {
         accessToken: "access-old",
         accessTokenExpiresAt: 0,
       },
-    }));
+    })));
 
     await expect(coordinator.getAccessToken(identity, { minRemainingMs: 100 }))
       .rejects.toBeInstanceOf(OAuthAuthorizationRequiredError);
@@ -251,7 +278,7 @@ describe("OAuth credential state", () => {
         accessTokenExpiresAt: 4_000,
       });
     const coordinator = makeCoordinator(refresh);
-    await coordinator.restore(identity, makeState("access-old", 0, "refresh-old", 3, 2));
+    await coordinator.restore(identity, makeRecord(makeState("access-old", 0, "refresh-old", 3, 2)));
 
     await expect(coordinator.getAccessToken(identity, { minRemainingMs: 100 })).rejects.toBe(failure);
     expect(await coordinator.getCredentialView(identity)).toMatchObject({
@@ -280,7 +307,7 @@ describe("OAuth credential state", () => {
         accessTokenExpiresAt: 8_000,
       });
     const coordinator = makeCoordinator(refresh);
-    await coordinator.restore(identity, makeState("access-old", 0, "refresh-keep", 3, 2));
+    await coordinator.restore(identity, makeRecord(makeState("access-old", 0, "refresh-keep", 3, 2)));
 
     await expect(coordinator.getAccessToken(identity, { minRemainingMs: 100 })).resolves.toEqual({
       accessToken: "access-new",
@@ -312,7 +339,7 @@ describe("OAuth credential state", () => {
     const coordinator = makeCoordinator(async () => {
       throw new OAuthPermanentRefreshError("invalid_grant");
     });
-    await coordinator.restore(identity, makeState("access-old", 0, "refresh-old", 4, 2));
+    await coordinator.restore(identity, makeRecord(makeState("access-old", 0, "refresh-old", 4, 2)));
 
     await expect(coordinator.getAccessToken(identity, { minRemainingMs: 100 }))
       .rejects.toBeInstanceOf(OAuthAuthorizationRequiredError);
@@ -329,7 +356,7 @@ describe("OAuth credential state", () => {
     const gate = deferred<OAuthTokenUpdate>();
     const refresh = vi.fn<OAuthRefreshOperation>(async () => gate.promise);
     const coordinator = makeCoordinator(refresh);
-    await coordinator.restore(identity, makeState("access-old", 0, "refresh-old", 4, 2));
+    await coordinator.restore(identity, makeRecord(makeState("access-old", 0, "refresh-old", 4, 2)));
 
     const pending = coordinator.getAccessToken(identity, { minRemainingMs: 100 });
     await vi.waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
@@ -355,7 +382,7 @@ describe("OAuth credential state", () => {
     const identity = makeIdentity();
     const refresh = vi.fn<OAuthRefreshOperation>();
     const coordinator = makeCoordinator(refresh);
-    await coordinator.restore(identity, makeState("access-new", 4_000, "refresh-new", 9, 2));
+    await coordinator.restore(identity, makeRecord(makeState("access-new", 4_000, "refresh-new", 9, 2)));
 
     expect(await coordinator.logout(identity, 8)).toEqual({
       applied: false,
@@ -389,7 +416,7 @@ describe("OAuth credential state", () => {
       refreshToken: "refresh-new",
     }));
     const coordinator = makeCoordinator(refresh);
-    await coordinator.restore(identity, makeState("access-old", 0, "refresh-old", 4, 1));
+    await coordinator.restore(identity, makeRecord(makeState("access-old", 0, "refresh-old", 4, 1)));
 
     await coordinator.getAccessToken(identity, { minRemainingMs: 100 });
     expect(await coordinator.logout(identity, 4)).toMatchObject({ applied: false });
@@ -406,7 +433,7 @@ describe("OAuth credential state", () => {
     const gate = deferred<OAuthTokenUpdate>();
     const refresh = vi.fn<OAuthRefreshOperation>(async () => gate.promise);
     const coordinator = makeCoordinator(refresh);
-    await coordinator.restore(identity, makeState("access-old", 0, "refresh-old", 6, 4));
+    await coordinator.restore(identity, makeRecord(makeState("access-old", 0, "refresh-old", 6, 4)));
 
     const pending = coordinator.getAccessToken(identity, { minRemainingMs: 100 });
     await vi.waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
@@ -438,7 +465,7 @@ describe("OAuth credential state", () => {
     const gate = deferred<OAuthTokenUpdate>();
     const refresh = vi.fn<OAuthRefreshOperation>(async () => gate.promise);
     const coordinator = makeCoordinator(refresh);
-    await coordinator.restore(identity, makeState("access-old", 0, "refresh-old", 2, 5));
+    await coordinator.restore(identity, makeRecord(makeState("access-old", 0, "refresh-old", 2, 5)));
 
     const pending = coordinator.getAccessToken(identity, { minRemainingMs: 100 });
     await vi.waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
@@ -465,7 +492,7 @@ describe("OAuth credential state", () => {
     const identity = makeIdentity();
     const refresh = vi.fn<OAuthRefreshOperation>();
     const coordinator = makeCoordinator(refresh);
-    await coordinator.restore(identity, makeState("access-old", 4_000, "refresh-old", 2, 5));
+    await coordinator.restore(identity, makeRecord(makeState("access-old", 4_000, "refresh-old", 2, 5)));
 
     const oldFence = await coordinator.beginAuthorization(identity);
     const newFence = await coordinator.beginAuthorization(identity);
@@ -494,14 +521,20 @@ describe("OAuth credential state", () => {
     }));
     const coordinator = new OAuthTokenCoordinator({ refresh, now: () => 1_000 });
 
-    await coordinator.restore(identity, makeState("access-near", 1_000 + 31_000, "refresh-old", 1, 0));
+    await coordinator.restore(
+      identity,
+      makeRecord(makeState("access-near", 1_000 + 31_000, "refresh-old", 1, 0)),
+    );
     await expect(coordinator.getAccessToken(identity)).resolves.toMatchObject({
       accessToken: "access-near",
       credentialRevision: 1,
     });
     expect(refresh).not.toHaveBeenCalled();
 
-    await coordinator.restore(identity, makeState("access-near", 1_000 + 29_000, "refresh-old", 1, 0));
+    await coordinator.restore(
+      identity,
+      makeRecord(makeState("access-near", 1_000 + 29_000, "refresh-old", 1, 0)),
+    );
     await expect(coordinator.getAccessToken(identity)).resolves.toMatchObject({
       accessToken: "access-refreshed",
       credentialRevision: 2,
@@ -513,7 +546,7 @@ describe("OAuth credential state", () => {
     const identity = makeIdentity();
     const refresh = vi.fn<OAuthRefreshOperation>();
     const coordinator = makeCoordinator(refresh);
-    await coordinator.restore(identity, createOAuthCredentialState({
+    await coordinator.restore(identity, makeRecord(createOAuthCredentialState({
       credentialRevision: 3,
       authEpoch: 0,
       tokens: {
@@ -522,7 +555,7 @@ describe("OAuth credential state", () => {
         refreshToken: "refresh-old",
         scope: "read",
       },
-    }));
+    })));
 
     await expect(coordinator.getAccessToken(identity, { scope: "read write" }))
       .rejects.toBeInstanceOf(OAuthScopeNotGrantedError);
@@ -538,7 +571,7 @@ describe("OAuth credential state", () => {
       scope: "read",
     }));
     const coordinator = makeCoordinator(refresh);
-    await coordinator.restore(identity, createOAuthCredentialState({
+    await coordinator.restore(identity, makeRecord(createOAuthCredentialState({
       credentialRevision: 3,
       authEpoch: 0,
       tokens: {
@@ -547,7 +580,7 @@ describe("OAuth credential state", () => {
         refreshToken: "refresh-old",
         scope: "read write",
       },
-    }));
+    })));
 
     await expect(coordinator.getAccessToken(identity, { scope: "read write" }))
       .rejects.toBeInstanceOf(OAuthScopeNotGrantedError);
@@ -879,7 +912,7 @@ describe("OAuth credential state", () => {
     const gate = deferred<OAuthTokenUpdate>();
     const refresh = vi.fn<OAuthRefreshOperation>(async () => gate.promise);
     const coordinator = makeCoordinator(refresh);
-    await coordinator.restore(identity, makeState("access-old", 0, "refresh-old", 5, 1));
+    await coordinator.restore(identity, makeRecord(makeState("access-old", 0, "refresh-old", 5, 1)));
 
     const pending = coordinator.getAccessToken(identity, { minRemainingMs: 100 });
     await vi.waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
@@ -896,7 +929,11 @@ describe("OAuth credential state", () => {
     const identity = makeIdentity();
     const repository = new InMemoryOAuthCredentialRepository();
     await repository.mutateRecord(identity, record => ({
-      record: { ...record, challengedScopes: ["admin"] },
+      record: {
+        ...record,
+        registration: makeRegistration(),
+        challengedScopes: ["admin"],
+      },
       result: undefined,
     }));
     const coordinator = new OAuthTokenCoordinator({ refresh: vi.fn<OAuthRefreshOperation>(), repository });

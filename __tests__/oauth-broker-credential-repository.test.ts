@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createOAuthCredentialState } from "../extensions/oauth/broker/credential-state.js";
+import { createOAuthCredentialRecord } from "../extensions/oauth/broker/credential-record.js";
 import {
   FileOAuthCredentialRepository,
   OAUTH_BROKER_CREDENTIAL_FORMAT,
@@ -26,6 +27,20 @@ function makeIdentity(profile = "default") {
   });
 }
 
+function makeAuthorizedRecord(authorization: ReturnType<typeof createOAuthCredentialState>) {
+  return createOAuthCredentialRecord({
+    authorization,
+    registration: {
+      strategy: "dcr",
+      authorizationServerUrl: "https://as.example.test/",
+      clientInformation: {
+        client_id: "client-1",
+        redirect_uris: ["http://127.0.0.1:33418/oauth/callback"],
+      },
+    },
+  });
+}
+
 describe("OAuth broker credential repository", () => {
   it("以 v1 whole-document 原子格式持久化 refresh，并可由新 broker 恢复", async () => {
     const rootDir = tempDirs.create();
@@ -38,7 +53,7 @@ describe("OAuth broker credential repository", () => {
       scope: "write read",
     }));
     const coordinator = new OAuthTokenCoordinator({ repository, refresh, now: () => 1_000 });
-    await coordinator.restore(identity, createOAuthCredentialState({
+    await coordinator.restore(identity, makeAuthorizedRecord(createOAuthCredentialState({
       credentialRevision: 4,
       authEpoch: 2,
       tokens: {
@@ -47,7 +62,7 @@ describe("OAuth broker credential repository", () => {
         refreshToken: "refresh-original",
         scope: "read write",
       },
-    }));
+    })));
 
     await expect(coordinator.getAccessToken(identity, {
       minRemainingMs: 100,
@@ -96,7 +111,7 @@ describe("OAuth broker credential repository", () => {
       repository,
       refresh: async () => { throw new Error("unused"); },
     });
-    await coordinator.restore(identity, createOAuthCredentialState({
+    await coordinator.restore(identity, makeAuthorizedRecord(createOAuthCredentialState({
       credentialRevision: 7,
       authEpoch: 3,
       tokens: {
@@ -104,7 +119,7 @@ describe("OAuth broker credential repository", () => {
         accessTokenExpiresAt: 10_000,
         refreshToken: "refresh-secret",
       },
-    }));
+    })));
     const path = getOAuthBrokerRuntimePaths(rootDir).credentialPath;
     const before = await readFile(path, "utf8");
 
@@ -211,19 +226,48 @@ describe("OAuth broker credential repository", () => {
     expect(restored.challengedScopes).toEqual(["admin", "write"]);
   });
 
-  it("空 challengedScopes 不写入 JSON，旧格式记录仍可读", async () => {
+  it("始终写入 challengedScopes，并拒绝缺少当前必填字段的记录", async () => {
     const rootDir = tempDirs.create();
     const identity = makeIdentity();
     const repository = await FileOAuthCredentialRepository.open(rootDir, namespaceId);
     await repository.mutateRecord(identity, record => ({ record, result: undefined }));
     const path = getOAuthBrokerRuntimePaths(rootDir).credentialPath;
-    expect(await readFile(path, "utf8")).not.toContain("challengedScopes");
+    const text = await readFile(path, "utf8");
+    expect(text).toContain('"challengedScopes":[]');
 
-    const legacy = await FileOAuthCredentialRepository.open(rootDir, namespaceId);
-    const record = await legacy.readRecord(identity);
-    expect(record.challengedScopes).toEqual([]);
-    expect(record.registration).toBeUndefined();
-    expect(record.discovery).toBeUndefined();
+    const document = JSON.parse(text) as { records: Array<Record<string, unknown>> };
+    delete document.records[0]!.challengedScopes;
+    await writeFile(path, JSON.stringify(document), "utf8");
+    await expect(FileOAuthCredentialRepository.open(rootDir, namespaceId))
+      .rejects.toThrow("challengedScopes must be an array");
+  });
+
+  it("拒绝携带 token 但缺少 registration 的持久化记录", async () => {
+    const rootDir = tempDirs.create();
+    const identity = makeIdentity();
+    await FileOAuthCredentialRepository.open(rootDir, namespaceId);
+    const path = getOAuthBrokerRuntimePaths(rootDir).credentialPath;
+    await writeFile(path, JSON.stringify({
+      format: OAUTH_BROKER_CREDENTIAL_FORMAT,
+      version: OAUTH_BROKER_CREDENTIAL_VERSION,
+      namespaceId,
+      records: [{
+        identity,
+        authorization: {
+          credentialRevision: 1,
+          authEpoch: 0,
+          tokens: {
+            accessToken: "access-token",
+            accessTokenExpiresAt: 1_000,
+            refreshToken: "refresh-token",
+          },
+        },
+        challengedScopes: [],
+      }],
+    }), "utf8");
+
+    await expect(FileOAuthCredentialRepository.open(rootDir, namespaceId))
+      .rejects.toThrow("OAuth token credentials must include a client registration");
   });
 
   it("拒绝损坏的 registration、discovery 与追加 scope 记录", async () => {
@@ -246,6 +290,7 @@ describe("OAuth broker credential repository", () => {
           authorizationServerUrl: "https://as.example.test",
           clientInformation: { client_id: "client-1" },
         },
+        challengedScopes: [],
       }],
     }), "utf8");
     await expect(FileOAuthCredentialRepository.open(rootDir, namespaceId))
@@ -259,6 +304,7 @@ describe("OAuth broker credential repository", () => {
         identity,
         authorization,
         discovery: { authorizationServerUrl: "https://as.example.test", fetchedAt: -1 },
+        challengedScopes: [],
       }],
     }), "utf8");
     await expect(FileOAuthCredentialRepository.open(rootDir, namespaceId))

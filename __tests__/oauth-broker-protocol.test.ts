@@ -5,7 +5,6 @@ import {
   createOAuthRefreshOperation,
 } from "../extensions/oauth/broker/oauth-protocol.js";
 import {
-  OAuthAuthorizationRequiredError,
   OAuthClientRejectedError,
   OAuthPermanentRefreshError,
   OAuthTemporaryProtocolError,
@@ -255,18 +254,4 @@ describe("OAuth refresh operation", () => {
     });
   });
 
-  it("缺少 registration 时返回 authorization-required 而不发起网络请求", async () => {
-    const as = await startFakeAs();
-    const adapter = createOAuthProtocolAdapter();
-    const operation = createOAuthRefreshOperation({ adapter });
-    const identity = makeIdentity(as.resourceUrl);
-
-    await expect(operation({
-      identity,
-      refreshToken: "refresh-old",
-      credentialRevision: 1,
-      authEpoch: 0,
-    })).rejects.toBeInstanceOf(OAuthAuthorizationRequiredError);
-    expect(as.tokenRequests).toHaveLength(0);
-  });
 });

@@ -50,17 +50,28 @@ describe("OAuth broker credential routes", () => {
       profile: "default",
     });
     const repository = new InMemoryOAuthCredentialRepository();
-    await repository.mutate(identity, () => ({
-      state: createOAuthCredentialState({
-        credentialRevision: 5,
-        authEpoch: 2,
-        tokens: {
-          accessToken: "access-expired",
-          accessTokenExpiresAt: 0,
-          refreshToken: "refresh-original",
-          scope: "read write",
+    await repository.mutateRecord(identity, record => ({
+      record: {
+        ...record,
+        authorization: createOAuthCredentialState({
+          credentialRevision: 5,
+          authEpoch: 2,
+          tokens: {
+            accessToken: "access-expired",
+            accessTokenExpiresAt: 0,
+            refreshToken: "refresh-original",
+            scope: "read write",
+          },
+        }),
+        registration: {
+          strategy: "dcr",
+          authorizationServerUrl: "https://mcp.example.test/",
+          clientInformation: {
+            client_id: "client-1",
+            redirect_uris: ["http://127.0.0.1:33418/oauth/callback"],
+          },
         },
-      }),
+      },
       result: undefined,
     }));
     const temporaryFailure = new OAuthTemporaryProtocolError("temporary endpoint outage");

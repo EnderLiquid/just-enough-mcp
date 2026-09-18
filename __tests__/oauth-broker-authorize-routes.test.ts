@@ -503,6 +503,14 @@ describe("OAuth broker authorize routes", () => {
             scope: "read",
           },
         },
+        registration: {
+          strategy: "dcr",
+          authorizationServerUrl: as.authorizationServerUrl,
+          clientInformation: {
+            client_id: "existing-client",
+            redirect_uris: [`http://127.0.0.1:${port}/oauth/callback`],
+          },
+        },
         challengedScopes: ["admin"],
       },
       result: undefined,

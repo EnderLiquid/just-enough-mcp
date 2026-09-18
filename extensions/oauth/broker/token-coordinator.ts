@@ -2,9 +2,11 @@ import type {
   AuthorizationServerMetadata,
   OAuthClientMetadata,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
-import type {
-  OAuthClientRegistration,
-  OAuthDiscoveryRecord,
+import {
+  cloneOAuthCredentialRecord,
+  type OAuthClientRegistration,
+  type OAuthCredentialRecord,
+  type OAuthDiscoveryRecord,
 } from "./credential-record.ts";
 import type { OAuthIdentity } from "./identity.ts";
 import {
@@ -13,7 +15,6 @@ import {
   beginOAuthAuthorization,
   captureOAuthCredentialFence,
   clearOAuthTokens,
-  cloneOAuthCredentialState,
   isOAuthCredentialFenceCurrent,
   normalizeOAuthScope,
   oauthTokenSatisfiesScope,
@@ -43,8 +44,8 @@ export interface OAuthRefreshRequest {
   readonly refreshToken: string;
   readonly credentialRevision: number;
   readonly authEpoch: number;
-  /** DCR 注册记录；Phase 5 authorize 之前的旧记录可能缺失。 */
-  readonly registration?: OAuthClientRegistration;
+  /** 当前授权对应的 DCR 客户端注册；refresh 必须使用同一客户端身份。 */
+  readonly registration: OAuthClientRegistration;
   /** 与 registration 对应 AS 一致的 discovery metadata。 */
   readonly authorizationServerMetadata?: AuthorizationServerMetadata;
 }
@@ -211,10 +212,10 @@ export class OAuthTokenCoordinator {
     assertNonNegativeFinite(this.discoveryTtlMs, "discoveryTtlMs");
   }
 
-  /** Seeds/restores one authorization record. Production brokers normally load it through the repository. */
-  async restore(identity: OAuthIdentity, state: OAuthCredentialState): Promise<void> {
-    const restored = cloneOAuthCredentialState(state);
-    await this.repository.mutate(identity, () => ({ state: restored, result: undefined }));
+  /** 注入一条完整 credential record；生产 broker 通常直接从 repository 加载。 */
+  async restore(identity: OAuthIdentity, record: OAuthCredentialRecord): Promise<void> {
+    const restored = cloneOAuthCredentialRecord(record);
+    await this.repository.mutateRecord(identity, () => ({ record: restored, result: undefined }));
   }
 
   /** Broker-internal diagnostics/fencing only; secrets are represented as booleans. */
@@ -519,9 +520,12 @@ export class OAuthTokenCoordinator {
     }
 
     const fence = captureOAuthCredentialFence(record.authorization);
-    const discovery = await this.ensureDiscovery(identity);
     const registration = record.registration;
-    const metadata = discovery && registration
+    if (!registration) {
+      throw new TypeError("OAuth token credentials must include a client registration.");
+    }
+    const discovery = await this.ensureDiscovery(identity);
+    const metadata = discovery
       && discovery.authorizationServerUrl === registration.authorizationServerUrl
       ? discovery.authorizationServerMetadata
       : undefined;
@@ -533,7 +537,7 @@ export class OAuthTokenCoordinator {
         refreshToken,
         credentialRevision: fence.credentialRevision,
         authEpoch: fence.authEpoch,
-        ...(registration ? { registration } : {}),
+        registration,
         ...(metadata ? { authorizationServerMetadata: metadata } : {}),
       });
     } catch (error) {

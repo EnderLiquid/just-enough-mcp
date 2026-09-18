@@ -1,5 +1,6 @@
 import { mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createOAuthCredentialRecord } from "../extensions/oauth/broker/credential-record.js";
 import { createOAuthCredentialState } from "../extensions/oauth/broker/credential-state.js";
 import { FileOAuthCredentialRepository } from "../extensions/oauth/broker/credential-repository.js";
 import { createOAuthIdentity } from "../extensions/oauth/broker/identity.js";
@@ -35,6 +36,24 @@ function withTokens(revision: number, access: string, refresh: string) {
   });
 }
 
+function makeRegistration() {
+  return {
+    strategy: "dcr" as const,
+    authorizationServerUrl: "https://as.example.test/",
+    clientInformation: {
+      client_id: "client-1",
+      redirect_uris: ["http://127.0.0.1:33418/oauth/callback"],
+    },
+  };
+}
+
+function makeAuthorizedRecord(authorization: ReturnType<typeof withTokens>) {
+  return createOAuthCredentialRecord({
+    authorization,
+    registration: makeRegistration(),
+  });
+}
+
 /**
  * decision.md 第 8 节的持久化恢复语义只有一条：原子 rename。
  * 这些用例验证该语义的可观察结果，不模拟真实进程崩溃。
@@ -45,7 +64,11 @@ describe("OAuth broker credential persistence recovery", () => {
     const identity = makeIdentity();
     const repository = await FileOAuthCredentialRepository.open(rootDir, namespaceId);
     await repository.mutateRecord(identity, record => ({
-      record: { ...record, authorization: withTokens(1, "access-original", "refresh-original") },
+      record: {
+        ...record,
+        authorization: withTokens(1, "access-original", "refresh-original"),
+        registration: makeRegistration(),
+      },
       result: undefined,
     }));
 
@@ -74,7 +97,11 @@ describe("OAuth broker credential persistence recovery", () => {
     const identity = makeIdentity();
     const repository = await FileOAuthCredentialRepository.open(rootDir, namespaceId);
     await repository.mutateRecord(identity, record => ({
-      record: { ...record, authorization: withTokens(3, "access-committed", "refresh-committed") },
+      record: {
+        ...record,
+        authorization: withTokens(3, "access-committed", "refresh-committed"),
+        registration: makeRegistration(),
+      },
       result: undefined,
     }));
 
@@ -102,7 +129,10 @@ describe("OAuth broker credential persistence recovery", () => {
       refresh: firstRefresh,
       now: () => 1_000,
     });
-    await firstCoordinator.restore(identity, withTokens(1, "access-stale", "refresh-original"));
+    await firstCoordinator.restore(
+      identity,
+      makeAuthorizedRecord(withTokens(1, "access-stale", "refresh-original")),
+    );
     await firstCoordinator.getAccessToken(identity, { minRemainingMs: 0 });
     expect(firstRefresh).toHaveBeenCalledTimes(1);
 
@@ -135,7 +165,10 @@ describe("OAuth broker credential persistence recovery", () => {
       throw new OAuthPermanentRefreshError("invalid_grant", { reason: "invalid-grant" });
     });
     const coordinator = new OAuthTokenCoordinator({ repository, refresh, now: () => 1_000 });
-    await coordinator.restore(identity, withTokens(1, "access-stale", "refresh-old"));
+    await coordinator.restore(
+      identity,
+      makeAuthorizedRecord(withTokens(1, "access-stale", "refresh-old")),
+    );
 
     await expect(coordinator.getAccessToken(identity, { minRemainingMs: 0 }))
       .rejects.toMatchObject({ code: "authorization-required", reason: "credential-rejected" });
@@ -152,7 +185,10 @@ describe("OAuth broker credential persistence recovery", () => {
     const coordinator = new OAuthTokenCoordinator({ repository, refresh: async () => {
       throw new Error("unused");
     } });
-    await coordinator.restore(identity, withTokens(1, "access-old", "refresh-old"));
+    await coordinator.restore(
+      identity,
+      makeAuthorizedRecord(withTokens(1, "access-old", "refresh-old")),
+    );
 
     // 提交阶段让 rename 目标变成目录。
     const { credentialPath } = getOAuthBrokerRuntimePaths(rootDir);
