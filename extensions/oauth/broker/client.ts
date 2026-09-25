@@ -39,16 +39,13 @@ import {
 import { readOAuthBrokerAccess } from "./runtime-files.ts";
 
 export type OAuthBrokerClientState =
-  | "new"
   | "disconnected"
   | "connecting"
   | "connected"
-  | "frozen"
   | "closed";
 
 export type OAuthBrokerClientErrorCode =
   | "broker-client-closed"
-  | "broker-client-frozen"
   | "broker-request-aborted"
   | "broker-timeout"
   | "broker-unavailable"
@@ -83,7 +80,7 @@ export interface OAuthBrokerClientOptions {
   readonly connectTimeoutMs?: number;
   readonly reconnectIntervalMs?: number;
   readonly presencePulseMs?: number;
-  /** authorize 是长请求；默认 transaction timeout 加少量回调/交换余量。 */
+  /** authorize 是长请求；默认超时时间为事务超时加少量回调/交换余量。 */
   readonly authorizeTimeoutMs?: number;
   readonly fetch?: typeof globalThis.fetch;
   readonly onStateChange?: (state: OAuthBrokerClientState) => void;
@@ -104,12 +101,12 @@ interface LowLevelRequestOptions extends OAuthBrokerCallOptions {
   readonly presence?: OAuthBrokerPresenceIdentity;
 }
 
-// Node clamps larger timeout delays; long custom pulse intervals are scheduled in chunks.
+// Node 对过大的定时器延迟会进行截断；较长的自定义 pulse 间隔需要分段调度。
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 /**
- * Session-scoped broker client. It owns only the session presence and a
- * replaceable access snapshot; it never starts a broker process itself.
+ * session 级 broker client。它只拥有当前 session 的 presence 和可替换的
+ * access 快照，不会自行启动 broker 进程。
  */
 export class OAuthBrokerClient {
   readonly sessionId: string;
@@ -125,7 +122,7 @@ export class OAuthBrokerClient {
   private readonly fetchImplementation: typeof globalThis.fetch;
   private readonly onStateChange?: (state: OAuthBrokerClientState) => void;
 
-  private lifecycle: OAuthBrokerClientState = "new";
+  private lifecycle: OAuthBrokerClientState = "disconnected";
   private generation = 0;
   private access: OAuthBrokerAccessDescriptor | undefined;
   private presenceId: string | undefined;
@@ -179,16 +176,13 @@ export class OAuthBrokerClient {
     return this.presenceId;
   }
 
-  /** Starts background reconnect/heartbeat work without waiting for broker readiness. */
+  /** 在不等待 broker 就绪的情况下启动后台重连和 heartbeat。 */
   start(): void {
-    if (this.lifecycle === "new") {
-      this.setState("disconnected");
-    }
     this.startReconnectTimer();
     void this.ensureConnected().catch(() => undefined);
   }
 
-  /** Shared connection attempt. Callers may cancel their own wait without cancelling the flight. */
+  /** 共享连接尝试。调用方可以取消自己的等待，但不会取消共享 flight。 */
   ensureConnected(options: OAuthBrokerRequestOptions = {}): Promise<void> {
     this.assertUsable();
     if (this.lifecycle === "connected") {
@@ -270,9 +264,8 @@ export class OAuthBrokerClient {
   }
 
   /**
-   * Opens the interactive authorization flow. The broker keeps the HTTP response
-   * pending until the transaction reaches a terminal state, so this call uses the
-   * dedicated long-request timeout unless the caller overrides it.
+   * 打开交互式授权流程。broker 会让 HTTP 响应保持 pending，直到事务进入终态，
+   * 因此本调用使用专用的长请求超时，除非调用方显式覆盖该超时。
    */
   async authorizeOAuth(
     params: OAuthBrokerAuthorizeRequest,
@@ -287,7 +280,7 @@ export class OAuthBrokerClient {
     return parseOAuthBrokerAuthorizeResult(result);
   }
 
-  /** Sends a future broker API request and counts a successful response as liveness. */
+  /** 发送 broker API 请求，并将成功响应计为一次存活确认。 */
   async request<T = unknown>(
     pathname: string,
     options: OAuthBrokerCallOptions = {},
@@ -323,23 +316,16 @@ export class OAuthBrokerClient {
     }
   }
 
-  /** Allows the current session to reconnect later while releasing this presence now. */
+  /** 释放当前 presence，同时允许当前 session 之后重新连接。 */
   async disconnect(): Promise<void> {
-    if (this.lifecycle === "closed" || this.lifecycle === "frozen") {
+    if (this.lifecycle === "closed") {
       return;
     }
     await this.transitionAway("disconnected");
     this.startReconnectTimer();
   }
 
-  /** Freezes the client. Late connection/pulse results cannot restore it. */
-  freeze(): Promise<void> {
-    if (this.lifecycle === "frozen" || this.lifecycle === "closed") {
-      return Promise.resolve();
-    }
-    return this.transitionAway("frozen");
-  }
-
+  /** 关闭 client，使迟到的生命周期结果失效，并释放当前 presence。 */
   close(): Promise<void> {
     if (this.closeFlight) {
       return this.closeFlight;
@@ -366,7 +352,7 @@ export class OAuthBrokerClient {
             timeoutMs: this.requestTimeoutMs,
             fetch: this.fetchImplementation,
           });
-          if (this.generation !== generation || this.lifecycle === "frozen" || this.lifecycle === "closed") {
+          if (this.generation !== generation || this.lifecycle === "closed") {
             await sendPresence(access, this.sessionId, presenceId, "release", {
               timeoutMs: this.requestTimeoutMs,
               fetch: this.fetchImplementation,
@@ -396,7 +382,7 @@ export class OAuthBrokerClient {
         `OAuth broker connection timed out after ${this.connectTimeoutMs} ms.`,
       );
     } catch (error) {
-      if (this.generation === generation && this.lifecycle !== "closed" && this.lifecycle !== "frozen") {
+      if (this.generation === generation && this.lifecycle !== "closed") {
         this.access = undefined;
         this.presenceId = undefined;
         this.setState("disconnected");
@@ -410,12 +396,9 @@ export class OAuthBrokerClient {
     if (this.generation !== generation || this.lifecycle === "closed") {
       throw new OAuthBrokerClientError("broker-client-closed", "OAuth broker client connection was superseded.");
     }
-    if (this.lifecycle === "frozen") {
-      throw new OAuthBrokerClientError("broker-client-frozen", "OAuth broker client is frozen.");
-    }
   }
 
-  private async transitionAway(nextState: "disconnected" | "frozen" | "closed"): Promise<void> {
+  private async transitionAway(nextState: "disconnected" | "closed"): Promise<void> {
     const previousAccess = this.access;
     const previousPresenceId = this.presenceId;
     this.generation += 1;
@@ -504,7 +487,7 @@ export class OAuthBrokerClient {
   }
 
   private startReconnectTimer(): void {
-    if (this.reconnectTimer || this.lifecycle === "closed" || this.lifecycle === "frozen") {
+    if (this.reconnectTimer || this.lifecycle === "closed") {
       return;
     }
     this.reconnectTimer = setInterval(() => {
@@ -572,16 +555,13 @@ export class OAuthBrokerClient {
     try {
       this.onStateChange?.(state);
     } catch {
-      // A notification sink must not break broker lifecycle management.
+      // 通知 sink 不能破坏 broker 生命周期管理。
     }
   }
 
   private assertUsable(): void {
     if (this.lifecycle === "closed") {
       throw new OAuthBrokerClientError("broker-client-closed", "OAuth broker client is closed.");
-    }
-    if (this.lifecycle === "frozen") {
-      throw new OAuthBrokerClientError("broker-client-frozen", "OAuth broker client is frozen.");
     }
   }
 }

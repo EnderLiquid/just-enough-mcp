@@ -32,7 +32,6 @@ const mocks = vi.hoisted(() => ({
   getOAuthBrokerDirectoryPath: vi.fn(),
   createOAuthBrokerNamespace: vi.fn(),
   oauthBrokerClientConstructor: vi.fn(),
-  oauthBrokerClientFreeze: vi.fn(),
   oauthBrokerClientClose: vi.fn(),
   createOAuthBrokerBootstrapper: vi.fn(),
   oauthBrokerLauncherStart: vi.fn(),
@@ -56,10 +55,6 @@ vi.mock("../extensions/oauth/broker/client.js", () => ({
   OAuthBrokerClient: class MockOAuthBrokerClient {
     constructor(options: unknown) {
       mocks.oauthBrokerClientConstructor(options);
-    }
-
-    freeze() {
-      return mocks.oauthBrokerClientFreeze();
     }
 
     close() {
@@ -214,7 +209,6 @@ describe("justEnoughMcp root 生命周期", () => {
       namespaceId: `agent-dir:v1:${"d".repeat(64)}`,
       canonicalAgentDir: "C:/Users/Admin/.pi/agent",
     });
-    mocks.oauthBrokerClientFreeze.mockResolvedValue(undefined);
     mocks.oauthBrokerClientClose.mockResolvedValue(undefined);
     mocks.oauthBrokerLauncherStart.mockResolvedValue({});
     mocks.createOAuthBrokerBootstrapper.mockReturnValue({
@@ -302,15 +296,13 @@ describe("justEnoughMcp root 生命周期", () => {
 
     await handler("session_shutdown")();
     expect(bootstrapOptions.signal.aborted).toBe(true);
-    expect(mocks.oauthBrokerClientFreeze).toHaveBeenCalledTimes(1);
     expect(mocks.oauthBrokerClientClose).toHaveBeenCalledTimes(1);
-    expectCalledBefore(mocks.disposeRegistry, mocks.oauthBrokerClientFreeze);
-    expectCalledBefore(mocks.oauthBrokerClientFreeze, mocks.closeAll);
-    expectCalledBefore(mocks.closeAll, mocks.oauthBrokerClientClose);
+    expectCalledBefore(mocks.disposeRegistry, mocks.oauthBrokerClientClose);
+    expectCalledBefore(mocks.oauthBrokerClientClose, mocks.closeAll);
     launchGate.resolve({});
   });
 
-  it("OAuth candidate 初始化失败时冻结并关闭 broker client，且不发布 Registry", async () => {
+  it("OAuth candidate 初始化失败时关闭 broker client，且不发布 Registry", async () => {
     const config = createOauthPluginConfig();
     mocks.loadPluginConfig.mockReturnValue(config);
     mocks.initialize.mockRejectedValueOnce(new Error("oauth registry failed"));
@@ -322,10 +314,8 @@ describe("justEnoughMcp root 生命周期", () => {
     const signal = mocks.createOAuthBrokerBootstrapper.mock.calls[0]?.[0]?.signal as AbortSignal;
     expect(signal.aborted).toBe(true);
     expect(mocks.installCurrentServerRegistry).not.toHaveBeenCalled();
-    expect(mocks.oauthBrokerClientFreeze).toHaveBeenCalledTimes(1);
     expect(mocks.oauthBrokerClientClose).toHaveBeenCalledTimes(1);
-    expectCalledBefore(mocks.oauthBrokerClientFreeze, mocks.closeAll);
-    expectCalledBefore(mocks.closeAll, mocks.oauthBrokerClientClose);
+    expectCalledBefore(mocks.oauthBrokerClientClose, mocks.closeAll);
   });
 
   it("footer 初始化失败时保留已提交的 config 和 Registry", async () => {

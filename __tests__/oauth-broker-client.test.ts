@@ -81,6 +81,29 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
 }
 
 describe("OAuthBrokerClient lifecycle concurrency", () => {
+  it("starts disconnected and supports demand-driven connection", async () => {
+    const { rootDir, access, health } = createFixture();
+    await writeOAuthBrokerAccess(rootDir, access);
+    const fetch = async (_input: string | URL | globalThis.Request, init?: RequestInit): Promise<Response> => {
+      return successResponse(init, health);
+    };
+    const client = new OAuthBrokerClient({
+      rootDir,
+      namespaceId: access.namespaceId,
+      configuredPort: access.port,
+      requestTimeoutMs: 1_000,
+      connectTimeoutMs: 1_000,
+      reconnectIntervalMs: 5_000,
+      presencePulseMs: 5_000,
+      fetch,
+    });
+
+    expect(client.state).toBe("disconnected");
+    await client.ensureConnected();
+    expect(client.state).toBe("connected");
+    await client.close();
+  });
+
   it("shares one connection flight and caller abort does not cancel other waiters", async () => {
     const { rootDir, access, health } = createFixture();
     await writeOAuthBrokerAccess(rootDir, access);
@@ -300,7 +323,39 @@ describe("OAuthBrokerClient lifecycle concurrency", () => {
     await client.close();
   });
 
-  it("freeze invalidates a late register and releases its presence incarnation", async () => {
+  it("close is idempotent and releases active presence once", async () => {
+    const { rootDir, access, health } = createFixture();
+    await writeOAuthBrokerAccess(rootDir, access);
+    let releaseCalls = 0;
+    const fetch = async (_input: string | URL | globalThis.Request, init?: RequestInit): Promise<Response> => {
+      if (parsePresenceAction(init) === "release") {
+        releaseCalls += 1;
+      }
+      return successResponse(init, health);
+    };
+    const client = new OAuthBrokerClient({
+      rootDir,
+      namespaceId: access.namespaceId,
+      configuredPort: access.port,
+      requestTimeoutMs: 1_000,
+      connectTimeoutMs: 1_000,
+      reconnectIntervalMs: 5_000,
+      presencePulseMs: 5_000,
+      fetch,
+    });
+
+    client.start();
+    await client.ensureConnected();
+    const firstClose = client.close();
+    const secondClose = client.close();
+    expect(secondClose).toBe(firstClose);
+    await firstClose;
+
+    expect(client.state).toBe("closed");
+    expect(releaseCalls).toBe(1);
+  });
+
+  it("close invalidates a late register and releases its presence incarnation", async () => {
     const { rootDir, access, health } = createFixture();
     await writeOAuthBrokerAccess(rootDir, access);
     const registerGate = deferred();
@@ -329,13 +384,16 @@ describe("OAuthBrokerClient lifecycle concurrency", () => {
 
     client.start();
     await registerStarted.promise;
-    await client.freeze();
-    expect(client.state).toBe("frozen");
+    await client.close();
+    expect(client.state).toBe("closed");
     registerGate.resolve();
     await waitFor(() => releaseCalls === 1, 1_000);
 
-    expect(client.state).toBe("frozen");
+    expect(client.state).toBe("closed");
     expect(client.currentPresenceId).toBeUndefined();
+    expect(() => client.ensureConnected()).toThrowError(
+      expect.objectContaining({ code: "broker-client-closed" }),
+    );
     await client.close();
   });
 });

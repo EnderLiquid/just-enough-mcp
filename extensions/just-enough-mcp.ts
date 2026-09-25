@@ -130,9 +130,8 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
       disposeRegistry?.();
       disposeConfig?.();
       oauthBroker?.launchAbortController.abort();
-      await oauthBroker?.client.freeze().catch(() => undefined);
-      await registry?.closeAll().catch(() => undefined);
       await oauthBroker?.client.close().catch(() => undefined);
+      await registry?.closeAll().catch(() => undefined);
       disposeBootstrapper?.();
       await bootstrapper?.close().catch(() => undefined);
 
@@ -178,10 +177,9 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
         session.disposeConfig();
         try {
           session.oauthBroker?.launchAbortController.abort();
-          await session.oauthBroker?.client.freeze().catch(() => undefined);
+          await session.oauthBroker?.client.close().catch(() => undefined);
           await session.registry.closeAll();
         } finally {
-          await session.oauthBroker?.client.close().catch(() => undefined);
           session.disposeBootstrapper();
           await session.bootstrapper.close();
         }
