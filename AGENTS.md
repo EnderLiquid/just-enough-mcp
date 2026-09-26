@@ -30,7 +30,7 @@
 
 ## 架构约定
 
-- `extensions/just-enough-mcp.ts` 是插件 session 生命周期的唯一 composition root：config 是整体替换的 value snapshot，Registry/OverviewBootstrapper 和 session-scoped OAuth broker client/launcher 都由 root 显式构造和关闭；Registry 与 OAuth server 只借用 broker capability；Notifier/FooterStatusSink 是只在 Pi session 有效期内借用的 capability。
+- `extensions/just-enough-mcp.ts` 是插件 session 生命周期的唯一 composition root：config 是整体替换的 value snapshot，Registry/OverviewBootstrapper 和 session-scoped OAuth broker client/launcher 都由 root 显式构造和关闭；Registry、具体 server 与 OAuth server 只借用 root 注入的 `overviewBootstrapper` 和 OAuth broker capability，不负责关闭这些 root-owned 资源；Notifier/FooterStatusSink 是只在 Pi session 有效期内借用的 capability。
 - module-level `currentXxx` 只作为非拥有型访问槽；只有插件 root 可以安装/卸载引用，资源销毁必须使用 root 自己持有的实例，旧 disposer 必须按对象身份清理，不能影响后安装的新引用。
 - standalone OAuth broker 直接由 Node 执行 `extensions/oauth/broker/broker-process.ts`；其传递依赖必须保持 Node 原生 type stripping 可执行，只使用 erasable TypeScript syntax，并在 broker 子树内部使用显式 `.ts` import。`tsconfig.broker-native.json` 是该边界的额外类型门禁。
 - broker process control plane 使用 broker-lifetime file lock、固定配置端口和可原子覆盖但允许残留的 access file；不引入 endpoint publication、claim election、旧实际端口发现/复用或 PID stale cleanup。session 侧 lock/port probe 只用于诊断，子进程自身的 lock acquisition 与固定端口 bind 才是最终启动判定。

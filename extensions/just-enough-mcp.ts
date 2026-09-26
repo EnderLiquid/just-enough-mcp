@@ -1,11 +1,7 @@
 import { getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getOAuthBrokerDirectoryPath } from "./config/paths.js";
 import { getCurrentPluginConfig, installCurrentPluginConfig } from "./config/current-config.js";
-import {
-  createOverviewBootstrapper,
-  installCurrentOverviewBootstrapper,
-  type OverviewBootstrapper,
-} from "./config/overview-bootstrapper.js";
+import { OverviewBootstrapper } from "./config/overview-bootstrapper.js";
 import { loadPluginConfig } from "./config/plugin-config.js";
 import type { PluginConfigLoadResult } from "./modeling/types.js";
 import { createServerOverviewPrompt } from "./prompting/system-prompt.js";
@@ -26,7 +22,7 @@ import { registerMcpTool } from "./tools/mcp-tool.js";
 interface ActivePluginSession {
   config: PluginConfigLoadResult;
   registry: ServerRegistry;
-  bootstrapper: OverviewBootstrapper;
+  overviewBootstrapper: OverviewBootstrapper;
   oauthBroker?: {
     client: OAuthBrokerClient;
     launcher: OAuthBrokerBootstrapper;
@@ -35,7 +31,6 @@ interface ActivePluginSession {
   };
   disposeConfig: () => void;
   disposeRegistry: () => void;
-  disposeBootstrapper: () => void;
 }
 
 export default function justEnoughMcp(pi: ExtensionAPI): void {
@@ -58,8 +53,7 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
 
     let config: PluginConfigLoadResult | undefined;
     let registry: ServerRegistry | undefined;
-    let bootstrapper: OverviewBootstrapper | undefined;
-    let disposeBootstrapper: (() => void) | undefined;
+    let overviewBootstrapper: OverviewBootstrapper | undefined;
     let disposeConfig: (() => void) | undefined;
     let disposeRegistry: (() => void) | undefined;
     let oauthBroker: ActivePluginSession["oauthBroker"];
@@ -98,20 +92,22 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
         });
       }
 
-      bootstrapper = createOverviewBootstrapper({
+      overviewBootstrapper = new OverviewBootstrapper({
         overviewDir: config.overviewDir,
         onCreated: serverName => notifyInfo(`Created MCP overview stub: ${serverName}`),
       });
-      disposeBootstrapper = installCurrentOverviewBootstrapper(bootstrapper);
 
-      registry = oauthBroker
-        ? createServerRegistry(config.servers, {
-            oauth: {
-              brokerClient: oauthBroker.client,
-              namespaceId: oauthBroker.namespaceId,
-            },
-          })
-        : createServerRegistry(config.servers);
+      registry = createServerRegistry(config.servers, {
+        overviewBootstrapper,
+        ...(oauthBroker
+          ? {
+              oauth: {
+                brokerClient: oauthBroker.client,
+                namespaceId: oauthBroker.namespaceId,
+              },
+            }
+          : {}),
+      });
       await registry.initialize();
 
       disposeConfig = installCurrentPluginConfig(config);
@@ -119,11 +115,10 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
       activeSession = {
         config,
         registry,
-        bootstrapper,
+        overviewBootstrapper,
         ...(oauthBroker ? { oauthBroker } : {}),
         disposeConfig,
         disposeRegistry,
-        disposeBootstrapper,
       };
     } catch (error) {
       activeSession = undefined;
@@ -132,8 +127,7 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
       oauthBroker?.launchAbortController.abort();
       await oauthBroker?.client.close().catch(() => undefined);
       await registry?.closeAll().catch(() => undefined);
-      disposeBootstrapper?.();
-      await bootstrapper?.close().catch(() => undefined);
+      await overviewBootstrapper?.close().catch(() => undefined);
 
       const message = error instanceof Error ? error.message : String(error);
       notifyError(`just-enough-mcp config error: ${message}`);
@@ -180,8 +174,7 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
           await session.oauthBroker?.client.close().catch(() => undefined);
           await session.registry.closeAll();
         } finally {
-          session.disposeBootstrapper();
-          await session.bootstrapper.close();
+          await session.overviewBootstrapper.close();
         }
       }
     } finally {

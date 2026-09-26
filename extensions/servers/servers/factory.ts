@@ -1,4 +1,5 @@
 import type { ResolvedServerConfig, ServerDefinition } from "../../modeling/types.js";
+import type { OverviewBootstrapper } from "../../config/overview-bootstrapper.js";
 import {
   OauthHttpServer,
   type OauthHttpServerDependencies,
@@ -64,6 +65,7 @@ function resolveTransportHint(config: ResolvedServerConfig): "stdio" | "http" {
 
 export interface McpServerFactoryDependencies {
   readonly oauth?: OauthHttpServerDependencies;
+  readonly overviewBootstrapper?: OverviewBootstrapper;
 }
 
 export function createMcpServer(
@@ -73,13 +75,17 @@ export function createMcpServer(
   switch (resolveTransportHint(config)) {
     case "stdio":
       rejectOauthWithStdio(config);
-      return new StdioPragmaticServer(config);
+      return new StdioPragmaticServer(config, dependencies.overviewBootstrapper);
     case "http":
       if (hasOauthAuthentication(config.definition, config.name)) {
-        return new OauthHttpServer(config, dependencies.oauth);
+        return new OauthHttpServer(
+          config,
+          dependencies.oauth,
+          dependencies.overviewBootstrapper,
+        );
       }
       return hasStaticAuth(config.definition)
-        ? new HttpTokenServer(config)
-        : new HttpPublicServer(config);
+        ? new HttpTokenServer(config, dependencies.overviewBootstrapper)
+        : new HttpPublicServer(config, dependencies.overviewBootstrapper);
   }
 }

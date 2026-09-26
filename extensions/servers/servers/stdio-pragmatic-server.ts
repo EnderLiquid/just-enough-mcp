@@ -1,5 +1,6 @@
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { ResolvedServerConfig, ServerCatalogResult, ServerSnapshot, ToolCallExecutionResult } from "../../modeling/types.js";
+import type { OverviewBootstrapper } from "../../config/overview-bootstrapper.js";
 import { expectNonEmptyString, expectOptionalString, expectOptionalStringArray, expectOptionalStringRecord, expectOptionalTransport } from "./config-helpers.js";
 import { SdkSessionManager } from "./sdk-session-manager.js";
 import type { McpServer } from "./types.js";
@@ -8,7 +9,10 @@ export class StdioPragmaticServer implements McpServer {
   readonly name: string;
   private readonly session: SdkSessionManager;
 
-  constructor(readonly config: ResolvedServerConfig) {
+  constructor(
+    readonly config: ResolvedServerConfig,
+    overviewBootstrapper?: OverviewBootstrapper,
+  ) {
     this.name = config.name;
     expectOptionalTransport(config.definition, config.name, "stdio");
     const command = expectNonEmptyString(config.definition, "command", config.name);
@@ -19,6 +23,7 @@ export class StdioPragmaticServer implements McpServer {
     this.session = new SdkSessionManager({
       serverName: this.name,
       config,
+      overviewBootstrapper,
       createTransport: () => new StdioClientTransport({
         command,
         args,

@@ -6,6 +6,7 @@ import type {
   ServerSnapshot,
   ToolCallExecutionResult,
 } from "../../modeling/types.js";
+import type { OverviewBootstrapper } from "../../config/overview-bootstrapper.js";
 import type { OAuthBrokerClient } from "../../oauth/broker/client.ts";
 import { OAuthBrokerClientError } from "../../oauth/broker/client.ts";
 import {
@@ -42,6 +43,7 @@ export class OauthHttpServer implements McpServer {
   constructor(
     readonly config: ResolvedServerConfig,
     dependencies?: OauthHttpServerDependencies,
+    overviewBootstrapper?: OverviewBootstrapper,
   ) {
     this.name = config.name;
     this.oauthConfig = parseOauthHttpServerConfig(config);
@@ -60,6 +62,7 @@ export class OauthHttpServer implements McpServer {
     this.session = new SdkSessionManager({
       serverName: this.name,
       config,
+      overviewBootstrapper,
       createTransport: () => new StreamableHTTPClientTransport(this.oauthConfig.url, {
         fetch: this.createFetch(),
         ...(this.oauthConfig.headers === undefined

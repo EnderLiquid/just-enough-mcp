@@ -1,12 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  createOverviewBootstrapper,
-  installCurrentOverviewBootstrapper,
-  type OverviewBootstrapper,
-  type OverviewBootstrapperOptions,
-} from "../extensions/config/overview-bootstrapper.js";
+import { OverviewBootstrapper, type OverviewBootstrapperOptions } from "../extensions/config/overview-bootstrapper.js";
 import type { ResolvedServerConfig } from "../extensions/modeling/types.js";
-import { createServerRegistry } from "../extensions/servers/registry.js";
+import {
+  createServerRegistry as createServerRegistryRuntime,
+} from "../extensions/servers/registry.js";
 import { makePluginConfig, makeResolvedServerConfig } from "./support/model-fixtures.js";
 
 const mocks = vi.hoisted(() => ({
@@ -63,16 +60,25 @@ function createDeferred<T = void>() {
 }
 
 let currentBootstrapper: OverviewBootstrapper | undefined;
-let disposeBootstrapper: (() => void) | undefined;
+
+function createServerRegistry(
+  serverConfigs: readonly ResolvedServerConfig[],
+) {
+  if (!currentBootstrapper) {
+    throw new Error("Test overview bootstrapper is not initialized.");
+  }
+  return createServerRegistryRuntime(serverConfigs, {
+    overviewBootstrapper: currentBootstrapper,
+  });
+}
 
 function useBootstrapper(
   bootstrap: NonNullable<OverviewBootstrapperOptions["bootstrap"]> = vi.fn().mockResolvedValue(undefined),
 ): { bootstrapper: OverviewBootstrapper; bootstrap: typeof bootstrap } {
-  currentBootstrapper = createOverviewBootstrapper({
+  currentBootstrapper = new OverviewBootstrapper({
     overviewDir: "C:/Users/Admin/.pi/agent/just-enough-mcp/overviews",
     bootstrap,
   });
-  disposeBootstrapper = installCurrentOverviewBootstrapper(currentBootstrapper);
   return { bootstrapper: currentBootstrapper, bootstrap };
 }
 
@@ -92,13 +98,11 @@ describe("Server description ready overview 通知", () => {
   });
 
   afterEach(async () => {
-    disposeBootstrapper?.();
     await currentBootstrapper?.close();
-    disposeBootstrapper = undefined;
     currentBootstrapper = undefined;
   });
 
-  it("首次成功初始化时向当前 Bootstrapper 入队描述", async () => {
+  it("首次成功初始化时向注入的 overviewBootstrapper 入队描述", async () => {
     const { bootstrapper, bootstrap } = useBootstrapper();
     const config = makeConfig();
     const registry = createServerRegistry(config.servers);
@@ -198,11 +202,11 @@ describe("Server description ready overview 通知", () => {
   });
 
   it("同步通知异常时不回滚已经建立的连接", async () => {
-    currentBootstrapper = {
-      notify: vi.fn(() => { throw new Error("observer failed"); }),
-      close: vi.fn().mockResolvedValue(undefined),
-    };
-    disposeBootstrapper = installCurrentOverviewBootstrapper(currentBootstrapper);
+    const overviewBootstrapper = new OverviewBootstrapper({
+      overviewDir: "C:/Users/Admin/.pi/agent/just-enough-mcp/overviews",
+    });
+    overviewBootstrapper.notify = vi.fn(() => { throw new Error("observer failed"); });
+    currentBootstrapper = overviewBootstrapper;
     const config = makeConfig();
     const registry = createServerRegistry(config.servers);
 

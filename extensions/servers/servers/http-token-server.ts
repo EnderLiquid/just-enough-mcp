@@ -1,5 +1,6 @@
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { ResolvedServerConfig, ServerCatalogResult, ServerSnapshot, ToolCallExecutionResult } from "../../modeling/types.js";
+import type { OverviewBootstrapper } from "../../config/overview-bootstrapper.js";
 import { expectNonEmptyString, expectOptionalString, expectOptionalStringRecord, expectOptionalTransport } from "./config-helpers.js";
 import { SdkSessionManager } from "./sdk-session-manager.js";
 import type { McpServer } from "./types.js";
@@ -8,7 +9,10 @@ export class HttpTokenServer implements McpServer {
   readonly name: string;
   private readonly session: SdkSessionManager;
 
-  constructor(readonly config: ResolvedServerConfig) {
+  constructor(
+    readonly config: ResolvedServerConfig,
+    overviewBootstrapper?: OverviewBootstrapper,
+  ) {
     this.name = config.name;
     expectOptionalTransport(config.definition, config.name, "http");
     const url = expectNonEmptyString(config.definition, "url", config.name);
@@ -22,6 +26,7 @@ export class HttpTokenServer implements McpServer {
     this.session = new SdkSessionManager({
       serverName: this.name,
       config,
+      overviewBootstrapper,
       createTransport: () => new StreamableHTTPClientTransport(new URL(url), {
         requestInit: Object.keys(headers).length > 0 ? { headers } : undefined,
       }),

@@ -2,13 +2,14 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { ResolvedServerConfig, ServerConnectState } from "../../modeling/types.js";
+import type { OverviewBootstrapper } from "../../config/overview-bootstrapper.js";
 import { AsyncReadWriteLock } from "../../concurrency/async-read-write-lock.js";
 import { applyToolNameFilter, createToolNameFilter, isToolNameFilteredByConfig, type ToolNameFilter } from "./tool-filter.js";
-import { notifyServerDescriptionReady } from "../../config/overview-bootstrapper.js";
 
 interface SdkSessionOptions {
   serverName: string;
   config: ResolvedServerConfig;
+  overviewBootstrapper?: OverviewBootstrapper;
   createTransport: () => Transport;
 }
 
@@ -166,10 +167,13 @@ export class SdkSessionManager {
         ...(description ? { description } : {}),
       };
       if (typeof description === "string" && description.trim().length > 0) {
-        notifyServerDescriptionReady({
-          config: this.options.config,
-          description,
-        });
+        try {
+          this.options.overviewBootstrapper?.notify({
+            config: this.options.config,
+            description,
+          });
+        } catch {
+        }
       }
     } catch (error) {
       if (this.client === client) {
