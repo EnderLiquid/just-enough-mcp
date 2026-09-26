@@ -444,4 +444,30 @@ describe("justEnoughMcp root 生命周期", () => {
     expect(active.systemPrompt).toBe("base\n\n# MCP Servers\n\nserver overviews");
     expect(mocks.createServerOverviewPrompt).toHaveBeenCalledWith(config);
   });
+
+  it("已有 MCP Servers 章节时跳过重复注入", async () => {
+    const config = makePluginConfig();
+    const { pi, handler } = createFakePi();
+    justEnoughMcp(pi);
+    mocks.getCurrentPluginConfig.mockReturnValue(config);
+
+    const result = await handler("before_agent_start")({
+      systemPrompt: "parent base\r\n\r\n# MCP Servers\r\n\r\nparent overviews",
+    });
+
+    expect(result).toBeUndefined();
+    expect(mocks.createServerOverviewPrompt).not.toHaveBeenCalled();
+  });
+
+  it("已有 MCP Servers 章节时不注入 fallback", async () => {
+    const { pi, handler } = createFakePi();
+    justEnoughMcp(pi);
+    mocks.getCurrentPluginConfig.mockReturnValue(undefined);
+
+    const result = await handler("before_agent_start")({
+      systemPrompt: "parent base\n\n# MCP Servers\n\nparent overviews",
+    });
+
+    expect(result).toBeUndefined();
+  });
 });

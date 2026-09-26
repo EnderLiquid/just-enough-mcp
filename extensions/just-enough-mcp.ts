@@ -33,6 +33,14 @@ interface ActivePluginSession {
   disposeRegistry: () => void;
 }
 
+const MCP_SERVERS_SECTION_HEADING = "# MCP Servers";
+
+function hasMcpServersSection(systemPrompt: string): boolean {
+  return systemPrompt
+    .split(/\r?\n/)
+    .some(line => line.trim() === MCP_SERVERS_SECTION_HEADING);
+}
+
 export default function justEnoughMcp(pi: ExtensionAPI): void {
   let activeSession: ActivePluginSession | undefined;
   let disposeNotifier: (() => void) | undefined;
@@ -141,19 +149,24 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
   });
 
   pi.on("before_agent_start", async (event) => {
+    if (hasMcpServersSection(event.systemPrompt)) {
+      return;
+    }
+
     const config = getCurrentPluginConfig();
 
     if (!config) {
       return {
         systemPrompt:
-          `${event.systemPrompt}\n\n# MCP Servers\n\n` +
+          `${event.systemPrompt}\n\n${MCP_SERVERS_SECTION_HEADING}\n\n` +
           "just-enough-mcp has not loaded its configuration for this session yet. Use /reload if needed.",
       };
     }
 
     const injectedPrompt = createServerOverviewPrompt(config);
     return {
-      systemPrompt: `${event.systemPrompt}\n\n# MCP Servers\n\n${injectedPrompt}`,
+      systemPrompt:
+        `${event.systemPrompt}\n\n${MCP_SERVERS_SECTION_HEADING}\n\n${injectedPrompt}`,
     };
   });
 
