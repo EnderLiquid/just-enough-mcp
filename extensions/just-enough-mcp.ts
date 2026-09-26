@@ -5,7 +5,7 @@ import { OverviewBootstrapper } from "./config/overview-bootstrapper.js";
 import { loadPluginConfig } from "./config/plugin-config.js";
 import type { PluginConfigLoadResult } from "./modeling/types.js";
 import { createServerOverviewPrompt } from "./prompting/system-prompt.js";
-import { installFooterStatusSink, refreshFooterStatus, updateFooterStatus } from "./rendering/footer-status.js";
+import { installFooterStatusSink, refreshFooterStatus } from "./rendering/footer-status.js";
 import { installNotifierSink, notifyError, notifyInfo, notifyWarning } from "./rendering/notifier.js";
 import { OAuthBrokerClient } from "./oauth/broker/client.js";
 import {
@@ -45,11 +45,7 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
     disposeNotifier = installNotifierSink(
       ctx.hasUI ? { notify: ctx.ui.notify.bind(ctx.ui) } : undefined,
     );
-    const footer = ctx.hasUI
-      ? { setStatus: ctx.ui.setStatus.bind(ctx.ui) }
-      : undefined;
-
-    disposeFooter = installFooterStatusSink(footer);
+    disposeFooter = installFooterStatusSink(ctx.hasUI ? ctx.ui : undefined);
 
     let config: PluginConfigLoadResult | undefined;
     let registry: ServerRegistry | undefined;
@@ -131,16 +127,16 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
 
       const message = error instanceof Error ? error.message : String(error);
       notifyError(`just-enough-mcp config error: ${message}`);
-      updateFooterStatus(0, 0);
+      refreshFooterStatus();
       return;
     }
 
     try {
-      await refreshFooterStatus(registry);
+      await refreshFooterStatus(await registry.getStatus());
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       notifyError(`just-enough-mcp config error: ${message}`);
-      updateFooterStatus(0, 0);
+      refreshFooterStatus();
     }
   });
 

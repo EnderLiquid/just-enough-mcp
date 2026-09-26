@@ -155,7 +155,7 @@ export const mcpTool = defineTool<typeof mcpToolParametersSchema, McpToolResultD
           },
         };
       } finally {
-        await refreshFooterStatus(registry);
+        await refreshFooterStatus(await registry.getStatus());
       }
     }
 
@@ -181,7 +181,7 @@ export const mcpTool = defineTool<typeof mcpToolParametersSchema, McpToolResultD
         },
       };
     } finally {
-      await refreshFooterStatus(registry);
+      await refreshFooterStatus(await registry.getStatus());
     }
   },
 });

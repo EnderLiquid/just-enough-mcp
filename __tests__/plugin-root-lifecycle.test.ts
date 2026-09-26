@@ -22,7 +22,6 @@ const mocks = vi.hoisted(() => ({
   installFooterStatusSink: vi.fn(),
   disposeFooter: vi.fn(),
   refreshFooterStatus: vi.fn(),
-  updateFooterStatus: vi.fn(),
   registerMcpServerTool: vi.fn(),
   registerMcpTool: vi.fn(),
   createServerOverviewPrompt: vi.fn(),
@@ -100,7 +99,6 @@ vi.mock("../extensions/rendering/notifier.js", () => ({
 vi.mock("../extensions/rendering/footer-status.js", () => ({
   installFooterStatusSink: mocks.installFooterStatusSink,
   refreshFooterStatus: mocks.refreshFooterStatus,
-  updateFooterStatus: mocks.updateFooterStatus,
 }));
 
 vi.mock("../extensions/tools/mcp-server-tool.js", () => ({
@@ -150,6 +148,9 @@ function createContext() {
     ui: {
       notify: vi.fn(),
       setStatus: vi.fn(),
+      theme: {
+        fg: (_color: string, text: string) => text,
+      },
     },
   };
 }
@@ -252,6 +253,7 @@ describe("justEnoughMcp root 生命周期", () => {
     expect(mocks.installCurrentServerRegistry).toHaveBeenCalledWith(
       mocks.createServerRegistry.mock.results[0]?.value,
     );
+    expect(mocks.installFooterStatusSink).toHaveBeenCalledWith(ctx.ui);
     expectCalledBefore(mocks.overviewBootstrapperConstructor, mocks.createServerRegistry);
     expectCalledBefore(mocks.createServerRegistry, mocks.initialize);
     expectCalledBefore(mocks.initialize, mocks.installCurrentPluginConfig);
@@ -337,7 +339,7 @@ describe("justEnoughMcp root 生命周期", () => {
     expect(mocks.notifyError).toHaveBeenCalledWith(
       "just-enough-mcp config error: footer unavailable",
     );
-    expect(mocks.updateFooterStatus).toHaveBeenCalledWith(0, 0);
+    expect(mocks.refreshFooterStatus).toHaveBeenLastCalledWith();
   });
 
   it("Registry 构造失败时只关闭候选 overviewBootstrapper，不发布 current 状态", async () => {
@@ -355,7 +357,7 @@ describe("justEnoughMcp root 生命周期", () => {
     expect(mocks.notifyError).toHaveBeenCalledWith(
       "just-enough-mcp config error: invalid server config",
     );
-    expect(mocks.updateFooterStatus).toHaveBeenCalledWith(0, 0);
+    expect(mocks.refreshFooterStatus).toHaveBeenCalledWith();
   });
 
   it("Registry 初始化意外失败时关闭候选资源，不发布 current 状态", async () => {
@@ -374,7 +376,7 @@ describe("justEnoughMcp root 生命周期", () => {
     expect(mocks.notifyError).toHaveBeenCalledWith(
       "just-enough-mcp config error: registry initialization failed",
     );
-    expect(mocks.updateFooterStatus).toHaveBeenCalledWith(0, 0);
+    expect(mocks.refreshFooterStatus).toHaveBeenCalledWith();
   });
 
   it("shutdown 先撤销并关闭 Registry，再排空 overviewBootstrapper，最后释放 Pi sinks", async () => {

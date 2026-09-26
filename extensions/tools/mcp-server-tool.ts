@@ -120,7 +120,7 @@ export const mcpServerTool = defineTool<typeof mcpServerParametersSchema, McpSer
           },
         };
       } finally {
-        await refreshFooterStatus(registry);
+        await refreshFooterStatus(await registry.getStatus());
       }
     }
 
@@ -128,7 +128,7 @@ export const mcpServerTool = defineTool<typeof mcpServerParametersSchema, McpSer
       try {
         await registry.connectServer(serverName!, signal);
       } finally {
-        await refreshFooterStatus(registry);
+        await refreshFooterStatus(await registry.getStatus());
       }
       return {
         content: [{ type: "text", text: "connected" }],
@@ -140,7 +140,7 @@ export const mcpServerTool = defineTool<typeof mcpServerParametersSchema, McpSer
       try {
         await registry.disconnectServer(serverName!);
       } finally {
-        await refreshFooterStatus(registry);
+        await refreshFooterStatus(await registry.getStatus());
       }
       return {
         content: [{ type: "text", text: "disconnected" }],
@@ -152,7 +152,7 @@ export const mcpServerTool = defineTool<typeof mcpServerParametersSchema, McpSer
       try {
         await registry.authorizeServer(serverName!, signal);
       } finally {
-        await refreshFooterStatus(registry);
+        await refreshFooterStatus(await registry.getStatus());
       }
       return {
         content: [{ type: "text", text: "authorized" }],
@@ -163,7 +163,7 @@ export const mcpServerTool = defineTool<typeof mcpServerParametersSchema, McpSer
     try {
       await registry.logoutServer(serverName!);
     } finally {
-      await refreshFooterStatus(registry);
+      await refreshFooterStatus(await registry.getStatus());
     }
     return {
       content: [{ type: "text", text: "logged out" }],

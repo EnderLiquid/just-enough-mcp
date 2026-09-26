@@ -1,9 +1,11 @@
-import type { ServerRegistry } from "../servers/registry.js";
+import type { Theme } from "@earendil-works/pi-coding-agent";
+import type { ServerRegistryStatus } from "../servers/registry.js";
 
 const STATUS_KEY = "just-enough-mcp";
 
 export interface FooterStatusSink {
   setStatus(key: string, text: string | undefined): void;
+  readonly theme: Pick<Theme, "fg">;
 }
 
 let currentFooterStatusSink: FooterStatusSink | undefined;
@@ -24,13 +26,14 @@ export function installFooterStatusSink(sink?: FooterStatusSink): () => void {
   };
 }
 
-export function updateFooterStatus(connectedServers: number, totalServers: number): void {
-  currentFooterStatusSink?.setStatus(STATUS_KEY, `${connectedServers}/${totalServers} MCP`);
-}
+export function refreshFooterStatus(status?: ServerRegistryStatus): void {
+  const sink = currentFooterStatusSink;
+  if (!sink) {
+    return;
+  }
 
-export async function refreshFooterStatus(
-  registry: Pick<ServerRegistry, "getStatus">,
-): Promise<void> {
-  const current = await registry.getStatus();
-  updateFooterStatus(current.connectedCount, current.totalCount);
+  const text = status
+    ? sink.theme.fg("dim", `${status.connectedCount}/${status.totalCount} MCP`)
+    : undefined;
+  sink.setStatus(STATUS_KEY, text);
 }
