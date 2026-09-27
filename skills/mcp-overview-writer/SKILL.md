@@ -58,18 +58,21 @@ Therefore:
 
 ## File paths
 
-For a server named `serverName`, the default overview path is:
+For a server named `serverName`, the default overview is located at:
 
 - `~/.pi/agent/just-enough-mcp/overviews/<serverName>.md`
 
-A user may also explicitly configure an overview path in the plugin config file:
+An overview may also be explicitly configured in a server definition. The plugin reads configuration in this order:
 
-- `~/.pi/agent/just-enough-mcp/config.json`
+- Global config: `~/.pi/agent/just-enough-mcp/config.json`
+- Current project config: `<project-dir>/.pi/just-enough-mcp/config.json`
+
+The project config is included only when the current project is trusted by Pi. A project-level server object fully replaces a same-named global server, and `null` removes an inherited global server; server definitions are not recursively merged. Relative `overview` paths are resolved against the directory containing their respective config file and normalized to absolute paths before the layers are merged. Therefore, a relative path in project config is based in the project config directory, while one in global config is based in the global config directory.
 
 Follow these rules when maintaining overviews:
 
-- If the config explicitly specifies an overview path, maintain that path first.
-- If no explicit path is configured, maintain the default overview file.
+- If the system prompt shows `> Overview file: ...`, use that resolved path as the primary source of truth.
+- If no file path is shown, inspect the effective config in the precedence order above. If it explicitly sets `overview`, maintain the configured file; otherwise maintain the global default overview file.
 - After changing an overview or config, remind the user to run `/reload` or restart the session when the system prompt needs the latest content.
 
 ## Writing priorities

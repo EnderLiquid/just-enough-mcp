@@ -62,14 +62,17 @@ overview 的目标不是全面介绍一个 server，而是帮助 agent 在 **服
 
 - `~/.pi/agent/just-enough-mcp/overviews/<serverName>.md`
 
-用户也可能在插件配置文件中显式指定 overview 路径：
+overview 也可以在以下插件配置文件中显式指定路径。插件按全局配置到项目配置的顺序读取：
 
-- `~/.pi/agent/just-enough-mcp/config.json`
+- 全局配置：`~/.pi/agent/just-enough-mcp/config.json`
+- 当前项目配置：`<project-dir>/.pi/just-enough-mcp/config.json`
+
+项目配置仅在当前项目受 Pi 信任时生效。项目层的 server object 会完整替换同名全局 server，`null` 会移除继承的全局 server，不会与全局 server definition 递归合并。每个配置文件中的相对 `overview` 路径都相对于该文件所在目录解析，并在合并前规范化为绝对路径；因此项目配置中的相对路径以项目配置目录为起点，全局配置中的相对路径以全局配置目录为起点。
 
 维护时遵循以下规则：
 
-- 若配置里显式指定了 overview 路径，优先维护显式路径
-- 若没有显式路径，再维护默认 overview 文件
+- 系统提示词中若显示 `> Overview file: ...`，优先使用其中的已解析路径维护文件。
+- 若没有显示文件路径，按上述配置优先级查找显式 overview 路径；有则维护配置指定的文件，没有则维护全局默认 overview 文件。
 - 修改 overview 或配置后，如需让系统提示词看到最新内容，提醒用户运行 `/reload` 或重启会话
 
 ## 写作取舍标准
