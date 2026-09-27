@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { getArtifactsDirectoryPath, getOverviewDirectoryPath, getPluginConfigPath } from "./paths.js";
+import { dirname, isAbsolute, resolve } from "node:path";
 import { loadServerOverview } from "./server-overviews.js";
 import {
   DEFAULT_CONNECTION_MODE,
@@ -166,22 +166,81 @@ function parseResolvedServerConfig(
   };
 }
 
+function normalizeOverviewPaths(configPath: string, raw: RawPluginConfig): RawPluginConfig {
+  if (raw.servers === undefined) {
+    return raw;
+  }
+
+  const servers: Record<string, unknown | null> = {};
+  for (const [serverName, rawServer] of Object.entries(raw.servers)) {
+    if (
+      !isObject(rawServer)
+      || typeof rawServer.overview !== "string"
+      || rawServer.overview.length === 0
+      || isAbsolute(rawServer.overview)
+    ) {
+      servers[serverName] = rawServer;
+      continue;
+    }
+
+    servers[serverName] = {
+      ...rawServer,
+      overview: resolve(dirname(configPath), rawServer.overview),
+    };
+  }
+
+  return { ...raw, servers };
+}
+
 function parseRawConfig(configPath: string): RawPluginConfig {
   if (!existsSync(configPath)) {
-    return { servers: {} };
+    return {};
   }
 
   const rawText = readFileSync(configPath, "utf8");
   const parsed: unknown = JSON.parse(rawText);
   if (!isObject(parsed)) {
-    throw new Error("just-enough-mcp config must be a JSON object.");
+    throw new Error(`just-enough-mcp config "${configPath}" must be a JSON object.`);
   }
 
   if (parsed.servers !== undefined && !isObject(parsed.servers)) {
-    throw new Error("just-enough-mcp config field \"servers\" must be an object.");
+    throw new Error(`just-enough-mcp config field "servers" in "${configPath}" must be an object.`);
   }
 
-  return parsed as RawPluginConfig;
+  return normalizeOverviewPaths(configPath, parsed as RawPluginConfig);
+}
+
+function mergeConfigField(previous: unknown, next: unknown): unknown {
+  if (isObject(previous) && isObject(next)) {
+    return { ...previous, ...next };
+  }
+  return next;
+}
+
+function mergeRawConfigs(layers: readonly RawPluginConfig[]): RawPluginConfig {
+  const merged: RawPluginConfig = {};
+
+  for (const layer of layers) {
+    if (layer.materialization !== undefined) {
+      merged.materialization = mergeConfigField(merged.materialization, layer.materialization);
+    }
+    if (layer.tui !== undefined) {
+      merged.tui = mergeConfigField(merged.tui, layer.tui);
+    }
+    if (layer.servers !== undefined) {
+      const servers = { ...(merged.servers ?? {}) };
+      for (const [serverName, rawServer] of Object.entries(layer.servers)) {
+        if (rawServer === null) {
+          delete servers[serverName];
+        } else {
+          servers[serverName] = rawServer;
+        }
+      }
+      merged.servers = servers;
+    }
+  }
+
+  return merged;
 }
 
 function resolveServers(configPath: string, overviewDir: string, raw: RawPluginConfig): ResolvedServerConfig[] {
@@ -193,29 +252,23 @@ function resolveServers(configPath: string, overviewDir: string, raw: RawPluginC
 }
 
 export function loadPluginConfigFromPaths(
-  configPath: string,
+  configPaths: readonly string[],
   overviewDir: string,
   artifactDir: string,
 ): PluginConfigLoadResult {
-  const raw = parseRawConfig(configPath);
-  const servers = resolveServers(configPath, overviewDir, raw);
+  const normalizedConfigPaths = configPaths.map(configPath => resolve(configPath));
+  const raw = mergeRawConfigs(normalizedConfigPaths.map(parseRawConfig));
+  const resolutionConfigPath = normalizedConfigPaths.at(-1) ?? "";
+  const servers = resolveServers(resolutionConfigPath, overviewDir, raw);
   const materialization = parseMaterialization(raw.materialization);
   const tui = parseTui(raw.tui);
 
   return {
-    configPath,
+    configPaths: normalizedConfigPaths,
     overviewDir,
     artifactDir,
     materialization,
     tui,
     servers,
   };
-}
-
-export function loadPluginConfig(): PluginConfigLoadResult {
-  return loadPluginConfigFromPaths(
-    getPluginConfigPath(),
-    getOverviewDirectoryPath(),
-    getArtifactsDirectoryPath(),
-  );
 }

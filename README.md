@@ -16,7 +16,23 @@ Resources、Prompts、Sampling、Elicitation，以及将每个 MCP tool 直接�
 
 ## 配置
 
-配置文件位于 `~/.pi/agent/just-enough-mcp/config.json`，默认 overview 目录为 `~/.pi/agent/just-enough-mcp/overviews/`，工具调用结果物化到 `~/.pi/agent/just-enough-mcp/artifacts/`。它们在会话启动时读取；修改配置或 overview 后，请在 Pi 中执行 `/reload`。
+配置文件位于 `~/.pi/agent/just-enough-mcp/config.json`，项目配置文件位于当前项目的 `.pi/just-enough-mcp/config.json`。会话启动时按全局配置到项目配置的顺序读取；项目配置只覆盖当前项目的 effective config，不会修改全局文件。项目配置仅在当前 Pi session 受信时加入。默认 overview 目录为 `~/.pi/agent/just-enough-mcp/overviews/`，工具调用结果物化到 `~/.pi/agent/just-enough-mcp/artifacts/`。它们在会话启动时读取；修改配置或 overview 后，请在 Pi 中执行 `/reload`。
+
+项目配置支持三种 server 层语义：省略 server 名称表示继承全局定义；配置 object 表示新增或完整替换同名 server；配置 `null` 表示禁用继承的全局 server。例如：
+
+```json
+{
+  "servers": {
+    "global-search": null,
+    "project-tools": {
+      "command": "node",
+      "args": ["./tools/mcp-server.mjs"]
+    }
+  }
+}
+```
+
+项目层与全局层的 `materialization`、`tui` 字段按字段覆盖，server definition 不做递归合并。每个配置文件中的相对 `overview` 路径都相对于该文件所在目录解析；运行时会先将其规范化为绝对路径。
 
 下面的配置同时展示一个 stdio server、一个静态 token HTTP server 和一个 OAuth HTTP server：
 

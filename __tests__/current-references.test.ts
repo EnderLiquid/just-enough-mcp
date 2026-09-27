@@ -37,8 +37,8 @@ afterEach(() => {
 
 describe("current plugin references", () => {
   it("安装并按身份清理 config", () => {
-    const first = makePluginConfig({ configPath: "first.json" });
-    const second = makePluginConfig({ configPath: "second.json" });
+    const first = makePluginConfig({ configPaths: ["first.json"] });
+    const second = makePluginConfig({ configPaths: ["second.json"] });
     const disposeFirst = installCurrentPluginConfig(first);
     disposers.push(disposeFirst);
     const disposeSecond = installCurrentPluginConfig(second);
@@ -49,7 +49,7 @@ describe("current plugin references", () => {
 
     disposeSecond();
     expect(getCurrentPluginConfig()).toBeUndefined();
-    expect(first.configPath).toBe("first.json");
+    expect(first.configPaths).toEqual(["first.json"]);
   });
 
   it("安装并按身份清理 Registry", () => {

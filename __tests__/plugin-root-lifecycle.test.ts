@@ -27,6 +27,10 @@ const mocks = vi.hoisted(() => ({
   createServerOverviewPrompt: vi.fn(),
   getAgentDir: vi.fn(),
   getOAuthBrokerDirectoryPath: vi.fn(),
+  getArtifactsDirectoryPath: vi.fn(),
+  getOverviewDirectoryPath: vi.fn(),
+  getPluginConfigPath: vi.fn(),
+  getProjectPluginConfigPath: vi.fn(),
   createOAuthBrokerNamespace: vi.fn(),
   oauthBrokerClientConstructor: vi.fn(),
   oauthBrokerClientClose: vi.fn(),
@@ -42,6 +46,10 @@ vi.mock("@earendil-works/pi-coding-agent", async importOriginal => ({
 
 vi.mock("../extensions/config/paths.js", () => ({
   getOAuthBrokerDirectoryPath: mocks.getOAuthBrokerDirectoryPath,
+  getArtifactsDirectoryPath: mocks.getArtifactsDirectoryPath,
+  getOverviewDirectoryPath: mocks.getOverviewDirectoryPath,
+  getPluginConfigPath: mocks.getPluginConfigPath,
+  getProjectPluginConfigPath: mocks.getProjectPluginConfigPath,
 }));
 
 vi.mock("../extensions/oauth/broker/namespace.js", () => ({
@@ -65,7 +73,7 @@ vi.mock("../extensions/oauth/broker/bootstrapper.js", () => ({
 }));
 
 vi.mock("../extensions/config/plugin-config.js", () => ({
-  loadPluginConfig: mocks.loadPluginConfig,
+  loadPluginConfigFromPaths: mocks.loadPluginConfig,
 }));
 
 vi.mock("../extensions/config/current-config.js", () => ({
@@ -144,6 +152,8 @@ function createFakePi(): FakePi {
 
 function createContext() {
   return {
+    cwd: "C:/workspace",
+    isProjectTrusted: vi.fn(() => true),
     hasUI: true,
     ui: {
       notify: vi.fn(),
@@ -205,6 +215,10 @@ describe("justEnoughMcp root 生命周期", () => {
     mocks.refreshFooterStatus.mockResolvedValue(undefined);
     mocks.createServerOverviewPrompt.mockReturnValue("server overviews");
     mocks.getAgentDir.mockReturnValue("C:/Users/Admin/.pi/agent");
+    mocks.getPluginConfigPath.mockReturnValue("C:/Users/Admin/.pi/agent/just-enough-mcp/config.json");
+    mocks.getProjectPluginConfigPath.mockImplementation((cwd: string) => `${cwd}/.pi/just-enough-mcp/config.json`);
+    mocks.getOverviewDirectoryPath.mockReturnValue("C:/Users/Admin/.pi/agent/just-enough-mcp/overviews");
+    mocks.getArtifactsDirectoryPath.mockReturnValue("C:/Users/Admin/.pi/agent/just-enough-mcp/artifacts");
     mocks.getOAuthBrokerDirectoryPath.mockReturnValue("C:/Users/Admin/.pi/agent/just-enough-mcp/oauth");
     mocks.createOAuthBrokerNamespace.mockResolvedValue({
       namespaceId: `agent-dir:v1:${"d".repeat(64)}`,
@@ -227,6 +241,54 @@ describe("justEnoughMcp root 生命周期", () => {
     expect(mocks.loadPluginConfig).not.toHaveBeenCalled();
     expect(mocks.createServerRegistry).not.toHaveBeenCalled();
     expect(mocks.overviewBootstrapperConstructor).not.toHaveBeenCalled();
+  });
+
+  it("session config adapter 按顺序传入全局和受信项目配置路径", async () => {
+    const { pi, handler } = createFakePi();
+    justEnoughMcp(pi);
+
+    await handler("session_start")({}, createContext());
+
+    expect(mocks.loadPluginConfig).toHaveBeenCalledWith(
+      [
+        "C:/Users/Admin/.pi/agent/just-enough-mcp/config.json",
+        "C:/workspace/.pi/just-enough-mcp/config.json",
+      ],
+      "C:/Users/Admin/.pi/agent/just-enough-mcp/overviews",
+      "C:/Users/Admin/.pi/agent/just-enough-mcp/artifacts",
+    );
+
+    await handler("session_shutdown")();
+  });
+
+  it("未受信项目不会把项目配置路径传给 loader", async () => {
+    const { pi, handler } = createFakePi();
+    const context = createContext();
+    context.isProjectTrusted.mockReturnValue(false);
+    justEnoughMcp(pi);
+
+    await handler("session_start")({}, context);
+
+    expect(mocks.loadPluginConfig).toHaveBeenCalledWith(
+      ["C:/Users/Admin/.pi/agent/just-enough-mcp/config.json"],
+      "C:/Users/Admin/.pi/agent/just-enough-mcp/overviews",
+      "C:/Users/Admin/.pi/agent/just-enough-mcp/artifacts",
+    );
+
+    await handler("session_shutdown")();
+  });
+
+  it("只根据 effective config 决定是否创建 OAuth broker", async () => {
+    mocks.loadPluginConfig.mockReturnValue(makePluginConfig({ servers: [] }));
+    const { pi, handler } = createFakePi();
+    justEnoughMcp(pi);
+
+    await handler("session_start")({}, createContext());
+
+    expect(mocks.oauthBrokerClientConstructor).not.toHaveBeenCalled();
+    expect(mocks.createOAuthBrokerBootstrapper).not.toHaveBeenCalled();
+
+    await handler("session_shutdown")();
   });
 
   it("session start 先创建 overviewBootstrapper 并初始化 Registry，再发布 config 和 Registry", async () => {

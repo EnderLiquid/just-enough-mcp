@@ -34,7 +34,7 @@ export interface BaseServerConfig {
 export interface RawPluginConfig {
   materialization?: unknown;
   tui?: unknown;
-  servers?: Record<string, unknown>;
+  servers?: Record<string, unknown | null>;
 }
 
 export interface ResolvedServerConfig {
@@ -46,7 +46,7 @@ export interface ResolvedServerConfig {
 }
 
 export interface PluginConfigLoadResult {
-  configPath: string;
+  configPaths: string[];
   overviewDir: string;
   artifactDir: string;
   materialization: MaterializationSettings;

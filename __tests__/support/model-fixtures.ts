@@ -40,7 +40,7 @@ export function makePluginConfig(
   const servers = overrides.servers ?? [makeResolvedServerConfig()];
 
   return {
-    configPath: "C:/Users/Admin/.pi/agent/just-enough-mcp/config.json",
+    configPaths: ["C:/Users/Admin/.pi/agent/just-enough-mcp/config.json"],
     overviewDir: "C:/Users/Admin/.pi/agent/just-enough-mcp/overviews",
     artifactDir: "C:/Users/Admin/.pi/agent/just-enough-mcp/artifacts",
     ...overrides,

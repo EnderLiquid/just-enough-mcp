@@ -44,7 +44,7 @@ describe("loadPluginConfigFromPaths", () => {
       },
     }, null, 2), "utf8");
 
-    const loaded = loadPluginConfigFromPaths(configPath, overviewDir, artifactDir);
+    const loaded = loadPluginConfigFromPaths([configPath], overviewDir, artifactDir);
     expect(loaded.servers).toHaveLength(2);
 
     const tavily = loaded.servers.find(server => server.name === "tavily");
@@ -88,7 +88,7 @@ describe("loadPluginConfigFromPaths", () => {
       },
     }, null, 2), "utf8");
 
-    const loaded = loadPluginConfigFromPaths(configPath, overviewDir, artifactDir);
+    const loaded = loadPluginConfigFromPaths([configPath], overviewDir, artifactDir);
 
     expect(loaded.materialization.previewFullCharsPerItem).toBe(1500);
     expect(loaded.materialization.previewTruncateToCharsPerItem).toBe(600);
@@ -138,7 +138,7 @@ describe("loadPluginConfigFromPaths", () => {
         },
       }), "utf8");
 
-      expect(loadPluginConfigFromPaths(configPath, overviewDir, artifactDir).servers[0]?.name).toBe(serverName);
+      expect(loadPluginConfigFromPaths([configPath], overviewDir, artifactDir).servers[0]?.name).toBe(serverName);
     }
 
     for (const { name: serverName, reason } of invalidNames) {
@@ -152,8 +152,8 @@ describe("loadPluginConfigFromPaths", () => {
         },
       }), "utf8");
 
-      expect(() => loadPluginConfigFromPaths(configPath, overviewDir, artifactDir)).toThrow(serverName);
-      expect(() => loadPluginConfigFromPaths(configPath, overviewDir, artifactDir)).toThrow(reason);
+      expect(() => loadPluginConfigFromPaths([configPath], overviewDir, artifactDir)).toThrow(serverName);
+      expect(() => loadPluginConfigFromPaths([configPath], overviewDir, artifactDir)).toThrow(reason);
     }
   });
 
@@ -170,7 +170,7 @@ describe("loadPluginConfigFromPaths", () => {
       },
     }, null, 2), "utf8");
 
-    expect(() => loadPluginConfigFromPaths(configPath, overviewDir, artifactDir)).toThrow(/broken/);
+    expect(() => loadPluginConfigFromPaths([configPath], overviewDir, artifactDir)).toThrow(/broken/);
   });
 
   it("拒绝无效的物化设置", () => {
@@ -187,7 +187,7 @@ describe("loadPluginConfigFromPaths", () => {
       servers: {},
     }, null, 2), "utf8");
 
-    expect(() => loadPluginConfigFromPaths(configPath, overviewDir, artifactDir)).toThrow(/materialization.summaryItemCount/);
+    expect(() => loadPluginConfigFromPaths([configPath], overviewDir, artifactDir)).toThrow(/materialization.summaryItemCount/);
   });
 
   it("拒绝不一致的物化预览阈值", () => {
@@ -205,7 +205,7 @@ describe("loadPluginConfigFromPaths", () => {
       servers: {},
     }, null, 2), "utf8");
 
-    expect(() => loadPluginConfigFromPaths(configPath, overviewDir, artifactDir)).toThrow(/materialization.previewTruncateToCharsPerItem/);
+    expect(() => loadPluginConfigFromPaths([configPath], overviewDir, artifactDir)).toThrow(/materialization.previewTruncateToCharsPerItem/);
   });
 
   it("接受所有 TUI 渲染模式", () => {
@@ -223,7 +223,7 @@ describe("loadPluginConfigFromPaths", () => {
         servers: {},
       }, null, 2), "utf8");
 
-      const loaded = loadPluginConfigFromPaths(configPath, overviewDir, artifactDir);
+      const loaded = loadPluginConfigFromPaths([configPath], overviewDir, artifactDir);
       expect(loaded.tui.renderMode).toBe(mode);
     }
   });
@@ -242,7 +242,7 @@ describe("loadPluginConfigFromPaths", () => {
       servers: {},
     }, null, 2), "utf8");
 
-    expect(() => loadPluginConfigFromPaths(configPath, overviewDir, artifactDir)).toThrow(/tui.renderMode/);
+    expect(() => loadPluginConfigFromPaths([configPath], overviewDir, artifactDir)).toThrow(/tui.renderMode/);
   });
 
   it("拒绝无效的 expanded 模式折叠行数", () => {
@@ -259,6 +259,104 @@ describe("loadPluginConfigFromPaths", () => {
       servers: {},
     }, null, 2), "utf8");
 
-    expect(() => loadPluginConfigFromPaths(configPath, overviewDir, artifactDir)).toThrow(/tui.expandedModeCollapsedLines/);
+    expect(() => loadPluginConfigFromPaths([configPath], overviewDir, artifactDir)).toThrow(/tui.expandedModeCollapsedLines/);
+  });
+
+  it("按优先级合并配置层，支持禁用 server、完整替换和 overview 路径规范化", () => {
+    const root = tempDirs.create();
+    const globalConfigDir = join(root, "global");
+    const projectConfigDir = join(root, "project");
+    const globalConfigPath = join(globalConfigDir, "config.json");
+    const projectConfigPath = join(projectConfigDir, "config.json");
+    const overviewDir = join(root, "overviews");
+    const artifactDir = join(root, "artifacts");
+    const globalOverviewPath = join(globalConfigDir, "docs", "shared.md");
+    const projectOverviewPath = join(projectConfigDir, "docs", "shared.md");
+
+    mkdirSync(join(globalConfigDir, "docs"), { recursive: true });
+    mkdirSync(join(projectConfigDir, "docs"), { recursive: true });
+    writeFileSync(globalOverviewPath, "Global shared overview\n", "utf8");
+    writeFileSync(projectOverviewPath, "Project shared overview\n", "utf8");
+
+    writeFileSync(globalConfigPath, JSON.stringify({
+      materialization: {
+        summaryItemCount: 3,
+        hardMaxChars: 1000,
+      },
+      tui: {
+        renderMode: "expanded",
+        expandedModeCollapsedLines: 8,
+      },
+      servers: {
+        shared: {
+          command: "node",
+          args: ["global-server.mjs"],
+          auth: "oauth",
+          overview: "./docs/shared.md",
+        },
+        disabled: {
+          url: "https://example.com/oauth",
+          auth: "oauth",
+        },
+        inherited: {
+          command: "node",
+          args: ["inherited-server.mjs"],
+        },
+      },
+    }, null, 2), "utf8");
+
+    writeFileSync(projectConfigPath, JSON.stringify({
+      materialization: {
+        summaryItemCount: 5,
+      },
+      tui: {
+        renderMode: "minimal",
+      },
+      servers: {
+        shared: {
+          command: "node",
+          args: ["project-server.mjs"],
+          overview: "./docs/shared.md",
+        },
+        disabled: null,
+        "project-only": {
+          command: "node",
+          args: ["project-only.mjs"],
+        },
+      },
+    }, null, 2), "utf8");
+
+    const loaded = loadPluginConfigFromPaths(
+      [globalConfigPath, projectConfigPath],
+      overviewDir,
+      artifactDir,
+    );
+
+    expect(loaded.configPaths).toEqual([globalConfigPath, projectConfigPath]);
+    expect(loaded.materialization).toMatchObject({
+      summaryItemCount: 5,
+      hardMaxChars: 1000,
+    });
+    expect(loaded.tui).toMatchObject({
+      renderMode: "minimal",
+      expandedModeCollapsedLines: 8,
+    });
+    expect(loaded.servers.map(server => server.name)).toEqual([
+      "shared",
+      "inherited",
+      "project-only",
+    ]);
+
+    const shared = loaded.servers.find(server => server.name === "shared");
+    expect(shared?.definition).toEqual({
+      command: "node",
+      args: ["project-server.mjs"],
+      overview: projectOverviewPath,
+    });
+    expect(shared?.overview).toMatchObject({
+      source: "config",
+      path: projectOverviewPath,
+      content: "Project shared overview",
+    });
   });
 });

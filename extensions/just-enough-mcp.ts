@@ -1,8 +1,14 @@
-import { getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { getOAuthBrokerDirectoryPath } from "./config/paths.js";
+import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import {
+  getArtifactsDirectoryPath,
+  getOAuthBrokerDirectoryPath,
+  getOverviewDirectoryPath,
+  getPluginConfigPath,
+  getProjectPluginConfigPath,
+} from "./config/paths.js";
 import { getCurrentPluginConfig, installCurrentPluginConfig } from "./config/current-config.js";
 import { OverviewBootstrapper } from "./config/overview-bootstrapper.js";
-import { loadPluginConfig } from "./config/plugin-config.js";
+import { loadPluginConfigFromPaths } from "./config/plugin-config.js";
 import type { PluginConfigLoadResult } from "./modeling/types.js";
 import { createServerOverviewPrompt } from "./prompting/system-prompt.js";
 import { installFooterStatusSink, refreshFooterStatus } from "./rendering/footer-status.js";
@@ -41,6 +47,21 @@ function hasMcpServersSection(systemPrompt: string): boolean {
     .some(line => line.trim() === MCP_SERVERS_SECTION_HEADING);
 }
 
+function loadSessionPluginConfig(
+  ctx: Pick<ExtensionContext, "cwd" | "isProjectTrusted">,
+): PluginConfigLoadResult {
+  const configPaths = [getPluginConfigPath()];
+  if (ctx.isProjectTrusted()) {
+    configPaths.push(getProjectPluginConfigPath(ctx.cwd));
+  }
+
+  return loadPluginConfigFromPaths(
+    configPaths,
+    getOverviewDirectoryPath(),
+    getArtifactsDirectoryPath(),
+  );
+}
+
 export default function justEnoughMcp(pi: ExtensionAPI): void {
   let activeSession: ActivePluginSession | undefined;
   let disposeNotifier: (() => void) | undefined;
@@ -63,7 +84,7 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
     let oauthBroker: ActivePluginSession["oauthBroker"];
 
     try {
-      config = loadPluginConfig();
+      config = loadSessionPluginConfig(ctx);
       if (config.servers.some(server => server.definition.auth === "oauth")) {
         const namespace = await createOAuthBrokerNamespace(getAgentDir());
         const launchAbortController = new AbortController();

@@ -1,4 +1,4 @@
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { CONFIG_DIR_NAME, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
 
 const PLUGIN_DATA_DIR_NAME = "just-enough-mcp";
@@ -13,6 +13,10 @@ export function getPluginDataDir(): string {
 
 export function getPluginConfigPath(): string {
   return join(getPluginDataDir(), CONFIG_FILE_NAME);
+}
+
+export function getProjectPluginConfigPath(cwd: string): string {
+  return join(cwd, CONFIG_DIR_NAME, PLUGIN_DATA_DIR_NAME, CONFIG_FILE_NAME);
 }
 
 export function getOverviewDirectoryPath(): string {
