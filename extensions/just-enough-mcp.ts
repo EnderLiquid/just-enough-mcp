@@ -12,7 +12,6 @@ import type { PluginConfigLoadResult } from "./modeling/types.js";
 import { createServerOverviewPrompt } from "./prompting/system-prompt.js";
 import { createFooterStatusController, type FooterStatusController } from "./rendering/footer-status.js";
 import { createNotifier } from "./rendering/notifier.js";
-import { OverviewBootstrapper } from "./config/overview-bootstrapper.js";
 import { OAuthBrokerClient } from "./oauth/broker/client.js";
 import {
   createOAuthBrokerBootstrapper,
@@ -20,7 +19,7 @@ import {
 } from "./oauth/broker/bootstrapper.js";
 import { createOAuthBrokerNamespace } from "./oauth/broker/namespace.js";
 import { DEFAULT_OAUTH_BROKER_PORT } from "./oauth/broker/protocol.js";
-import { createServerRegistry, type ServerRegistry } from "./servers/registry.js";
+import { createMcpRegistry, type McpRegistry } from "./servers/registry.js";
 import {
   registerMcpServerTool,
   type McpServerToolRuntime,
@@ -32,8 +31,7 @@ import {
 
 interface ActivePluginSession {
   config: PluginConfigLoadResult;
-  registry: ServerRegistry;
-  overviewBootstrapper: OverviewBootstrapper;
+  registry: McpRegistry;
   oauthBroker?: {
     client: OAuthBrokerClient;
     launcher: OAuthBrokerBootstrapper;
@@ -92,8 +90,7 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
     const footerStatus = createFooterStatusController(ctx.hasUI ? ctx.ui : undefined);
 
     let config: PluginConfigLoadResult | undefined;
-    let registry: ServerRegistry | undefined;
-    let overviewBootstrapper: OverviewBootstrapper | undefined;
+    let registry: McpRegistry | undefined;
     let oauthBroker: ActivePluginSession["oauthBroker"];
 
     try {
@@ -130,13 +127,11 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
         });
       }
 
-      overviewBootstrapper = new OverviewBootstrapper({
-        overviewDir: config.overviewDir,
-        onCreated: serverName => notifier.notifyInfo(`Created MCP overview stub: ${serverName}`),
-      });
-
-      registry = createServerRegistry(config.servers, {
-        overviewBootstrapper,
+      registry = createMcpRegistry(config.servers, {
+        overview: {
+          overviewDir: config.overviewDir,
+          onCreated: serverName => notifier.notifyInfo(`Created MCP overview stub: ${serverName}`),
+        },
         ...(oauthBroker
           ? {
               oauth: {
@@ -150,14 +145,13 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
       if (initialization.eagerFailures.length > 0) {
         notifier.notifyWarning(
           `${initialization.eagerFailures.length} ${pluralize(initialization.eagerFailures.length, "eager MCP server")} could not be initialized: ` +
-          `${initialization.eagerFailures.join(", ")}. Use mcp_server or mcp_tool to retry on demand.`,
+          `${initialization.eagerFailures.map(failure => `${failure.serverName} (${failure.message})`).join(", ")}. Use mcp_server or mcp_tool to retry on demand.`,
         );
       }
 
       activeSession = {
         config,
         registry,
-        overviewBootstrapper,
         ...(oauthBroker ? { oauthBroker } : {}),
         footerStatus,
       };
@@ -166,7 +160,6 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
       oauthBroker?.launchAbortController.abort();
       await oauthBroker?.client.close().catch(() => undefined);
       await registry?.close().catch(() => undefined);
-      await overviewBootstrapper?.close().catch(() => undefined);
       footerStatus.dispose();
 
       const message = error instanceof Error ? error.message : String(error);
@@ -219,7 +212,6 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
       await session.oauthBroker?.client.close().catch(() => undefined);
       await session.registry.close();
     } finally {
-      await session.overviewBootstrapper.close();
       session.footerStatus.dispose();
     }
   });

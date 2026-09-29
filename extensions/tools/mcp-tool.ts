@@ -5,7 +5,7 @@ import { materializeToolCallResult, type MaterializeCallToolResultInput } from "
 import type { MaterializationSettings, TuiResultRenderSettings } from "../artifacts/types.js";
 import type { McpToolResultDetails, ServerCatalogResult } from "../modeling/types.js";
 import { createMcpResultRenderer } from "../rendering/result-renderer.js";
-import type { ServerRegistry, ServerRegistryStatus } from "../servers/registry.js";
+import type { McpRegistry, McpRegistryStatus } from "../servers/registry.js";
 import { pluralize } from "../formatting/english.js";
 
 export const mcpToolArgumentsSchema = Type.Unsafe<Record<string, unknown>>({
@@ -29,12 +29,12 @@ export const mcpToolParametersSchema = Type.Object({
 });
 
 export interface McpToolRuntime {
-  getRegistry(): ServerRegistry | undefined;
+  getRegistry(): McpRegistry | undefined;
   getArtifactDir(): string;
   getMaterializationSettings(): Partial<MaterializationSettings> | undefined;
   getTuiSettings(): TuiResultRenderSettings | undefined;
   refreshFooterStatus: (
-    status?: ServerRegistryStatus,
+    status?: McpRegistryStatus,
   ) => void | Promise<void>;
 }
 
@@ -133,7 +133,7 @@ function formatCatalogResult(catalog: ServerCatalogResult): string {
   return [`${catalog.tools.length} ${pluralize(catalog.tools.length, "tool")} available:`, ...sections].join("\n\n");
 }
 
-function requireRegistry(runtime: McpToolRuntime): ServerRegistry {
+function requireRegistry(runtime: McpToolRuntime): McpRegistry {
   const registry = runtime.getRegistry();
   if (!registry) {
     throw new Error("just-enough-mcp is not initialized for the current session");

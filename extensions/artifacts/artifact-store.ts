@@ -2,7 +2,7 @@ import { extension as getMimeExtension } from "mime-types";
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join, resolve } from "node:path";
-import type { PayloadDraft, StoredPayloadItem } from "./types.js";
+import type { NormalizedPayloadItem, StoredPayloadItem } from "./types.js";
 
 export interface ArtifactContext {
   readonly artifactRoot: string;
@@ -94,7 +94,7 @@ function shortenNormalizedBase(value: string): string {
   return `${value.slice(0, 32)}-${toShortHash(value)}`;
 }
 
-function buildDefaultStem(item: PayloadDraft): string {
+function buildDefaultStem(item: NormalizedPayloadItem): string {
   if (item.source === "structuredContent") {
     return "structured";
   }
@@ -122,7 +122,7 @@ function buildDefaultStem(item: PayloadDraft): string {
   }
 }
 
-function buildMainFileName(index: number, item: PayloadDraft): string {
+function buildMainFileName(index: number, item: NormalizedPayloadItem): string {
   const prefix = String(index).padStart(2, "0");
   let stem = buildDefaultStem(item);
 
@@ -137,7 +137,7 @@ function buildMainFileName(index: number, item: PayloadDraft): string {
   return `${prefix}-${stem}${ext}`;
 }
 
-function writePayloadMainFile(filePath: string, item: PayloadDraft): void {
+function writePayloadMainFile(filePath: string, item: NormalizedPayloadItem): void {
   if (item.binaryBase64 !== undefined) {
     const binary = Buffer.from(item.binaryBase64, "base64");
     writeFileSync(filePath, binary);
@@ -148,7 +148,7 @@ function writePayloadMainFile(filePath: string, item: PayloadDraft): void {
   writeFileSync(filePath, text, "utf8");
 }
 
-function toStoredPayloadItem(item: PayloadDraft & { index: number; path: string; fileName: string }): StoredPayloadItem {
+function toStoredPayloadItem(item: NormalizedPayloadItem & { index: number; path: string; fileName: string }): StoredPayloadItem {
   return {
     index: item.index,
     source: item.source,
@@ -219,7 +219,7 @@ export function rollbackArtifactContext(context: ArtifactContext): void {
   pendingArtifactContexts.delete(context);
 }
 
-export function storePayloadItems(items: PayloadDraft[], context: Pick<ArtifactContext, "callDir" | "stagingDir">): StoredPayloadItem[] {
+export function storePayloadItems(items: NormalizedPayloadItem[], context: Pick<ArtifactContext, "callDir" | "stagingDir">): StoredPayloadItem[] {
   return items.map((item, index) => {
     const fileName = buildMainFileName(index + 1, item);
     const filePath = normalizePathSlashes(join(context.callDir, fileName));

@@ -4,12 +4,10 @@ import { makePluginConfig, makeResolvedServerConfig } from "./support/model-fixt
 
 const mocks = vi.hoisted(() => ({
   loadPluginConfig: vi.fn(),
-  createServerRegistry: vi.fn(),
+  createMcpRegistry: vi.fn(),
   initialize: vi.fn(),
   getStatus: vi.fn(),
   close: vi.fn(),
-  overviewBootstrapperConstructor: vi.fn(),
-  overviewBootstrapperClose: vi.fn(),
   createNotifier: vi.fn(),
   notifyInfo: vi.fn(),
   notifyError: vi.fn(),
@@ -78,16 +76,8 @@ vi.mock("../extensions/rendering/footer-status.js", () => ({
   createFooterStatusController: mocks.createFooterStatusController,
 }));
 
-vi.mock("../extensions/config/overview-bootstrapper.js", () => ({
-  OverviewBootstrapper: class MockOverviewBootstrapper {
-    constructor(options: unknown) {
-      return mocks.overviewBootstrapperConstructor(options);
-    }
-  },
-}));
-
 vi.mock("../extensions/servers/registry.js", () => ({
-  createServerRegistry: mocks.createServerRegistry,
+  createMcpRegistry: mocks.createMcpRegistry,
 }));
 
 vi.mock("../extensions/tools/mcp-server-tool.js", () => ({
@@ -179,15 +169,10 @@ describe("justEnoughMcp root 生命周期", () => {
     mocks.initialize.mockResolvedValue({ eagerFailures: [] });
     mocks.getStatus.mockResolvedValue({ servers: [], connectedCount: 0, totalCount: 0 });
     mocks.close.mockResolvedValue(undefined);
-    mocks.overviewBootstrapperClose.mockResolvedValue(undefined);
-    mocks.createServerRegistry.mockReturnValue({
+    mocks.createMcpRegistry.mockReturnValue({
       initialize: mocks.initialize,
       getStatus: mocks.getStatus,
       close: mocks.close,
-    });
-    mocks.overviewBootstrapperConstructor.mockReturnValue({
-      notify: vi.fn(),
-      close: mocks.overviewBootstrapperClose,
     });
     mocks.createNotifier.mockReturnValue({
       notifyInfo: mocks.notifyInfo,
@@ -225,8 +210,8 @@ describe("justEnoughMcp root 生命周期", () => {
     expect(mocks.registerMcpServerTool).toHaveBeenCalledWith(pi, expect.any(Object));
     expect(mocks.registerMcpTool).toHaveBeenCalledWith(pi, expect.any(Object));
     expect(mocks.loadPluginConfig).not.toHaveBeenCalled();
-    expect(mocks.createServerRegistry).not.toHaveBeenCalled();
-    expect(mocks.overviewBootstrapperConstructor).not.toHaveBeenCalled();
+    expect(mocks.createMcpRegistry).not.toHaveBeenCalled();
+    expect(mocks.createFooterStatusController).not.toHaveBeenCalled();
   });
 
   it("session config adapter 按顺序传入全局和受信项目配置路径", async () => {
@@ -277,7 +262,7 @@ describe("justEnoughMcp root 生命周期", () => {
     await handler("session_shutdown")();
   });
 
-  it("session start 先创建 overviewBootstrapper 并初始化 Registry，再发布 config 和 Registry", async () => {
+  it("session start 创建带 overview capability 的 Registry 并完成初始化", async () => {
     const config = makePluginConfig();
     mocks.loadPluginConfig.mockReturnValue(config);
     const { pi, handler } = createFakePi();
@@ -286,24 +271,19 @@ describe("justEnoughMcp root 生命周期", () => {
 
     await handler("session_start")({}, ctx);
 
-    expect(mocks.overviewBootstrapperConstructor).toHaveBeenCalledWith({
-      overviewDir: config.overviewDir,
-      onCreated: expect.any(Function),
-    });
-    expect(mocks.createServerRegistry).toHaveBeenCalledWith(
-      config.servers,
-      {
-        overviewBootstrapper: mocks.overviewBootstrapperConstructor.mock.results[0]?.value,
+    expect(mocks.createMcpRegistry).toHaveBeenCalledWith(config.servers, {
+      overview: {
+        overviewDir: config.overviewDir,
+        onCreated: expect.any(Function),
       },
-    );
+    });
     expect(mocks.initialize).toHaveBeenCalledTimes(1);
     expect(mocks.createNotifier).toHaveBeenCalledWith({ notify: expect.any(Function) });
     expect(mocks.createFooterStatusController).toHaveBeenCalledWith(ctx.ui);
-    expectCalledBefore(mocks.overviewBootstrapperConstructor, mocks.createServerRegistry);
-    expectCalledBefore(mocks.createServerRegistry, mocks.initialize);
+    expectCalledBefore(mocks.createMcpRegistry, mocks.initialize);
     expectCalledBefore(mocks.initialize, mocks.refreshFooterStatus);
 
-    const onCreated = mocks.overviewBootstrapperConstructor.mock.calls[0]?.[0]?.onCreated;
+    const onCreated = mocks.createMcpRegistry.mock.calls[0]?.[1]?.overview?.onCreated;
     onCreated("demo");
     expect(mocks.notifyInfo).toHaveBeenCalledWith("Created MCP overview stub: demo");
     expect(ctx.ui.notify).not.toHaveBeenCalled();
@@ -336,8 +316,11 @@ describe("justEnoughMcp root 生命周期", () => {
       onWarning: expect.any(Function),
     });
     expect(mocks.oauthBrokerLauncherStart).toHaveBeenCalledTimes(1);
-    expect(mocks.createServerRegistry).toHaveBeenCalledWith(config.servers, {
-      overviewBootstrapper: mocks.overviewBootstrapperConstructor.mock.results[0]?.value,
+    expect(mocks.createMcpRegistry).toHaveBeenCalledWith(config.servers, {
+      overview: {
+        overviewDir: config.overviewDir,
+        onCreated: expect.any(Function),
+      },
       oauth: {
         brokerClient: bootstrapOptions.client,
         namespaceId: `agent-dir:v1:${"d".repeat(64)}`,
@@ -362,7 +345,7 @@ describe("justEnoughMcp root 生命周期", () => {
 
     const signal = mocks.createOAuthBrokerBootstrapper.mock.calls[0]?.[0]?.signal as AbortSignal;
     expect(signal.aborted).toBe(true);
-    expect(mocks.createServerRegistry).toHaveBeenCalledTimes(1);
+    expect(mocks.createMcpRegistry).toHaveBeenCalledTimes(1);
     expect(mocks.oauthBrokerClientClose).toHaveBeenCalledTimes(1);
     expectCalledBefore(mocks.oauthBrokerClientClose, mocks.close);
   });
@@ -375,31 +358,30 @@ describe("justEnoughMcp root 生命周期", () => {
     await handler("session_start")({}, createContext());
 
     expect(mocks.createFooterStatusController).toHaveBeenCalledTimes(1);
-    expect(mocks.overviewBootstrapperClose).not.toHaveBeenCalled();
+    expect(mocks.close).not.toHaveBeenCalled();
     expect(mocks.notifyError).toHaveBeenCalledWith(
       "just-enough-mcp config error: footer unavailable",
     );
     expect(mocks.refreshFooterStatus).toHaveBeenLastCalledWith();
   });
 
-  it("Registry 构造失败时只关闭候选 overviewBootstrapper，不发布 current 状态", async () => {
+  it("Registry 构造失败时不发布 session 状态", async () => {
     const failure = new Error("invalid server config");
-    mocks.createServerRegistry.mockImplementationOnce(() => { throw failure; });
+    mocks.createMcpRegistry.mockImplementationOnce(() => { throw failure; });
     const { pi, handler } = createFakePi();
     justEnoughMcp(pi);
 
     await handler("session_start")({}, createContext());
 
-    expect(mocks.createServerRegistry).toHaveBeenCalledTimes(1);
+    expect(mocks.createMcpRegistry).toHaveBeenCalledTimes(1);
     expect(mocks.close).not.toHaveBeenCalled();
-    expect(mocks.overviewBootstrapperClose).toHaveBeenCalledTimes(1);
     expect(mocks.notifyError).toHaveBeenCalledWith(
       "just-enough-mcp config error: invalid server config",
     );
     expect(mocks.refreshFooterStatus).toHaveBeenCalledWith();
   });
 
-  it("Registry 初始化意外失败时关闭候选资源，不发布 current 状态", async () => {
+  it("Registry 初始化意外失败时关闭候选 Registry，不发布 session 状态", async () => {
     const failure = new Error("registry initialization failed");
     mocks.initialize.mockRejectedValueOnce(failure);
     const { pi, handler } = createFakePi();
@@ -407,17 +389,15 @@ describe("justEnoughMcp root 生命周期", () => {
 
     await handler("session_start")({}, createContext());
 
-    expect(mocks.createServerRegistry).toHaveBeenCalledTimes(1);
+    expect(mocks.createMcpRegistry).toHaveBeenCalledTimes(1);
     expect(mocks.close).toHaveBeenCalledTimes(1);
-    expect(mocks.overviewBootstrapperClose).toHaveBeenCalledTimes(1);
-    expectCalledBefore(mocks.close, mocks.overviewBootstrapperClose);
     expect(mocks.notifyError).toHaveBeenCalledWith(
       "just-enough-mcp config error: registry initialization failed",
     );
     expect(mocks.refreshFooterStatus).toHaveBeenCalledWith();
   });
 
-  it("shutdown 先撤销并关闭 Registry，再排空 overviewBootstrapper，最后释放 Pi sinks", async () => {
+  it("shutdown 关闭 Registry 后释放 footer capability", async () => {
     const { pi, handler } = createFakePi();
     justEnoughMcp(pi);
     await handler("session_start")({}, createContext());
@@ -426,22 +406,20 @@ describe("justEnoughMcp root 生命周期", () => {
     await handler("session_shutdown")();
 
     expect(mocks.close).toHaveBeenCalledTimes(1);
-    expect(mocks.overviewBootstrapperClose).toHaveBeenCalledTimes(1);
     expect(mocks.disposeFooter).toHaveBeenCalledTimes(1);
-    expectCalledBefore(mocks.close, mocks.overviewBootstrapperClose);
-    expectCalledBefore(mocks.overviewBootstrapperClose, mocks.disposeFooter);
+    expectCalledBefore(mocks.close, mocks.disposeFooter);
   });
 
-  it("shutdown 等待 Bootstrapper 排空后才释放 Pi sinks", async () => {
+  it("shutdown 等待 Registry drain 后才释放 footer capability", async () => {
     const gate = createDeferred();
     const { pi, handler } = createFakePi();
     justEnoughMcp(pi);
     await handler("session_start")({}, createContext());
     vi.clearAllMocks();
-    mocks.overviewBootstrapperClose.mockReturnValueOnce(gate.promise);
+    mocks.close.mockReturnValueOnce(gate.promise);
 
     const shuttingDown = handler("session_shutdown")();
-    await vi.waitFor(() => expect(mocks.overviewBootstrapperClose).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(mocks.close).toHaveBeenCalledTimes(1));
     expect(mocks.disposeFooter).not.toHaveBeenCalled();
 
     gate.resolve();
@@ -459,7 +437,7 @@ describe("justEnoughMcp root 生命周期", () => {
     await handler("session_shutdown")();
 
     expect(mocks.close).toHaveBeenCalledTimes(1);
-    expect(mocks.overviewBootstrapperClose).toHaveBeenCalledTimes(1);
+    expect(mocks.disposeFooter).toHaveBeenCalledTimes(1);
   });
 
   it("未激活时注入 fallback prompt，激活时注入 overview", async () => {

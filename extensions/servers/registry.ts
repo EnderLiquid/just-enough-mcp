@@ -4,27 +4,56 @@ import type {
   ServerSnapshot,
   ToolCallExecutionResult,
 } from "../modeling/types.js";
+import type { OverviewBootstrapperOptions } from "../config/overview-bootstrapper.js";
+import { OverviewBootstrapper } from "../config/overview-bootstrapper.js";
 import { AsyncReadWriteLock } from "../concurrency/async-read-write-lock.js";
 import {
+  RegistryClosedError,
+  UnknownServerError,
+  UnsupportedServerCapabilityError,
+} from "./errors.js";
+import {
   createMcpServer,
-  type McpServerFactoryDependencies,
 } from "./servers/factory.js";
+import type { OauthHttpServerDependencies } from "./servers/oauth-http-server.js";
 import { supportsOauthControls, type McpServer } from "./servers/types.js";
 
-export interface ServerRegistryStatus {
+export {
+  McpRegistryError,
+  RegistryClosedError,
+  UnknownServerError,
+  UnsupportedServerCapabilityError,
+} from "./errors.js";
+
+export interface McpRegistryStatus {
   servers: ServerSnapshot[];
   connectedCount: number;
   totalCount: number;
 }
 
-export interface ServerRegistryInitializationReport {
-  eagerFailures: string[];
+export interface McpRegistryInitializationFailure {
+  serverName: string;
+  message: string;
 }
 
-export interface ServerRegistry {
-  initialize(): Promise<ServerRegistryInitializationReport>;
-  getStatus(): Promise<ServerRegistryStatus>;
-  getServerSnapshot(name: string): Promise<ServerSnapshot | undefined>;
+export interface McpRegistryInitializationReport {
+  eagerFailures: McpRegistryInitializationFailure[];
+}
+
+export type McpRegistryOverviewOptions = Pick<
+  OverviewBootstrapperOptions,
+  "overviewDir" | "onCreated" | "bootstrap"
+>;
+
+export interface McpRegistryDependencies {
+  readonly oauth?: OauthHttpServerDependencies;
+  readonly overview?: McpRegistryOverviewOptions;
+}
+
+export interface McpRegistry {
+  initialize(): Promise<McpRegistryInitializationReport>;
+  getStatus(): Promise<McpRegistryStatus>;
+  getServerSnapshot(name: string): Promise<ServerSnapshot>;
   connectServer(name: string, signal?: AbortSignal): Promise<ServerSnapshot>;
   disconnectServer(name: string): Promise<ServerSnapshot>;
   authorizeServer(name: string, signal?: AbortSignal): Promise<ServerSnapshot>;
@@ -43,22 +72,40 @@ function isConnectedSnapshot(snapshot: ServerSnapshot): boolean {
   return snapshot.connectState === "connected";
 }
 
-export function createServerRegistry(
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export function createMcpRegistry(
   serverConfigs: readonly ResolvedServerConfig[],
-  dependencies: McpServerFactoryDependencies = {},
-): ServerRegistry {
-  const servers = new Map(serverConfigs.map(config => [
-    config.name,
-    createMcpServer(config, dependencies),
-  ]));
+  dependencies: McpRegistryDependencies = {},
+): McpRegistry {
+  const overviewBootstrapper = dependencies.overview
+    ? new OverviewBootstrapper(dependencies.overview)
+    : undefined;
+  let servers: Map<string, McpServer>;
+
+  try {
+    servers = new Map(serverConfigs.map(config => [
+      config.name,
+      createMcpServer(config, {
+        ...(dependencies.oauth ? { oauth: dependencies.oauth } : {}),
+        ...(overviewBootstrapper ? { overviewBootstrapper } : {}),
+      }),
+    ]));
+  } catch (error) {
+    void overviewBootstrapper?.close().catch(() => undefined);
+    throw error;
+  }
+
   const lifecycleLock = new AsyncReadWriteLock();
-  let initializationPromise: Promise<ServerRegistryInitializationReport> | undefined;
+  let initializationPromise: Promise<McpRegistryInitializationReport> | undefined;
   let closePromise: Promise<void> | undefined;
   let closed = false;
 
   function assertOpen(): void {
     if (closed) {
-      throw new Error("MCP server registry is closed.");
+      throw new RegistryClosedError();
     }
   }
 
@@ -66,17 +113,19 @@ export function createServerRegistry(
     assertOpen();
     const server = servers.get(name);
     if (!server) {
-      throw new Error(`Unknown MCP server: ${name}`);
+      throw new UnknownServerError(name);
     }
     return server;
   }
 
   return {
     initialize() {
-      assertOpen();
+      if (closed) {
+        return Promise.reject(new RegistryClosedError());
+      }
       initializationPromise ??= lifecycleLock.withWrite(async () => {
         assertOpen();
-        const eagerFailures: string[] = [];
+        const eagerFailures: McpRegistryInitializationFailure[] = [];
 
         for (const server of servers.values()) {
           if (server.config.connectionMode !== "eager") {
@@ -85,8 +134,11 @@ export function createServerRegistry(
 
           try {
             await server.connect();
-          } catch {
-            eagerFailures.push(server.name);
+          } catch (error) {
+            eagerFailures.push({
+              serverName: server.name,
+              message: getErrorMessage(error),
+            });
           }
         }
 
@@ -112,9 +164,8 @@ export function createServerRegistry(
 
     async getServerSnapshot(name) {
       return lifecycleLock.withRead(async () => {
-        assertOpen();
-        const server = servers.get(name);
-        return server ? await (server.status?.() ?? server.snapshot()) : undefined;
+        const server = requireServer(name);
+        return await (server.status?.() ?? server.snapshot());
       });
     },
 
@@ -135,7 +186,7 @@ export function createServerRegistry(
     async authorizeServer(name, signal) {
       const server = await lifecycleLock.withRead(() => requireServer(name));
       if (!supportsOauthControls(server)) {
-        throw new Error(`MCP server "${name}" does not support OAuth authorization.`);
+        throw new UnsupportedServerCapabilityError(name, "oauth-authorization");
       }
       return server.authorize(signal);
     },
@@ -144,7 +195,7 @@ export function createServerRegistry(
       return lifecycleLock.withRead(async () => {
         const server = requireServer(name);
         if (!supportsOauthControls(server)) {
-          throw new Error(`MCP server "${name}" does not support OAuth logout.`);
+          throw new UnsupportedServerCapabilityError(name, "oauth-logout");
         }
         return server.logout();
       });
@@ -171,6 +222,7 @@ export function createServerRegistry(
         const active = [...servers.values()];
         servers.clear();
         await Promise.all(active.map(server => server.close().catch(() => undefined)));
+        await overviewBootstrapper?.close();
       });
       return closePromise;
     },

@@ -42,6 +42,20 @@ describe("materializeToolCallResult", () => {
     });
   });
 
+  it("normalize-only 结果保留 isError，并不携带物化路径字段", () => {
+    const prepared = prepareToolCallResult({
+      result: {
+        content: [{ type: "text", text: "hello" }],
+        isError: true,
+      },
+    });
+
+    expect(prepared.isError).toBe(true);
+    expect(prepared.items[0]).not.toHaveProperty("path");
+    expect(prepared.items[0]).not.toHaveProperty("fileName");
+    expect(prepared.items[0]).not.toHaveProperty("preview");
+  });
+
   it("可以把规范化结果延迟到调用者选择的时机再物化", () => {
     const artifactRoot = tempDirs.create();
     const prepared = prepareToolCallResult({

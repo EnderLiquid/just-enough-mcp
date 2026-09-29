@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
-import { getOverviewDirectoryPath } from "./paths.js";
 import type { BaseServerConfig, ServerOverview } from "../modeling/types.js";
 
 function resolveConfiguredOverviewPath(configPath: string, overviewPath: string): string {
@@ -24,7 +23,7 @@ export function loadServerOverview(
   serverName: string,
   config: BaseServerConfig,
   configPath: string,
-  overviewDirectoryPath = getOverviewDirectoryPath(),
+  overviewDirectoryPath: string,
 ): ServerOverview {
   if (config.overview) {
     const explicitPath = resolveConfiguredOverviewPath(configPath, config.overview);

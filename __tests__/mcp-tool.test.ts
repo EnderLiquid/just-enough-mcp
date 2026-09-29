@@ -2,7 +2,7 @@ import { Compile } from "typebox/compile";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { MaterializedToolCallResult, MaterializationSettings, TuiResultRenderSettings } from "../extensions/artifacts/types.js";
-import type { ServerRegistry } from "../extensions/servers/registry.js";
+import type { McpRegistry } from "../extensions/servers/registry.js";
 import { makePluginConfig, makeServerSnapshot } from "./support/model-fixtures.js";
 
 const mocks = vi.hoisted(() => ({
@@ -21,7 +21,7 @@ import {
 } from "../extensions/tools/mcp-tool.js";
 
 type RegistryStubOverrides = {
-  registry?: Partial<ServerRegistry>;
+  registry?: Partial<McpRegistry>;
   refreshFooter?: McpToolRuntime["refreshFooterStatus"];
   config?: () => {
     artifactDir: string;
@@ -30,7 +30,7 @@ type RegistryStubOverrides = {
   } | undefined;
 };
 
-let currentRegistry: ServerRegistry | undefined;
+let currentRegistry: McpRegistry | undefined;
 let artifactDir = "D:/project/.pi/agent/just-enough-mcp/artifacts";
 let materializationSettings: Partial<MaterializationSettings> | undefined;
 let tuiSettings: TuiResultRenderSettings | undefined;
@@ -44,12 +44,12 @@ const runtime: McpToolRuntime = {
 };
 const mcpTool = createMcpTool(runtime);
 
-function useRuntime(overrides: RegistryStubOverrides = {}): ServerRegistry {
+function useRuntime(overrides: RegistryStubOverrides = {}): McpRegistry {
   const emptyStatus = { connectedCount: 0, totalCount: 0, servers: [] };
-  const registry: ServerRegistry = {
+  const registry: McpRegistry = {
     initialize: async () => ({ eagerFailures: [] }),
     getStatus: async () => emptyStatus,
-    getServerSnapshot: async () => undefined,
+    getServerSnapshot: async () => makeServerSnapshot(),
     connectServer: async () => { throw new Error("Unexpected connectServer call."); },
     disconnectServer: async () => { throw new Error("Unexpected disconnectServer call."); },
     authorizeServer: async () => { throw new Error("Unexpected authorizeServer call."); },

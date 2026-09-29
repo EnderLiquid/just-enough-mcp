@@ -1,13 +1,12 @@
 import { isDeepStrictEqual } from "node:util";
 import type {
-  ExtractedPayloadDrafts,
+  ExtractedPayloadItem,
+  ExtractedPayloads,
   MaterializationSettings,
-  PayloadDraft,
+  NormalizedPayloadItem,
   PreparedToolCallResult,
   SuppressedStructuredContent,
 } from "./types.js";
-
-export type NormalizedPayloadDrafts = PreparedToolCallResult;
 
 function normalizeJsonText(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}`;
@@ -21,15 +20,18 @@ function tryParseJson(value: string): unknown | undefined {
   }
 }
 
-function isTextualPayload(item: PayloadDraft): boolean {
+function isTextualPayload(item: ExtractedPayloadItem | NormalizedPayloadItem): boolean {
   return typeof item.text === "string";
 }
 
-function isJsonTextualPayload(item: PayloadDraft): boolean {
+function isJsonTextualPayload(item: NormalizedPayloadItem): boolean {
   return isTextualPayload(item) && item.mimeType === "application/json" && item.parsedJson !== undefined;
 }
 
-function withRawMimeType(item: PayloadDraft, rawMimeType: string | undefined): PayloadDraft {
+function withRawMimeType<T extends ExtractedPayloadItem | NormalizedPayloadItem>(
+  item: T,
+  rawMimeType: string | undefined,
+): T {
   if (!rawMimeType || rawMimeType === item.mimeType) {
     return item;
   }
@@ -37,10 +39,13 @@ function withRawMimeType(item: PayloadDraft, rawMimeType: string | undefined): P
   return {
     ...item,
     rawMimeType,
-  };
+  } as T;
 }
 
-function normalizeTextPayload(item: PayloadDraft, prettyPrintJson: boolean): PayloadDraft {
+function normalizeTextPayload(
+  item: ExtractedPayloadItem,
+  prettyPrintJson: boolean,
+): NormalizedPayloadItem {
   if (item.text == undefined) return item;
   const normalized = item.text.replace(/\r\n/g, "\n");
   const parsedJson = tryParseJson(normalized);
@@ -63,7 +68,7 @@ function normalizeTextPayload(item: PayloadDraft, prettyPrintJson: boolean): Pay
   }, item.mimeType);
 }
 
-function normalizeStructuredContent(value: Record<string, unknown>): PayloadDraft {
+function normalizeStructuredContent(value: Record<string, unknown>): NormalizedPayloadItem {
   return {
     source: "structuredContent",
     mimeType: "application/json",
@@ -73,8 +78,8 @@ function normalizeStructuredContent(value: Record<string, unknown>): PayloadDraf
 }
 
 function findSuppressedStructuredContent(
-  structuredItem: PayloadDraft,
-  items: PayloadDraft[],
+  structuredItem: NormalizedPayloadItem,
+  items: NormalizedPayloadItem[],
 ): SuppressedStructuredContent | undefined {
   if (structuredItem.parsedJson === undefined) {
     return undefined;
@@ -103,10 +108,10 @@ function findSuppressedStructuredContent(
   return undefined;
 }
 
-export function normalizePayloadDrafts(
-  extracted: ExtractedPayloadDrafts,
+export function normalizePayloadItems(
+  extracted: ExtractedPayloads,
   settings: Pick<MaterializationSettings, "prettyPrintJson">,
-): NormalizedPayloadDrafts {
+): PreparedToolCallResult {
   const items = extracted.contentItems.map(item => normalizeTextPayload(item, settings.prettyPrintJson));
   let suppressedStructuredContent: SuppressedStructuredContent | undefined;
 
@@ -122,6 +127,7 @@ export function normalizePayloadDrafts(
   return {
     items,
     ...(extracted.structuredContent ? { structuredContent: extracted.structuredContent } : {}),
+    ...(extracted.isError !== undefined ? { isError: extracted.isError } : {}),
     ...(suppressedStructuredContent ? { suppressedStructuredContent } : {}),
   };
 }

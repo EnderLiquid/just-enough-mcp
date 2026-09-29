@@ -4,7 +4,7 @@ import { StringEnum } from "./schema.js";
 import type { McpServerResultDetails } from "../modeling/types.js";
 import type { TuiResultRenderSettings } from "../artifacts/types.js";
 import { createMcpResultRenderer } from "../rendering/result-renderer.js";
-import type { ServerRegistry, ServerRegistryStatus } from "../servers/registry.js";
+import type { McpRegistry, McpRegistryStatus } from "../servers/registry.js";
 import { pluralize } from "../formatting/english.js";
 
 export const mcpServerParametersSchema = Type.Object({
@@ -17,10 +17,10 @@ export const mcpServerParametersSchema = Type.Object({
 });
 
 export interface McpServerToolRuntime {
-  getRegistry(): ServerRegistry | undefined;
+  getRegistry(): McpRegistry | undefined;
   getTuiSettings(): TuiResultRenderSettings | undefined;
   refreshFooterStatus: (
-    status?: ServerRegistryStatus,
+    status?: McpRegistryStatus,
   ) => void | Promise<void>;
 }
 
@@ -58,7 +58,7 @@ function validateInvocation(params: {
   }
 }
 
-function formatServerStatus(status: ServerRegistryStatus): string {
+function formatServerStatus(status: McpRegistryStatus): string {
   const header = `${status.connectedCount}/${status.totalCount} ${pluralize(status.totalCount, "server")} connected:`;
   if (status.servers.length === 0) {
     return header;
@@ -74,7 +74,7 @@ function formatServerStatus(status: ServerRegistryStatus): string {
   ].join("\n\n");
 }
 
-function requireRegistry(runtime: McpServerToolRuntime): ServerRegistry {
+function requireRegistry(runtime: McpServerToolRuntime): McpRegistry {
   const registry = runtime.getRegistry();
   if (!registry) {
     throw new Error("just-enough-mcp is not initialized for the current session");
@@ -110,9 +110,6 @@ export function createMcpServerTool(
         try {
           if (serverName !== undefined) {
             const server = await registry.getServerSnapshot(serverName);
-            if (!server) {
-              throw new Error(`Unknown MCP server: ${serverName}`);
-            }
             return {
               content: [{
                 type: "text",

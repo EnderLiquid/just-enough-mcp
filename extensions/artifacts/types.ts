@@ -38,7 +38,7 @@ export interface SuppressedStructuredContent {
   reason: "semantic-json-equal" | "exact-text-equal";
 }
 
-export interface PayloadDraft {
+export interface ExtractedPayloadItem {
   source: string;
   contentType?: PayloadContentType;
   mimeType: string;
@@ -47,18 +47,23 @@ export interface PayloadDraft {
   description?: string;
   text?: string;
   binaryBase64?: string;
+}
+
+export interface ExtractedPayloads {
+  contentItems: ExtractedPayloadItem[];
+  structuredContent?: Record<string, unknown>;
+  isError?: boolean;
+}
+
+export interface NormalizedPayloadItem extends ExtractedPayloadItem {
   parsedJson?: unknown;
 }
 
-export interface ExtractedPayloadDrafts {
-  contentItems: PayloadDraft[];
-  structuredContent?: Record<string, unknown>;
-}
-
 export interface PreparedToolCallResult {
-  items: PayloadDraft[];
+  items: NormalizedPayloadItem[];
   structuredContent?: Record<string, unknown>;
   suppressedStructuredContent?: SuppressedStructuredContent;
+  isError?: boolean;
 }
 
 export interface StoredPayloadItem {

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { ServerRegistry } from "../extensions/servers/registry.js";
+import type { McpRegistry } from "../extensions/servers/registry.js";
+import { UnknownServerError } from "../extensions/servers/errors.js";
 import { makeServerSnapshot } from "./support/model-fixtures.js";
 
 const mocks = vi.hoisted(() => ({}));
@@ -11,7 +12,7 @@ import {
   type McpServerToolRuntime,
 } from "../extensions/tools/mcp-server-tool.js";
 
-let currentRegistry: ServerRegistry | undefined;
+let currentRegistry: McpRegistry | undefined;
 let refreshFooter: McpServerToolRuntime["refreshFooterStatus"] = () => {};
 const runtime: McpServerToolRuntime = {
   getRegistry: () => currentRegistry,
@@ -21,16 +22,16 @@ const runtime: McpServerToolRuntime = {
 const mcpServerTool = createMcpServerTool(runtime);
 
 type RegistryStubOverrides = {
-  registry?: Partial<ServerRegistry>;
+  registry?: Partial<McpRegistry>;
   refreshFooter?: McpServerToolRuntime["refreshFooterStatus"];
 };
 
-function useRuntime(overrides: RegistryStubOverrides = {}): ServerRegistry {
+function useRuntime(overrides: RegistryStubOverrides = {}): McpRegistry {
   const emptyStatus = { connectedCount: 0, totalCount: 0, servers: [] };
-  const registry: ServerRegistry = {
+  const registry: McpRegistry = {
     initialize: async () => ({ eagerFailures: [] }),
     getStatus: async () => emptyStatus,
-    getServerSnapshot: async () => undefined,
+    getServerSnapshot: async () => makeServerSnapshot(),
     connectServer: async () => { throw new Error("Unexpected connectServer call."); },
     disconnectServer: async () => { throw new Error("Unexpected disconnectServer call."); },
     authorizeServer: async () => { throw new Error("Unexpected authorizeServer call."); },
@@ -148,7 +149,7 @@ describe("mcpServerTool.execute", () => {
 
   it("拒绝不存在的服务器状态查询并刷新 footer", async () => {
     const refreshFooter = vi.fn();
-    useRuntime({ refreshFooter, registry: { getServerSnapshot: async () => undefined } });
+    useRuntime({ refreshFooter, registry: { getServerSnapshot: async () => { throw new UnknownServerError("missing"); } } });
 
     await expect(executeMcpServer({ action: "status", server: "missing" })).rejects.toThrow(
       "Unknown MCP server: missing",

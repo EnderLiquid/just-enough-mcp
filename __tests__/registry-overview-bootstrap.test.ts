@@ -1,9 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { OverviewBootstrapper, type OverviewBootstrapperOptions } from "../extensions/config/overview-bootstrapper.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ResolvedServerConfig } from "../extensions/modeling/types.js";
-import {
-  createServerRegistry as createServerRegistryRuntime,
-} from "../extensions/servers/registry.js";
+import { createMcpRegistry, type McpRegistry } from "../extensions/servers/registry.js";
 import { makePluginConfig, makeResolvedServerConfig } from "./support/model-fixtures.js";
 
 const mocks = vi.hoisted(() => ({
@@ -39,6 +36,14 @@ vi.mock("@modelcontextprotocol/sdk/client/streamableHttp.js", () => ({
   },
 }));
 
+const overviewDir = "C:/Users/Admin/.pi/agent/just-enough-mcp/overviews";
+
+type Bootstrap = NonNullable<Parameters<typeof createMcpRegistry>[1]>["overview"] extends infer Options
+  ? Options extends { bootstrap?: infer Callback }
+    ? Callback
+    : never
+  : never;
+
 function makeConfig(serverOverrides: Partial<ResolvedServerConfig> = {}) {
   return makePluginConfig({
     servers: [makeResolvedServerConfig({
@@ -51,6 +56,18 @@ function makeConfig(serverOverrides: Partial<ResolvedServerConfig> = {}) {
   });
 }
 
+function createRegistry(
+  serverConfigs: readonly ResolvedServerConfig[],
+  bootstrap: Bootstrap = vi.fn().mockResolvedValue(undefined),
+): McpRegistry {
+  return createMcpRegistry(serverConfigs, {
+    overview: {
+      overviewDir,
+      bootstrap,
+    },
+  });
+}
+
 function createDeferred<T = void>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
   const promise = new Promise<T>(resolvePromise => {
@@ -59,30 +76,7 @@ function createDeferred<T = void>() {
   return { promise, resolve };
 }
 
-let currentBootstrapper: OverviewBootstrapper | undefined;
-
-function createServerRegistry(
-  serverConfigs: readonly ResolvedServerConfig[],
-) {
-  if (!currentBootstrapper) {
-    throw new Error("Test overview bootstrapper is not initialized.");
-  }
-  return createServerRegistryRuntime(serverConfigs, {
-    overviewBootstrapper: currentBootstrapper,
-  });
-}
-
-function useBootstrapper(
-  bootstrap: NonNullable<OverviewBootstrapperOptions["bootstrap"]> = vi.fn().mockResolvedValue(undefined),
-): { bootstrapper: OverviewBootstrapper; bootstrap: typeof bootstrap } {
-  currentBootstrapper = new OverviewBootstrapper({
-    overviewDir: "C:/Users/Admin/.pi/agent/just-enough-mcp/overviews",
-    bootstrap,
-  });
-  return { bootstrapper: currentBootstrapper, bootstrap };
-}
-
-describe("Server description ready overview 通知", () => {
+describe("McpRegistry 的 overview ownership", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.connect.mockResolvedValue(undefined);
@@ -97,43 +91,38 @@ describe("Server description ready overview 通知", () => {
     mocks.transportClose.mockResolvedValue(undefined);
   });
 
-  afterEach(async () => {
-    await currentBootstrapper?.close();
-    currentBootstrapper = undefined;
-  });
-
-  it("首次成功初始化时向注入的 overviewBootstrapper 入队描述", async () => {
-    const { bootstrapper, bootstrap } = useBootstrapper();
+  it("连接成功后由 Registry 内部创建的 bootstrapper 接收描述", async () => {
+    const bootstrap = vi.fn().mockResolvedValue(undefined);
     const config = makeConfig();
-    const registry = createServerRegistry(config.servers);
+    const registry = createRegistry(config.servers, bootstrap);
 
     await registry.connectServer("demo");
-    await bootstrapper.close();
+    await registry.close();
 
     expect(bootstrap).toHaveBeenCalledWith({
       config: expect.objectContaining({ name: "demo", hasExplicitOverviewConfig: false }),
       description: "Demo MCP server",
-    }, config.overviewDir);
+    }, overviewDir);
   });
 
   it("eager 初始化时触发描述通知", async () => {
-    const { bootstrapper, bootstrap } = useBootstrapper();
+    const bootstrap = vi.fn().mockResolvedValue(undefined);
     const config = makeConfig({ connectionMode: "eager" });
-    const registry = createServerRegistry(config.servers);
+    const registry = createRegistry(config.servers, bootstrap);
 
     await registry.initialize();
-    await bootstrapper.close();
+    await registry.close();
 
     expect(bootstrap).toHaveBeenCalledTimes(1);
   });
 
   it("lazy 获取目录时触发描述通知", async () => {
-    const { bootstrapper, bootstrap } = useBootstrapper();
+    const bootstrap = vi.fn().mockResolvedValue(undefined);
     const config = makeConfig();
-    const registry = createServerRegistry(config.servers);
+    const registry = createRegistry(config.servers, bootstrap);
 
     await registry.getServerCatalog("demo");
-    await bootstrapper.close();
+    await registry.close();
 
     expect(bootstrap).toHaveBeenCalledTimes(1);
   });
@@ -142,20 +131,20 @@ describe("Server description ready overview 通知", () => {
     mocks.listTools.mockResolvedValue({
       tools: [{ name: "search", inputSchema: { type: "object" } }],
     });
-    const { bootstrapper, bootstrap } = useBootstrapper();
+    const bootstrap = vi.fn().mockResolvedValue(undefined);
     const config = makeConfig();
-    const registry = createServerRegistry(config.servers);
+    const registry = createRegistry(config.servers, bootstrap);
 
     await registry.callTool("demo", "search", { query: "pi" });
-    await bootstrapper.close();
+    await registry.close();
 
     expect(bootstrap).toHaveBeenCalledTimes(1);
   });
 
   it("保持连接时不重复通知，重连后再次通知", async () => {
-    const { bootstrapper, bootstrap } = useBootstrapper();
+    const bootstrap = vi.fn().mockResolvedValue(undefined);
     const config = makeConfig();
-    const registry = createServerRegistry(config.servers);
+    const registry = createRegistry(config.servers, bootstrap);
 
     await registry.connectServer("demo");
     await registry.connectServer("demo");
@@ -164,7 +153,7 @@ describe("Server description ready overview 通知", () => {
       registry.connectServer("demo"),
       registry.connectServer("demo"),
     ]);
-    await bootstrapper.close();
+    await registry.close();
 
     expect(bootstrap).toHaveBeenCalledTimes(2);
   });
@@ -175,56 +164,42 @@ describe("Server description ready overview 通知", () => {
       version: "1.0.0",
       description,
     });
-    const { bootstrapper, bootstrap } = useBootstrapper();
+    const bootstrap = vi.fn().mockResolvedValue(undefined);
     const config = makeConfig();
-    const registry = createServerRegistry(config.servers);
+    const registry = createRegistry(config.servers, bootstrap);
 
     await registry.getServerCatalog("demo");
-    await bootstrapper.close();
+    await registry.close();
 
     expect(bootstrap).not.toHaveBeenCalled();
   });
 
-  it("overview 写入未完成时连接已经返回", async () => {
+  it("Registry close 会等待 overview 写入任务排空", async () => {
     const gate = createDeferred();
-    const { bootstrapper, bootstrap } = useBootstrapper(vi.fn().mockReturnValue(gate.promise));
+    const bootstrap = vi.fn().mockReturnValue(gate.promise);
     const config = makeConfig();
-    const registry = createServerRegistry(config.servers);
+    const registry = createRegistry(config.servers, bootstrap);
 
     await registry.connectServer("demo");
+    const closing = registry.close();
+    await Promise.resolve();
 
     expect(bootstrap).toHaveBeenCalledTimes(1);
-    const server = await registry.getServerSnapshot("demo");
-    expect(server?.connectState).toBe("connected");
+    await vi.waitFor(() => expect(mocks.close).toHaveBeenCalledTimes(1));
 
     gate.resolve();
-    await bootstrapper.close();
-  });
-
-  it("同步通知异常时不回滚已经建立的连接", async () => {
-    const overviewBootstrapper = new OverviewBootstrapper({
-      overviewDir: "C:/Users/Admin/.pi/agent/just-enough-mcp/overviews",
-    });
-    overviewBootstrapper.notify = vi.fn(() => { throw new Error("observer failed"); });
-    currentBootstrapper = overviewBootstrapper;
-    const config = makeConfig();
-    const registry = createServerRegistry(config.servers);
-
-    await registry.connectServer("demo");
-
-    const server = await registry.getServerSnapshot("demo");
-    expect(server?.connectState).toBe("connected");
+    await closing;
   });
 
   it("overview 任务失败时不影响连接流程", async () => {
-    const { bootstrapper } = useBootstrapper(vi.fn().mockRejectedValue(new Error("disk full")));
+    const bootstrap = vi.fn().mockRejectedValue(new Error("disk full"));
     const config = makeConfig();
-    const registry = createServerRegistry(config.servers);
+    const registry = createRegistry(config.servers, bootstrap);
 
     await registry.connectServer("demo");
-    await bootstrapper.close();
-
     const server = await registry.getServerSnapshot("demo");
+    await registry.close();
+
     expect(server).toEqual({
       name: "demo",
       connectState: "connected",

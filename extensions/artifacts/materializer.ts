@@ -7,20 +7,21 @@ import {
   storePayloadItems,
 } from "./artifact-store.js";
 import { writeToolCallManifest } from "./manifest.js";
-import { extractPayloadDrafts } from "./payload-extractor.js";
-import { normalizePayloadDrafts } from "./payload-normalizer.js";
+import { extractPayloadItems } from "./payload-extractor.js";
+import { normalizePayloadItems } from "./payload-normalizer.js";
 import { attachPayloadPreviews, buildResultSummary } from "./result-summary.js";
 import {
   DEFAULT_MATERIALIZATION_SETTINGS,
   type MaterializedToolCallResult,
   type MaterializationSettings,
+  type PayloadNormalizationSettings,
   type PreparedToolCallResult,
   type SummaryBudget,
 } from "./types.js";
 
 export interface PrepareToolCallResultInput {
   result: CallToolResult;
-  settings?: Partial<Pick<MaterializationSettings, "prettyPrintJson">>;
+  settings?: Partial<PayloadNormalizationSettings>;
 }
 
 export interface MaterializeCallToolResultInput {
@@ -51,8 +52,8 @@ function toSummaryBudget(settings: MaterializationSettings): SummaryBudget {
 export function prepareToolCallResult(
   input: PrepareToolCallResultInput,
 ): PreparedToolCallResult {
-  const extracted = extractPayloadDrafts(input.result);
-  return normalizePayloadDrafts(extracted, {
+  const extracted = extractPayloadItems(input.result);
+  return normalizePayloadItems(extracted, {
     prettyPrintJson: input.settings?.prettyPrintJson
       ?? DEFAULT_MATERIALIZATION_SETTINGS.prettyPrintJson,
   });

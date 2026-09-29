@@ -1,5 +1,5 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import type { ExtractedPayloadDrafts, PayloadDraft } from "./types.js";
+import type { ExtractedPayloads, ExtractedPayloadItem } from "./types.js";
 
 function isEmbeddedTextResource(resource: unknown): resource is { uri: string; text: string; mimeType?: string } {
   return typeof resource === "object" && resource !== null && "text" in resource && typeof (resource as { text?: unknown }).text === "string";
@@ -29,8 +29,8 @@ function buildResourceLinkText(uri: string, description?: string, rawMimeType?: 
   return `${lines.join("\n")}\n`;
 }
 
-export function extractPayloadDrafts(result: CallToolResult): ExtractedPayloadDrafts {
-  const contentItems: PayloadDraft[] = [];
+export function extractPayloadItems(result: CallToolResult): ExtractedPayloads {
+  const contentItems: ExtractedPayloadItem[] = [];
 
   for (const [index, content] of (result.content ?? []).entries()) {
     const source = `content[${index}]`;
@@ -116,5 +116,6 @@ export function extractPayloadDrafts(result: CallToolResult): ExtractedPayloadDr
     ...(result.structuredContent && typeof result.structuredContent === "object"
       ? { structuredContent: result.structuredContent as Record<string, unknown> }
       : {}),
+    ...(result.isError !== undefined ? { isError: result.isError } : {}),
   };
 }

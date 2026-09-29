@@ -63,14 +63,14 @@ function resolveTransportHint(config: ResolvedServerConfig): "stdio" | "http" {
   throw new Error(`Server "${config.name}" must provide command or url, or set transport to "stdio" or "http".`);
 }
 
-export interface McpServerFactoryDependencies {
+interface McpServerConstructionDependencies {
   readonly oauth?: OauthHttpServerDependencies;
   readonly overviewBootstrapper?: OverviewBootstrapper;
 }
 
 export function createMcpServer(
   config: ResolvedServerConfig,
-  dependencies: McpServerFactoryDependencies = {},
+  dependencies: McpServerConstructionDependencies = {},
 ): McpServer {
   switch (resolveTransportHint(config)) {
     case "stdio":

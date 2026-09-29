@@ -1,5 +1,5 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import type { ServerRegistryStatus } from "../servers/registry.js";
+import type { McpRegistryStatus } from "../servers/registry.js";
 
 const STATUS_KEY = "just-enough-mcp";
 
@@ -9,7 +9,7 @@ export interface FooterStatusSink {
 }
 
 export interface FooterStatusController {
-  refresh(status?: ServerRegistryStatus): void;
+  refresh(status?: McpRegistryStatus): void;
   dispose(): void;
 }
 
