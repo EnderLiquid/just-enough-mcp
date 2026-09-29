@@ -13,7 +13,6 @@
 
 ## 代码结构
 
-- `extensions/just-enough-mcp.ts`：保持稳定的 Pi loader 兼容入口，仅转发到 `extensions/src/pi/index.ts`。
 - `extensions/src/core/`：宿主无关的 MCP runtime、配置解析、overview、artifact、OAuth broker、并发和领域类型；未来 Core npm 包的候选源码根。
 - `extensions/src/core/config/`：Core 配置 raw layer 读取、合并、校验和 resolved server/materialization snapshot。
 - `extensions/src/core/modeling/`：跨模块共享的核心类型。
@@ -32,7 +31,7 @@
 
 ## 架构约定
 
-- `extensions/src/pi/index.ts` 是 Pi session 生命周期的 composition root，`extensions/just-enough-mcp.ts` 只作为稳定 loader shim：config 是由有序全局/项目 raw 配置层解析出的整体替换 value snapshot；root 创建 session-scoped OAuth broker client/launcher、`McpRegistry`、Notifier 和 FooterStatusController。`McpRegistry` 自己拥有 OverviewBootstrapper 和 MCP server runtime，并在 `close()` 中排空它们；Registry、具体 server 与 OAuth server 只借用 root 注入的 OAuth broker capability。
+- `extensions/src/pi/index.ts` 是 Pi session 生命周期的 composition root：config 是由有序全局/项目 raw 配置层解析出的整体替换 value snapshot；root 创建 session-scoped OAuth broker client/launcher、`McpRegistry`、Notifier 和 FooterStatusController。`McpRegistry` 自己拥有 OverviewBootstrapper 和 MCP server runtime，并在 `close()` 中排空它们；Registry、具体 server 与 OAuth server 只借用 root 注入的 OAuth broker capability。
 
 - 不使用 module-level `currentXxx` 作为运行时依赖查找机制；Registry、配置和 UI capability 必须由 Pi root 通过 session-bound closure 或显式 runtime 注入，资源销毁由 root 持有的实例负责。
 - standalone OAuth broker 直接由 Node 执行 `extensions/src/core/oauth/broker/broker-process.ts`；其传递依赖必须保持 Node 原生 type stripping 可执行，只使用 erasable TypeScript syntax，并在 broker 子树内部使用显式 `.ts` import。`tsconfig.broker-native.json` 是该边界的额外类型门禁。

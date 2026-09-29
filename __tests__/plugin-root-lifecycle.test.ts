@@ -92,7 +92,7 @@ vi.mock("../extensions/src/pi/prompting/system-prompt.js", () => ({
   createServerOverviewPrompt: mocks.createServerOverviewPrompt,
 }));
 
-import justEnoughMcp from "../extensions/just-enough-mcp.js";
+import justEnoughMcp from "../extensions/src/pi/index.js";
 
 interface FakePi {
   pi: ExtensionAPI;

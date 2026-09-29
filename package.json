@@ -22,11 +22,11 @@
     "LICENSE"
   ],
   "exports": {
-    ".": "./extensions/just-enough-mcp.ts"
+    ".": "./extensions/src/pi/index.ts"
   },
   "pi": {
     "extensions": [
-      "./extensions"
+      "./extensions/src/pi/index.ts"
     ],
     "skills": [
       "./skills"
