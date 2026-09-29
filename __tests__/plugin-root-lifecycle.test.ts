@@ -10,16 +10,11 @@ const mocks = vi.hoisted(() => ({
   close: vi.fn(),
   overviewBootstrapperConstructor: vi.fn(),
   overviewBootstrapperClose: vi.fn(),
-  installCurrentPluginConfig: vi.fn(),
-  getCurrentPluginConfig: vi.fn(),
-  disposeConfig: vi.fn(),
-  installCurrentServerRegistry: vi.fn(),
-  disposeRegistry: vi.fn(),
-  installNotifierSink: vi.fn(),
-  disposeNotifier: vi.fn(),
+  createNotifier: vi.fn(),
   notifyInfo: vi.fn(),
   notifyError: vi.fn(),
-  installFooterStatusSink: vi.fn(),
+  notifyWarning: vi.fn(),
+  createFooterStatusController: vi.fn(),
   disposeFooter: vi.fn(),
   refreshFooterStatus: vi.fn(),
   registerMcpServerTool: vi.fn(),
@@ -36,7 +31,6 @@ const mocks = vi.hoisted(() => ({
   oauthBrokerClientClose: vi.fn(),
   createOAuthBrokerBootstrapper: vi.fn(),
   oauthBrokerLauncherStart: vi.fn(),
-  notifyWarning: vi.fn(),
 }));
 
 vi.mock("@earendil-works/pi-coding-agent", async importOriginal => ({
@@ -76,9 +70,12 @@ vi.mock("../extensions/config/plugin-config.js", () => ({
   loadPluginConfigFromPaths: mocks.loadPluginConfig,
 }));
 
-vi.mock("../extensions/config/current-config.js", () => ({
-  getCurrentPluginConfig: mocks.getCurrentPluginConfig,
-  installCurrentPluginConfig: mocks.installCurrentPluginConfig,
+vi.mock("../extensions/rendering/notifier.js", () => ({
+  createNotifier: mocks.createNotifier,
+}));
+
+vi.mock("../extensions/rendering/footer-status.js", () => ({
+  createFooterStatusController: mocks.createFooterStatusController,
 }));
 
 vi.mock("../extensions/config/overview-bootstrapper.js", () => ({
@@ -89,24 +86,8 @@ vi.mock("../extensions/config/overview-bootstrapper.js", () => ({
   },
 }));
 
-vi.mock("../extensions/servers/current-registry.js", () => ({
-  installCurrentServerRegistry: mocks.installCurrentServerRegistry,
-}));
-
 vi.mock("../extensions/servers/registry.js", () => ({
   createServerRegistry: mocks.createServerRegistry,
-}));
-
-vi.mock("../extensions/rendering/notifier.js", () => ({
-  installNotifierSink: mocks.installNotifierSink,
-  notifyInfo: mocks.notifyInfo,
-  notifyError: mocks.notifyError,
-  notifyWarning: mocks.notifyWarning,
-}));
-
-vi.mock("../extensions/rendering/footer-status.js", () => ({
-  installFooterStatusSink: mocks.installFooterStatusSink,
-  refreshFooterStatus: mocks.refreshFooterStatus,
 }));
 
 vi.mock("../extensions/tools/mcp-server-tool.js", () => ({
@@ -208,10 +189,15 @@ describe("justEnoughMcp root 生命周期", () => {
       notify: vi.fn(),
       close: mocks.overviewBootstrapperClose,
     });
-    mocks.installCurrentPluginConfig.mockReturnValue(mocks.disposeConfig);
-    mocks.installCurrentServerRegistry.mockReturnValue(mocks.disposeRegistry);
-    mocks.installNotifierSink.mockReturnValue(mocks.disposeNotifier);
-    mocks.installFooterStatusSink.mockReturnValue(mocks.disposeFooter);
+    mocks.createNotifier.mockReturnValue({
+      notifyInfo: mocks.notifyInfo,
+      notifyWarning: mocks.notifyWarning,
+      notifyError: mocks.notifyError,
+    });
+    mocks.createFooterStatusController.mockReturnValue({
+      refresh: mocks.refreshFooterStatus,
+      dispose: mocks.disposeFooter,
+    });
     mocks.refreshFooterStatus.mockResolvedValue(undefined);
     mocks.createServerOverviewPrompt.mockReturnValue("server overviews");
     mocks.getAgentDir.mockReturnValue("C:/Users/Admin/.pi/agent");
@@ -311,16 +297,11 @@ describe("justEnoughMcp root 生命周期", () => {
       },
     );
     expect(mocks.initialize).toHaveBeenCalledTimes(1);
-    expect(mocks.installCurrentPluginConfig).toHaveBeenCalledWith(config);
-    expect(mocks.installCurrentServerRegistry).toHaveBeenCalledWith(
-      mocks.createServerRegistry.mock.results[0]?.value,
-    );
-    expect(mocks.installFooterStatusSink).toHaveBeenCalledWith(ctx.ui);
+    expect(mocks.createNotifier).toHaveBeenCalledWith({ notify: expect.any(Function) });
+    expect(mocks.createFooterStatusController).toHaveBeenCalledWith(ctx.ui);
     expectCalledBefore(mocks.overviewBootstrapperConstructor, mocks.createServerRegistry);
     expectCalledBefore(mocks.createServerRegistry, mocks.initialize);
-    expectCalledBefore(mocks.initialize, mocks.installCurrentPluginConfig);
-    expectCalledBefore(mocks.initialize, mocks.installCurrentServerRegistry);
-    expectCalledBefore(mocks.installCurrentServerRegistry, mocks.refreshFooterStatus);
+    expectCalledBefore(mocks.initialize, mocks.refreshFooterStatus);
 
     const onCreated = mocks.overviewBootstrapperConstructor.mock.calls[0]?.[0]?.onCreated;
     onCreated("demo");
@@ -362,12 +343,10 @@ describe("justEnoughMcp root 生命周期", () => {
         namespaceId: `agent-dir:v1:${"d".repeat(64)}`,
       },
     });
-    expect(mocks.installCurrentServerRegistry).toHaveBeenCalledTimes(1);
 
     await handler("session_shutdown")();
     expect(bootstrapOptions.signal.aborted).toBe(true);
     expect(mocks.oauthBrokerClientClose).toHaveBeenCalledTimes(1);
-    expectCalledBefore(mocks.disposeRegistry, mocks.oauthBrokerClientClose);
     expectCalledBefore(mocks.oauthBrokerClientClose, mocks.close);
     launchGate.resolve({});
   });
@@ -383,7 +362,7 @@ describe("justEnoughMcp root 生命周期", () => {
 
     const signal = mocks.createOAuthBrokerBootstrapper.mock.calls[0]?.[0]?.signal as AbortSignal;
     expect(signal.aborted).toBe(true);
-    expect(mocks.installCurrentServerRegistry).not.toHaveBeenCalled();
+    expect(mocks.createServerRegistry).toHaveBeenCalledTimes(1);
     expect(mocks.oauthBrokerClientClose).toHaveBeenCalledTimes(1);
     expectCalledBefore(mocks.oauthBrokerClientClose, mocks.close);
   });
@@ -395,8 +374,7 @@ describe("justEnoughMcp root 生命周期", () => {
 
     await handler("session_start")({}, createContext());
 
-    expect(mocks.installCurrentPluginConfig).toHaveBeenCalledTimes(1);
-    expect(mocks.installCurrentServerRegistry).toHaveBeenCalledTimes(1);
+    expect(mocks.createFooterStatusController).toHaveBeenCalledTimes(1);
     expect(mocks.overviewBootstrapperClose).not.toHaveBeenCalled();
     expect(mocks.notifyError).toHaveBeenCalledWith(
       "just-enough-mcp config error: footer unavailable",
@@ -412,8 +390,7 @@ describe("justEnoughMcp root 生命周期", () => {
 
     await handler("session_start")({}, createContext());
 
-    expect(mocks.installCurrentPluginConfig).not.toHaveBeenCalled();
-    expect(mocks.installCurrentServerRegistry).not.toHaveBeenCalled();
+    expect(mocks.createServerRegistry).toHaveBeenCalledTimes(1);
     expect(mocks.close).not.toHaveBeenCalled();
     expect(mocks.overviewBootstrapperClose).toHaveBeenCalledTimes(1);
     expect(mocks.notifyError).toHaveBeenCalledWith(
@@ -430,8 +407,7 @@ describe("justEnoughMcp root 生命周期", () => {
 
     await handler("session_start")({}, createContext());
 
-    expect(mocks.installCurrentPluginConfig).not.toHaveBeenCalled();
-    expect(mocks.installCurrentServerRegistry).not.toHaveBeenCalled();
+    expect(mocks.createServerRegistry).toHaveBeenCalledTimes(1);
     expect(mocks.close).toHaveBeenCalledTimes(1);
     expect(mocks.overviewBootstrapperClose).toHaveBeenCalledTimes(1);
     expectCalledBefore(mocks.close, mocks.overviewBootstrapperClose);
@@ -449,16 +425,11 @@ describe("justEnoughMcp root 生命周期", () => {
 
     await handler("session_shutdown")();
 
-    expect(mocks.disposeRegistry).toHaveBeenCalledTimes(1);
-    expect(mocks.disposeConfig).toHaveBeenCalledTimes(1);
     expect(mocks.close).toHaveBeenCalledTimes(1);
     expect(mocks.overviewBootstrapperClose).toHaveBeenCalledTimes(1);
     expect(mocks.disposeFooter).toHaveBeenCalledTimes(1);
-    expect(mocks.disposeNotifier).toHaveBeenCalledTimes(1);
-    expectCalledBefore(mocks.disposeRegistry, mocks.close);
     expectCalledBefore(mocks.close, mocks.overviewBootstrapperClose);
     expectCalledBefore(mocks.overviewBootstrapperClose, mocks.disposeFooter);
-    expectCalledBefore(mocks.disposeFooter, mocks.disposeNotifier);
   });
 
   it("shutdown 等待 Bootstrapper 排空后才释放 Pi sinks", async () => {
@@ -472,12 +443,10 @@ describe("justEnoughMcp root 生命周期", () => {
     const shuttingDown = handler("session_shutdown")();
     await vi.waitFor(() => expect(mocks.overviewBootstrapperClose).toHaveBeenCalledTimes(1));
     expect(mocks.disposeFooter).not.toHaveBeenCalled();
-    expect(mocks.disposeNotifier).not.toHaveBeenCalled();
 
     gate.resolve();
     await shuttingDown;
     expect(mocks.disposeFooter).toHaveBeenCalledTimes(1);
-    expect(mocks.disposeNotifier).toHaveBeenCalledTimes(1);
   });
 
   it("shutdown 可重复调用而不重复关闭 owned resources", async () => {
@@ -497,9 +466,8 @@ describe("justEnoughMcp root 生命周期", () => {
     const config = makePluginConfig();
     const { pi, handler } = createFakePi();
     justEnoughMcp(pi);
-    mocks.getCurrentPluginConfig.mockReturnValueOnce(undefined).mockReturnValueOnce(config);
-
     const fallback = await handler("before_agent_start")({ systemPrompt: "base" });
+    await handler("session_start")({}, createContext());
     const active = await handler("before_agent_start")({ systemPrompt: "base" });
 
     expect(fallback.systemPrompt).toContain("has not loaded its configuration");
@@ -511,8 +479,6 @@ describe("justEnoughMcp root 生命周期", () => {
     const config = makePluginConfig();
     const { pi, handler } = createFakePi();
     justEnoughMcp(pi);
-    mocks.getCurrentPluginConfig.mockReturnValue(config);
-
     const result = await handler("before_agent_start")({
       systemPrompt: "parent base\r\n\r\n# MCP Servers\r\n\r\nparent overviews",
     });
@@ -524,8 +490,6 @@ describe("justEnoughMcp root 生命周期", () => {
   it("已有 MCP Servers 章节时不注入 fallback", async () => {
     const { pi, handler } = createFakePi();
     justEnoughMcp(pi);
-    mocks.getCurrentPluginConfig.mockReturnValue(undefined);
-
     const result = await handler("before_agent_start")({
       systemPrompt: "parent base\n\n# MCP Servers\n\nparent overviews",
     });

@@ -7,13 +7,12 @@ import {
   getProjectPluginConfigPath,
 } from "./config/paths.js";
 import { pluralize } from "./formatting/english.js";
-import { installCurrentPluginConfig, getCurrentPluginConfig } from "./config/current-config.js";
-import { OverviewBootstrapper } from "./config/overview-bootstrapper.js";
 import { loadPluginConfigFromPaths } from "./config/plugin-config.js";
 import type { PluginConfigLoadResult } from "./modeling/types.js";
 import { createServerOverviewPrompt } from "./prompting/system-prompt.js";
-import { installFooterStatusSink, refreshFooterStatus } from "./rendering/footer-status.js";
-import { installNotifierSink, notifyError, notifyInfo, notifyWarning } from "./rendering/notifier.js";
+import { createFooterStatusController, type FooterStatusController } from "./rendering/footer-status.js";
+import { createNotifier } from "./rendering/notifier.js";
+import { OverviewBootstrapper } from "./config/overview-bootstrapper.js";
 import { OAuthBrokerClient } from "./oauth/broker/client.js";
 import {
   createOAuthBrokerBootstrapper,
@@ -21,7 +20,6 @@ import {
 } from "./oauth/broker/bootstrapper.js";
 import { createOAuthBrokerNamespace } from "./oauth/broker/namespace.js";
 import { DEFAULT_OAUTH_BROKER_PORT } from "./oauth/broker/protocol.js";
-import { installCurrentServerRegistry } from "./servers/current-registry.js";
 import { createServerRegistry, type ServerRegistry } from "./servers/registry.js";
 import {
   registerMcpServerTool,
@@ -42,8 +40,7 @@ interface ActivePluginSession {
     launchAbortController: AbortController;
     namespaceId: string;
   };
-  disposeConfig: () => void;
-  disposeRegistry: () => void;
+  footerStatus: FooterStatusController;
 }
 
 const MCP_SERVERS_SECTION_HEADING = "# MCP Servers";
@@ -71,34 +68,32 @@ function loadSessionPluginConfig(
 
 export default function justEnoughMcp(pi: ExtensionAPI): void {
   let activeSession: ActivePluginSession | undefined;
-  let disposeNotifier: (() => void) | undefined;
-  let disposeFooter: (() => void) | undefined;
 
   const serverToolRuntime: McpServerToolRuntime = {
     getRegistry: () => activeSession?.registry,
-    refreshFooterStatus,
+    getTuiSettings: () => activeSession?.config.tui,
+    refreshFooterStatus: status => activeSession?.footerStatus.refresh(status),
   };
   const toolRuntime: McpToolRuntime = {
     getRegistry: () => activeSession?.registry,
     getArtifactDir: () => activeSession?.config.artifactDir ?? getArtifactsDirectoryPath(),
     getMaterializationSettings: () => activeSession?.config.materialization,
-    refreshFooterStatus,
+    getTuiSettings: () => activeSession?.config.tui,
+    refreshFooterStatus: status => activeSession?.footerStatus.refresh(status),
   };
 
   registerMcpServerTool(pi, serverToolRuntime);
   registerMcpTool(pi, toolRuntime);
 
   pi.on("session_start", async (_event, ctx) => {
-    disposeNotifier = installNotifierSink(
+    const notifier = createNotifier(
       ctx.hasUI ? { notify: ctx.ui.notify.bind(ctx.ui) } : undefined,
     );
-    disposeFooter = installFooterStatusSink(ctx.hasUI ? ctx.ui : undefined);
+    const footerStatus = createFooterStatusController(ctx.hasUI ? ctx.ui : undefined);
 
     let config: PluginConfigLoadResult | undefined;
     let registry: ServerRegistry | undefined;
     let overviewBootstrapper: OverviewBootstrapper | undefined;
-    let disposeConfig: (() => void) | undefined;
-    let disposeRegistry: (() => void) | undefined;
     let oauthBroker: ActivePluginSession["oauthBroker"];
 
     try {
@@ -117,7 +112,7 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
           requestedPort: DEFAULT_OAUTH_BROKER_PORT,
           client,
           signal: launchAbortController.signal,
-          onWarning: (message, error) => notifyWarning(
+          onWarning: (message, error) => notifier.notifyWarning(
             error instanceof Error ? `${message} ${error.message}` : message,
           ),
         });
@@ -130,14 +125,14 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
         void launcher.start().catch(error => {
           if (!launchAbortController.signal.aborted) {
             const message = error instanceof Error ? error.message : String(error);
-            notifyWarning(`OAuth broker could not be bootstrapped: ${message}`);
+            notifier.notifyWarning(`OAuth broker could not be bootstrapped: ${message}`);
           }
         });
       }
 
       overviewBootstrapper = new OverviewBootstrapper({
         overviewDir: config.overviewDir,
-        onCreated: serverName => notifyInfo(`Created MCP overview stub: ${serverName}`),
+        onCreated: serverName => notifier.notifyInfo(`Created MCP overview stub: ${serverName}`),
       });
 
       registry = createServerRegistry(config.servers, {
@@ -153,43 +148,39 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
       });
       const initialization = await registry.initialize();
       if (initialization.eagerFailures.length > 0) {
-        notifyWarning(
+        notifier.notifyWarning(
           `${initialization.eagerFailures.length} ${pluralize(initialization.eagerFailures.length, "eager MCP server")} could not be initialized: ` +
           `${initialization.eagerFailures.join(", ")}. Use mcp_server or mcp_tool to retry on demand.`,
         );
       }
 
-      disposeConfig = installCurrentPluginConfig(config);
-      disposeRegistry = installCurrentServerRegistry(registry);
       activeSession = {
         config,
         registry,
         overviewBootstrapper,
         ...(oauthBroker ? { oauthBroker } : {}),
-        disposeConfig,
-        disposeRegistry,
+        footerStatus,
       };
     } catch (error) {
       activeSession = undefined;
-      disposeRegistry?.();
-      disposeConfig?.();
       oauthBroker?.launchAbortController.abort();
       await oauthBroker?.client.close().catch(() => undefined);
       await registry?.close().catch(() => undefined);
       await overviewBootstrapper?.close().catch(() => undefined);
+      footerStatus.dispose();
 
       const message = error instanceof Error ? error.message : String(error);
-      notifyError(`just-enough-mcp config error: ${message}`);
-      refreshFooterStatus();
+      notifier.notifyError(`just-enough-mcp config error: ${message}`);
+      footerStatus.refresh();
       return;
     }
 
     try {
-      await refreshFooterStatus(await registry.getStatus());
+      await footerStatus.refresh(await registry.getStatus());
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      notifyError(`just-enough-mcp config error: ${message}`);
-      refreshFooterStatus();
+      notifier.notifyError(`just-enough-mcp config error: ${message}`);
+      footerStatus.refresh();
     }
   });
 
@@ -198,7 +189,7 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
       return;
     }
 
-    const config = getCurrentPluginConfig();
+    const config = activeSession?.config;
 
     if (!config) {
       return {
@@ -219,23 +210,17 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
     const session = activeSession;
     activeSession = undefined;
 
+    if (!session) {
+      return;
+    }
+
     try {
-      if (session) {
-        session.disposeRegistry();
-        session.disposeConfig();
-        try {
-          session.oauthBroker?.launchAbortController.abort();
-          await session.oauthBroker?.client.close().catch(() => undefined);
-          await session.registry.close();
-        } finally {
-          await session.overviewBootstrapper.close();
-        }
-      }
+      session.oauthBroker?.launchAbortController.abort();
+      await session.oauthBroker?.client.close().catch(() => undefined);
+      await session.registry.close();
     } finally {
-      disposeFooter?.();
-      disposeFooter = undefined;
-      disposeNotifier?.();
-      disposeNotifier = undefined;
+      await session.overviewBootstrapper.close();
+      session.footerStatus.dispose();
     }
   });
 }

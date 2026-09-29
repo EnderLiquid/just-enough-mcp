@@ -3,10 +3,10 @@ import { Text } from "@earendil-works/pi-tui";
 import {
   DEFAULT_TUI_RESULT_RENDER_SETTINGS,
   type McpTuiRenderMode,
+  type TuiResultRenderSettings,
 } from "../artifacts/types.js";
 import { pluralize } from "../formatting/english.js";
 import type { McpServerResultDetails, McpToolResultDetails } from "../modeling/types.js";
-import { getCurrentPluginConfig } from "../config/current-config.js";
 
 type RenderTheme = Theme;
 type McpResultDetails = McpServerResultDetails | McpToolResultDetails;
@@ -80,16 +80,6 @@ function blockToLines(block: McpContentBlock): string[] {
   return ["[non-text content]"];
 }
 
-function getExpandedModeCollapsedLines(): number {
-  return getCurrentPluginConfig()?.tui.expandedModeCollapsedLines
-    ?? DEFAULT_TUI_RESULT_RENDER_SETTINGS.expandedModeCollapsedLines;
-}
-
-function getTuiRenderMode(): McpTuiRenderMode {
-  return getCurrentPluginConfig()?.tui.renderMode
-    ?? DEFAULT_TUI_RESULT_RENDER_SETTINGS.renderMode;
-}
-
 function shouldRenderExpandedResult(mode: McpTuiRenderMode, expanded: boolean): boolean {
   return mode === "expanded" || (mode === "minimal" && expanded);
 }
@@ -146,7 +136,7 @@ function formatToolMinimalResultLine(
 export function formatMcpToolResultLines(
   result: Pick<AgentToolResult<McpResultDetails>, "content">,
   expanded: boolean,
-  maxCollapsedLines = getExpandedModeCollapsedLines(),
+  maxCollapsedLines = DEFAULT_TUI_RESULT_RENDER_SETTINGS.expandedModeCollapsedLines,
 ): McpToolResultDisplay {
   const allLines = result.content.flatMap(blockToLines);
   const lines = allLines.length > 0 ? allLines : ["(empty result)"];
@@ -167,8 +157,9 @@ function renderResult<TDetails extends McpResultDetails>(
   theme: RenderTheme,
   context: { isError?: boolean } | undefined,
   formatMinimal: (details: TDetails | undefined, isError: boolean) => string | undefined,
+  settings: TuiResultRenderSettings,
 ): Text {
-  const mode = getTuiRenderMode();
+  const mode = settings.renderMode;
   const isError = context?.isError === true;
 
   if (mode === "hidden") {
@@ -184,7 +175,7 @@ function renderResult<TDetails extends McpResultDetails>(
     return line ? new Text(theme.fg(isError ? "error" : "muted", line), 0, 0) : emptyText();
   }
 
-  const display = formatMcpToolResultLines(result, options.expanded);
+  const display = formatMcpToolResultLines(result, options.expanded, settings.expandedModeCollapsedLines);
   const output = display.lines.map((line) => {
     if (line === "…" && display.truncated && !options.expanded) {
       return theme.fg("muted", "… (Ctrl+O to expand)");
@@ -194,48 +185,55 @@ function renderResult<TDetails extends McpResultDetails>(
   return new Text(output, 0, 0);
 }
 
-export function renderMcpServerCall(
-  args: McpServerInput,
-  theme: RenderTheme,
-  _context?: { expanded?: boolean },
-): Text {
-  const target = args.server;
-  return new Text(renderTitle("mcp_server", args.action, target, undefined, theme), 0, 0);
-}
+export function createMcpResultRenderer(
+  getSettings: () => TuiResultRenderSettings | undefined,
+) {
+  const settings = () => getSettings() ?? DEFAULT_TUI_RESULT_RENDER_SETTINGS;
 
-export function renderMcpToolCall(
-  args: McpToolInput,
-  theme: RenderTheme,
-  context?: { expanded?: boolean },
-): Text {
-  const target = args.action === "call" ? args.tool : args.server;
-  const secondary = args.action === "call" ? args.server : undefined;
-  const lines = [renderTitle("mcp_tool", args.action, target, secondary, theme)];
-  if (
-    args.action === "call"
-    && args.args !== undefined
-    && Object.keys(args.args).length > 0
-    && shouldRenderCallDetails(getTuiRenderMode(), context?.expanded ?? false)
-  ) {
-    lines.push(theme.fg("muted", formatJson(args.args, DEFAULT_MAX_CALL_INPUT_CHARS)));
-  }
-  return new Text(lines.join("\n"), 0, 0);
-}
+  return {
+    renderMcpServerCall(
+      args: McpServerInput,
+      theme: RenderTheme,
+      _context?: { expanded?: boolean },
+    ): Text {
+      return new Text(renderTitle("mcp_server", args.action, args.server, undefined, theme), 0, 0);
+    },
 
-export function renderMcpServerResult(
-  result: AgentToolResult<McpServerResultDetails>,
-  options: ToolRenderResultOptions,
-  theme: RenderTheme,
-  context?: { isError?: boolean },
-): Text {
-  return renderResult(result, options, theme, context, formatServerMinimalResultLine);
-}
+    renderMcpToolCall(
+      args: McpToolInput,
+      theme: RenderTheme,
+      context?: { expanded?: boolean },
+    ): Text {
+      const target = args.action === "call" ? args.tool : args.server;
+      const secondary = args.action === "call" ? args.server : undefined;
+      const lines = [renderTitle("mcp_tool", args.action, target, secondary, theme)];
+      if (
+        args.action === "call"
+        && args.args !== undefined
+        && Object.keys(args.args).length > 0
+        && shouldRenderCallDetails(settings().renderMode, context?.expanded ?? false)
+      ) {
+        lines.push(theme.fg("muted", formatJson(args.args, DEFAULT_MAX_CALL_INPUT_CHARS)));
+      }
+      return new Text(lines.join("\n"), 0, 0);
+    },
 
-export function renderMcpToolResult(
-  result: AgentToolResult<McpToolResultDetails>,
-  options: ToolRenderResultOptions,
-  theme: RenderTheme,
-  context?: { isError?: boolean },
-): Text {
-  return renderResult(result, options, theme, context, formatToolMinimalResultLine);
+    renderMcpServerResult(
+      result: AgentToolResult<McpServerResultDetails>,
+      options: ToolRenderResultOptions,
+      theme: RenderTheme,
+      context?: { isError?: boolean },
+    ): Text {
+      return renderResult(result, options, theme, context, formatServerMinimalResultLine, settings());
+    },
+
+    renderMcpToolResult(
+      result: AgentToolResult<McpToolResultDetails>,
+      options: ToolRenderResultOptions,
+      theme: RenderTheme,
+      context?: { isError?: boolean },
+    ): Text {
+      return renderResult(result, options, theme, context, formatToolMinimalResultLine, settings());
+    },
+  };
 }

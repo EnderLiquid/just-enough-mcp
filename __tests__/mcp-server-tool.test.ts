@@ -1,28 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { installCurrentServerRegistry } from "../extensions/servers/current-registry.js";
 import type { ServerRegistry } from "../extensions/servers/registry.js";
 import { makeServerSnapshot } from "./support/model-fixtures.js";
 
-const mocks = vi.hoisted(() => ({
-  refreshFooterStatus: vi.fn(),
-}));
-
-vi.mock("../extensions/rendering/footer-status.js", () => ({
-  refreshFooterStatus: mocks.refreshFooterStatus,
-}));
+const mocks = vi.hoisted(() => ({}));
 
 import {
-  mcpServerTool,
+  createMcpServerTool,
   registerMcpServerTool,
+  type McpServerToolRuntime,
 } from "../extensions/tools/mcp-server-tool.js";
+
+let currentRegistry: ServerRegistry | undefined;
+let refreshFooter: McpServerToolRuntime["refreshFooterStatus"] = () => {};
+const runtime: McpServerToolRuntime = {
+  getRegistry: () => currentRegistry,
+  getTuiSettings: () => undefined,
+  refreshFooterStatus: status => refreshFooter(status),
+};
+const mcpServerTool = createMcpServerTool(runtime);
 
 type RegistryStubOverrides = {
   registry?: Partial<ServerRegistry>;
-  refreshFooter?: () => Promise<void>;
+  refreshFooter?: McpServerToolRuntime["refreshFooterStatus"];
 };
-
-let disposeRegistry: (() => void) | undefined;
 
 function useRuntime(overrides: RegistryStubOverrides = {}): ServerRegistry {
   const emptyStatus = { connectedCount: 0, totalCount: 0, servers: [] };
@@ -39,9 +40,8 @@ function useRuntime(overrides: RegistryStubOverrides = {}): ServerRegistry {
     close: async () => {},
     ...overrides.registry,
   };
-  disposeRegistry?.();
-  disposeRegistry = installCurrentServerRegistry(registry);
-  mocks.refreshFooterStatus.mockImplementation(overrides.refreshFooter ?? (async () => {}));
+  currentRegistry = registry;
+  refreshFooter = overrides.refreshFooter ?? (() => {});
   return registry;
 }
 
@@ -53,13 +53,14 @@ function executeMcpServer(
 }
 
 afterEach(() => {
-  disposeRegistry?.();
-  disposeRegistry = undefined;
+  currentRegistry = undefined;
+  refreshFooter = () => {};
 });
 
 describe("mcpServerTool.execute", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    currentRegistry = undefined;
+    refreshFooter = vi.fn();
   });
 
   it("插件未初始化时拒绝执行", async () => {
@@ -268,9 +269,12 @@ describe("registerMcpServerTool", () => {
     const registerTool = vi.fn();
     const on = vi.fn();
 
-    registerMcpServerTool({ registerTool, on } as unknown as ExtensionAPI);
+    const tool = registerMcpServerTool(
+      { registerTool, on } as unknown as ExtensionAPI,
+      runtime,
+    );
 
-    expect(registerTool).toHaveBeenCalledWith(mcpServerTool);
+    expect(registerTool).toHaveBeenCalledWith(tool);
     expect(on).not.toHaveBeenCalled();
   });
 });

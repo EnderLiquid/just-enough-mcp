@@ -2,10 +2,9 @@ import { Type } from "typebox";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "./schema.js";
 import type { McpServerResultDetails } from "../modeling/types.js";
-import { refreshFooterStatus as defaultRefreshFooterStatus } from "../rendering/footer-status.js";
-import { renderMcpServerCall, renderMcpServerResult } from "../rendering/result-renderer.js";
+import type { TuiResultRenderSettings } from "../artifacts/types.js";
+import { createMcpResultRenderer } from "../rendering/result-renderer.js";
 import type { ServerRegistry, ServerRegistryStatus } from "../servers/registry.js";
-import { getCurrentServerRegistry } from "../servers/current-registry.js";
 import { pluralize } from "../formatting/english.js";
 
 export const mcpServerParametersSchema = Type.Object({
@@ -19,6 +18,7 @@ export const mcpServerParametersSchema = Type.Object({
 
 export interface McpServerToolRuntime {
   getRegistry(): ServerRegistry | undefined;
+  getTuiSettings(): TuiResultRenderSettings | undefined;
   refreshFooterStatus: (
     status?: ServerRegistryStatus,
   ) => void | Promise<void>;
@@ -85,6 +85,7 @@ function requireRegistry(runtime: McpServerToolRuntime): ServerRegistry {
 export function createMcpServerTool(
   runtime: McpServerToolRuntime,
 ) {
+  const renderer = createMcpResultRenderer(runtime.getTuiSettings);
   return defineTool<typeof mcpServerParametersSchema, McpServerResultDetails>({
     name: "mcp_server",
     label: "MCP Server",
@@ -98,8 +99,8 @@ export function createMcpServerTool(
       "logout removes local OAuth credentials and does not revoke remote tokens.",
     ].join(" "),
     promptSnippet: "Inspect MCP server status, explicitly control availability when needed, and manage OAuth authorization.",
-    renderCall: (args, theme, context) => renderMcpServerCall(args, theme, context),
-    renderResult: (result, options, theme, context) => renderMcpServerResult(result, options, theme, context),
+    renderCall: (args, theme, context) => renderer.renderMcpServerCall(args, theme, context),
+    renderResult: (result, options, theme, context) => renderer.renderMcpServerResult(result, options, theme, context),
     parameters: mcpServerParametersSchema,
     async execute(_toolCallId, params, signal) {
       const serverName = validateInvocation(params);
@@ -192,18 +193,11 @@ export function createMcpServerTool(
   });
 }
 
-const legacyRuntime: McpServerToolRuntime = {
-  getRegistry: getCurrentServerRegistry,
-  refreshFooterStatus: defaultRefreshFooterStatus,
-};
-
-export const mcpServerTool = createMcpServerTool(legacyRuntime);
-
 export function registerMcpServerTool(
   pi: ExtensionAPI,
-  runtime?: McpServerToolRuntime,
+  runtime: McpServerToolRuntime,
 ): ReturnType<typeof createMcpServerTool> {
-  const tool = runtime ? createMcpServerTool(runtime) : mcpServerTool;
+  const tool = createMcpServerTool(runtime);
   pi.registerTool(tool);
   return tool;
 }

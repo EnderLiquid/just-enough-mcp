@@ -1,53 +1,42 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  installNotifierSink,
-  notifyError,
-  notifyInfo,
-  notifyWarning,
-} from "../extensions/rendering/notifier.js";
+import { describe, expect, it, vi } from "vitest";
+import { createNotifier } from "../extensions/rendering/notifier.js";
 
-const disposers: Array<() => void> = [];
-
-afterEach(() => {
-  for (const dispose of disposers.splice(0).reverse()) {
-    dispose();
-  }
-});
-
-describe("notifier borrowed sink", () => {
-  it("向当前 sink 发布通知并在释放后停止使用", () => {
+describe("notifier capability", () => {
+  it("向显式 sink 发布通知", () => {
     const notify = vi.fn();
-    const dispose = installNotifierSink({ notify });
-    disposers.push(dispose);
+    const notifier = createNotifier({ notify });
 
-    notifyInfo("created");
-    dispose();
-    notifyError("late error");
+    notifier.notifyInfo("created");
+    notifier.notifyError("failed");
 
-    expect(notify).toHaveBeenCalledTimes(1);
-    expect(notify).toHaveBeenCalledWith("created", "info");
+    expect(notify).toHaveBeenNthCalledWith(1, "created", "info");
+    expect(notify).toHaveBeenNthCalledWith(2, "failed", "error");
+  });
+
+  it("没有 sink 时安全忽略通知", () => {
+    const notifier = createNotifier();
+
+    expect(() => notifier.notifyWarning("retry later")).not.toThrow();
   });
 
   it("吞掉 sink 的通知异常", () => {
     const notify = vi.fn(() => { throw new Error("UI unavailable"); });
-    disposers.push(installNotifierSink({ notify }));
+    const notifier = createNotifier({ notify });
 
-    expect(() => notifyWarning("retry later")).not.toThrow();
+    expect(() => notifier.notifyWarning("retry later")).not.toThrow();
     expect(notify).toHaveBeenCalledWith("retry later", "warning");
   });
 
-  it("旧 disposer 不清除替换后的 sink", () => {
+  it("不同 capability 实例之间互不影响", () => {
     const previousNotify = vi.fn();
     const currentNotify = vi.fn();
-    const disposePrevious = installNotifierSink({ notify: previousNotify });
-    disposers.push(disposePrevious);
-    const disposeCurrent = installNotifierSink({ notify: currentNotify });
-    disposers.push(disposeCurrent);
+    const previous = createNotifier({ notify: previousNotify });
+    const current = createNotifier({ notify: currentNotify });
 
-    disposePrevious();
-    notifyError("failed");
+    previous.notifyInfo("previous");
+    current.notifyError("current");
 
-    expect(previousNotify).not.toHaveBeenCalled();
-    expect(currentNotify).toHaveBeenCalledWith("failed", "error");
+    expect(previousNotify).toHaveBeenCalledWith("previous", "info");
+    expect(currentNotify).toHaveBeenCalledWith("current", "error");
   });
 });

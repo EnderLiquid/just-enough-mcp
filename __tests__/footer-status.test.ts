@@ -1,25 +1,13 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
-  installFooterStatusSink,
-  refreshFooterStatus,
+  createFooterStatusController,
   type FooterStatusSink,
 } from "../extensions/rendering/footer-status.js";
-
-const disposers: Array<() => void> = [];
 
 function createTheme(): FooterStatusSink["theme"] {
   return {
     fg: (_color, text) => `<dim>${text}</dim>`,
   };
-}
-
-function install(
-  setStatus?: (key: string, text: string | undefined) => void,
-  theme = createTheme(),
-): () => void {
-  const dispose = installFooterStatusSink(setStatus ? { setStatus, theme } : undefined);
-  disposers.push(dispose);
-  return dispose;
 }
 
 const status = {
@@ -28,69 +16,63 @@ const status = {
   totalCount: 4,
 };
 
-describe("footer 状态", () => {
-  afterEach(() => {
-    for (const dispose of disposers.splice(0).reverse()) {
-      dispose();
-    }
-  });
-
+describe("footer 状态 capability", () => {
   it("更新固定 footer 状态，显示已连接数和总数", () => {
     const setStatus = vi.fn();
-    install(setStatus);
+    const footer = createFooterStatusController({ setStatus, theme: createTheme() });
 
-    refreshFooterStatus(status);
+    footer.refresh(status);
 
     expect(setStatus).toHaveBeenCalledWith("just-enough-mcp", "<dim>1/4 MCP</dim>");
   });
 
-  it("未注册 sink 时无操作", () => {
-    install();
+  it("未提供 sink 时无操作", () => {
+    const footer = createFooterStatusController();
 
-    expect(() => refreshFooterStatus(status)).not.toThrow();
+    expect(() => footer.refresh(status)).not.toThrow();
   });
 
-  it("释放引用时清除插件 footer 状态", () => {
+  it("释放 capability 时清除插件 footer 状态", () => {
     const setStatus = vi.fn();
-    const dispose = install(setStatus);
+    const footer = createFooterStatusController({ setStatus, theme: createTheme() });
 
-    dispose();
+    footer.dispose();
 
     expect(setStatus).toHaveBeenCalledWith("just-enough-mcp", undefined);
   });
 
   it("释放后不再向旧 sink 发布更新", () => {
     const setStatus = vi.fn();
-    const dispose = install(setStatus);
-    dispose();
+    const footer = createFooterStatusController({ setStatus, theme: createTheme() });
+    footer.dispose();
 
-    refreshFooterStatus({ ...status, connectedCount: 2, totalCount: 3 });
+    footer.refresh({ ...status, connectedCount: 2, totalCount: 3 });
 
     expect(setStatus).toHaveBeenCalledTimes(1);
     expect(setStatus).toHaveBeenCalledWith("just-enough-mcp", undefined);
   });
 
-  it("旧 disposer 不清除替换后的 sink", () => {
+  it("不同 capability 实例之间互不影响", () => {
     const previousSetStatus = vi.fn();
     const currentSetStatus = vi.fn();
-    const disposePrevious = install(previousSetStatus);
-    install(currentSetStatus);
+    const previous = createFooterStatusController({ setStatus: previousSetStatus, theme: createTheme() });
+    const current = createFooterStatusController({ setStatus: currentSetStatus, theme: createTheme() });
 
-    disposePrevious();
-    refreshFooterStatus({ ...status, connectedCount: 3, totalCount: 5 });
+    previous.dispose();
+    current.refresh({ ...status, connectedCount: 3, totalCount: 5 });
 
-    expect(previousSetStatus).not.toHaveBeenCalled();
+    expect(previousSetStatus).toHaveBeenCalledWith("just-enough-mcp", undefined);
     expect(currentSetStatus).toHaveBeenCalledWith("just-enough-mcp", "<dim>3/5 MCP</dim>");
   });
 
   it("每次刷新都从当前 theme 取色", () => {
     const setStatus = vi.fn();
     const fg = vi.fn((_color: "dim", text: string) => `first:${text}`);
-    install(setStatus, { fg });
+    const footer = createFooterStatusController({ setStatus, theme: { fg } });
 
-    refreshFooterStatus(status);
+    footer.refresh(status);
     fg.mockImplementation((_color, text) => `second:${text}`);
-    refreshFooterStatus(status);
+    footer.refresh(status);
 
     expect(fg).toHaveBeenNthCalledWith(1, "dim", "1/4 MCP");
     expect(fg).toHaveBeenNthCalledWith(2, "dim", "1/4 MCP");
@@ -100,9 +82,9 @@ describe("footer 状态", () => {
 
   it("未提供 Registry 状态时清除 footer", () => {
     const setStatus = vi.fn();
-    install(setStatus);
+    const footer = createFooterStatusController({ setStatus, theme: createTheme() });
 
-    refreshFooterStatus();
+    footer.refresh();
 
     expect(setStatus).toHaveBeenCalledWith("just-enough-mcp", undefined);
   });

@@ -8,32 +8,35 @@ export interface FooterStatusSink {
   readonly theme: Pick<Theme, "fg">;
 }
 
-let currentFooterStatusSink: FooterStatusSink | undefined;
-
-export function installFooterStatusSink(sink?: FooterStatusSink): () => void {
-  currentFooterStatusSink = sink;
-
-  return () => {
-    if (currentFooterStatusSink !== sink) {
-      return;
-    }
-
-    try {
-      sink?.setStatus(STATUS_KEY, undefined);
-    } finally {
-      currentFooterStatusSink = undefined;
-    }
-  };
+export interface FooterStatusController {
+  refresh(status?: ServerRegistryStatus): void;
+  dispose(): void;
 }
 
-export function refreshFooterStatus(status?: ServerRegistryStatus): void {
-  const sink = currentFooterStatusSink;
-  if (!sink) {
-    return;
-  }
+export function createFooterStatusController(
+  sink?: FooterStatusSink,
+): FooterStatusController {
+  let disposed = false;
 
-  const text = status
-    ? sink.theme.fg("dim", `${status.connectedCount}/${status.totalCount} MCP`)
-    : undefined;
-  sink.setStatus(STATUS_KEY, text);
+  return {
+    refresh(status) {
+      if (disposed || !sink) {
+        return;
+      }
+
+      const text = status
+        ? sink.theme.fg("dim", `${status.connectedCount}/${status.totalCount} MCP`)
+        : undefined;
+      sink.setStatus(STATUS_KEY, text);
+    },
+    dispose() {
+      if (disposed) {
+        return;
+      }
+      disposed = true;
+      try {
+        sink?.setStatus(STATUS_KEY, undefined);
+      } catch {}
+    },
+  };
 }

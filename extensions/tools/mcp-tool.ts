@@ -2,14 +2,10 @@ import { Type } from "typebox";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "./schema.js";
 import { materializeToolCallResult, type MaterializeCallToolResultInput } from "../artifacts/materializer.js";
-import { getArtifactsDirectoryPath } from "../config/paths.js";
-import { getCurrentPluginConfig } from "../config/current-config.js";
-import type { MaterializationSettings } from "../artifacts/types.js";
+import type { MaterializationSettings, TuiResultRenderSettings } from "../artifacts/types.js";
 import type { McpToolResultDetails, ServerCatalogResult } from "../modeling/types.js";
-import { refreshFooterStatus as defaultRefreshFooterStatus } from "../rendering/footer-status.js";
-import { renderMcpToolCall, renderMcpToolResult } from "../rendering/result-renderer.js";
+import { createMcpResultRenderer } from "../rendering/result-renderer.js";
 import type { ServerRegistry, ServerRegistryStatus } from "../servers/registry.js";
-import { getCurrentServerRegistry } from "../servers/current-registry.js";
 import { pluralize } from "../formatting/english.js";
 
 export const mcpToolArgumentsSchema = Type.Unsafe<Record<string, unknown>>({
@@ -36,6 +32,7 @@ export interface McpToolRuntime {
   getRegistry(): ServerRegistry | undefined;
   getArtifactDir(): string;
   getMaterializationSettings(): Partial<MaterializationSettings> | undefined;
+  getTuiSettings(): TuiResultRenderSettings | undefined;
   refreshFooterStatus: (
     status?: ServerRegistryStatus,
   ) => void | Promise<void>;
@@ -145,6 +142,7 @@ function requireRegistry(runtime: McpToolRuntime): ServerRegistry {
 }
 
 export function createMcpTool(runtime: McpToolRuntime) {
+  const renderer = createMcpResultRenderer(runtime.getTuiSettings);
   return defineTool<typeof mcpToolParametersSchema, McpToolResultDetails>({
     name: "mcp_tool",
     label: "MCP Tool",
@@ -154,8 +152,8 @@ export function createMcpTool(runtime: McpToolRuntime) {
       "For call, pass the selected tool's native object input from list and omit args for a zero-argument tool.",
     ].join(" "),
     promptSnippet: "List a selected MCP server's complete tool catalog, then call a listed tool with native object arguments.",
-    renderCall: (args, theme, context) => renderMcpToolCall(args, theme, context),
-    renderResult: (result, options, theme, context) => renderMcpToolResult(result, options, theme, context),
+    renderCall: (args, theme, context) => renderer.renderMcpToolCall(args, theme, context),
+    renderResult: (result, options, theme, context) => renderer.renderMcpToolResult(result, options, theme, context),
     parameters: mcpToolParametersSchema,
     async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
       validateInvocation(params);
@@ -207,20 +205,11 @@ export function createMcpTool(runtime: McpToolRuntime) {
   });
 }
 
-const legacyRuntime: McpToolRuntime = {
-  getRegistry: getCurrentServerRegistry,
-  getArtifactDir: () => getCurrentPluginConfig()?.artifactDir ?? getArtifactsDirectoryPath(),
-  getMaterializationSettings: () => getCurrentPluginConfig()?.materialization,
-  refreshFooterStatus: defaultRefreshFooterStatus,
-};
-
-export const mcpTool = createMcpTool(legacyRuntime);
-
 export function registerMcpTool(
   pi: ExtensionAPI,
-  runtime?: McpToolRuntime,
+  runtime: McpToolRuntime,
 ): ReturnType<typeof createMcpTool> {
-  const tool = runtime ? createMcpTool(runtime) : mcpTool;
+  const tool = createMcpTool(runtime);
   pi.registerTool(tool);
   pi.on("tool_result", (event) => {
     if (event.toolName !== tool.name) {

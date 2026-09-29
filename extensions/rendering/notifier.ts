@@ -4,32 +4,24 @@ export interface NotifierSink {
   notify(message: string, type?: NotifyType): void;
 }
 
-let currentNotifier: NotifierSink | undefined;
+export interface Notifier {
+  notify(message: string, type?: NotifyType): void;
+  notifyInfo(message: string): void;
+  notifyWarning(message: string): void;
+  notifyError(message: string): void;
+}
 
-export function installNotifierSink(notifier?: NotifierSink): () => void {
-  currentNotifier = notifier;
+export function createNotifier(notifier?: NotifierSink): Notifier {
+  function notify(message: string, type: NotifyType = "info"): void {
+    try {
+      notifier?.notify(message, type);
+    } catch {}
+  }
 
-  return () => {
-    if (currentNotifier === notifier) {
-      currentNotifier = undefined;
-    }
+  return {
+    notify,
+    notifyInfo: message => notify(message, "info"),
+    notifyWarning: message => notify(message, "warning"),
+    notifyError: message => notify(message, "error"),
   };
-}
-
-export function notify(message: string, type: NotifyType = "info"): void {
-  try {
-    currentNotifier?.notify(message, type);
-  } catch {}
-}
-
-export function notifyInfo(message: string): void {
-  notify(message, "info");
-}
-
-export function notifyWarning(message: string): void {
-  notify(message, "warning");
-}
-
-export function notifyError(message: string): void {
-  notify(message, "error");
 }

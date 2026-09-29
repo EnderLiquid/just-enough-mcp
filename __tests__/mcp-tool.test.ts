@@ -1,20 +1,12 @@
 import { Compile } from "typebox/compile";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { MaterializedToolCallResult } from "../extensions/artifacts/types.js";
-import { installCurrentPluginConfig } from "../extensions/config/current-config.js";
-import type { PluginConfigLoadResult } from "../extensions/modeling/types.js";
-import { installCurrentServerRegistry } from "../extensions/servers/current-registry.js";
+import type { MaterializedToolCallResult, MaterializationSettings, TuiResultRenderSettings } from "../extensions/artifacts/types.js";
 import type { ServerRegistry } from "../extensions/servers/registry.js";
 import { makePluginConfig, makeServerSnapshot } from "./support/model-fixtures.js";
 
 const mocks = vi.hoisted(() => ({
-  refreshFooterStatus: vi.fn(),
   materializeToolCallResult: vi.fn(),
-}));
-
-vi.mock("../extensions/rendering/footer-status.js", () => ({
-  refreshFooterStatus: mocks.refreshFooterStatus,
 }));
 
 vi.mock("../extensions/artifacts/materializer.js", () => ({
@@ -22,19 +14,35 @@ vi.mock("../extensions/artifacts/materializer.js", () => ({
 }));
 
 import {
-  mcpTool,
+  createMcpTool,
   mcpToolParametersSchema,
   registerMcpTool,
+  type McpToolRuntime,
 } from "../extensions/tools/mcp-tool.js";
 
 type RegistryStubOverrides = {
   registry?: Partial<ServerRegistry>;
-  refreshFooter?: () => Promise<void>;
-  config?: () => PluginConfigLoadResult | undefined;
+  refreshFooter?: McpToolRuntime["refreshFooterStatus"];
+  config?: () => {
+    artifactDir: string;
+    materialization: MaterializationSettings;
+    tui: TuiResultRenderSettings;
+  } | undefined;
 };
 
-let disposeRegistry: (() => void) | undefined;
-let disposeConfig: (() => void) | undefined;
+let currentRegistry: ServerRegistry | undefined;
+let artifactDir = "D:/project/.pi/agent/just-enough-mcp/artifacts";
+let materializationSettings: Partial<MaterializationSettings> | undefined;
+let tuiSettings: TuiResultRenderSettings | undefined;
+let refreshFooter: McpToolRuntime["refreshFooterStatus"] = () => {};
+const runtime: McpToolRuntime = {
+  getRegistry: () => currentRegistry,
+  getArtifactDir: () => artifactDir,
+  getMaterializationSettings: () => materializationSettings,
+  getTuiSettings: () => tuiSettings,
+  refreshFooterStatus: status => refreshFooter(status),
+};
+const mcpTool = createMcpTool(runtime);
 
 function useRuntime(overrides: RegistryStubOverrides = {}): ServerRegistry {
   const emptyStatus = { connectedCount: 0, totalCount: 0, servers: [] };
@@ -52,12 +60,12 @@ function useRuntime(overrides: RegistryStubOverrides = {}): ServerRegistry {
     ...overrides.registry,
   };
 
-  disposeRegistry?.();
-  disposeRegistry = installCurrentServerRegistry(registry);
-  disposeConfig?.();
+  currentRegistry = registry;
   const config = overrides.config?.();
-  disposeConfig = config ? installCurrentPluginConfig(config) : undefined;
-  mocks.refreshFooterStatus.mockImplementation(overrides.refreshFooter ?? (async () => {}));
+  artifactDir = config?.artifactDir ?? "D:/project/.pi/agent/just-enough-mcp/artifacts";
+  materializationSettings = config?.materialization;
+  tuiSettings = config?.tui;
+  refreshFooter = overrides.refreshFooter ?? (() => {});
   return registry;
 }
 
@@ -70,10 +78,11 @@ function executeMcpTool(
 }
 
 afterEach(() => {
-  disposeRegistry?.();
-  disposeRegistry = undefined;
-  disposeConfig?.();
-  disposeConfig = undefined;
+  currentRegistry = undefined;
+  artifactDir = "D:/project/.pi/agent/just-enough-mcp/artifacts";
+  materializationSettings = undefined;
+  tuiSettings = undefined;
+  refreshFooter = () => {};
 });
 
 function makeMaterialized(summaryText = "ok"): MaterializedToolCallResult {
@@ -140,6 +149,8 @@ describe("mcp_tool 参数 schema", () => {
 describe("mcpTool.execute", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    currentRegistry = undefined;
+    refreshFooter = vi.fn();
   });
 
   it("插件未初始化时拒绝执行", async () => {
@@ -319,9 +330,12 @@ describe("registerMcpTool", () => {
   it("注册 mcp_tool 并提升失败的远程结果为错误标志", () => {
     const registerTool = vi.fn();
     const on = vi.fn();
-    registerMcpTool({ registerTool, on } as unknown as ExtensionAPI);
+    const tool = registerMcpTool(
+      { registerTool, on } as unknown as ExtensionAPI,
+      runtime,
+    );
 
-    expect(registerTool).toHaveBeenCalledWith(mcpTool);
+    expect(registerTool).toHaveBeenCalledWith(tool);
     const handler = on.mock.calls.find(([eventName]) => eventName === "tool_result")?.[1] as (
       event: { toolName: string; details?: unknown },
     ) => unknown;

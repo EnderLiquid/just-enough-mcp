@@ -41,7 +41,7 @@
 - Registry 按当前 session 的 `ResolvedServerConfig[]` 一次性装配，不支持原地配置同步；其 `initialize()` 自行尽力预热 eager server 并返回结构化失败报告，Pi root/adapter 负责转换为用户可见 warning；Registry 的 `close()` 关闭自身拥有的 MCP server runtime。
 - `SdkSessionManager` 持有单个 server 的 SDK Client 并用异步读写锁协调生命周期。单次目录读取或工具调用至多按需初始化一次；若初始化后、操作开始前 client 已不可用，应报错而非静默重连或重放调用，避免重复副作用。
 - `includeTools` / `excludeTools` 必须在 `SdkSessionManager` 中同时约束工具目录与实际调用；`excludeTools` 优先于 `includeTools`，不能只在展示层过滤。
-- `NotifierSink` 是 session 内借用的用户可见 logger；root 负责安装/卸载它，其他模块通过 `extensions/rendering/notifier.ts` 的 `notifyInfo()`、`notifyWarning()`、`notifyError()` 发布 best-effort 通知，不直接持有或传递 sink。
+- `Notifier` 与 `FooterStatusController` 是 session 内显式创建的用户可见 capability；root 负责创建并在 session shutdown 时释放 footer controller，其他模块不得通过 module-level sink 或全局 notify 函数发布消息。
 - Pi direct tool 按能力域划分：`mcp_server` 管理 server 状态与生命周期，`mcp_tool` 承载 MCP Tools primitive；不要重新合并为依赖 optional 字段组合分派的单一入口。
 - `createMcpServer()` 是当前唯一 transport 推断与具体 server 组装分派点。
 - 配置层输出 `ResolvedServerConfig`，只保留通用字段和 `definition`；具体 server 组装实现负责校验并保存自己需要的配置字段。

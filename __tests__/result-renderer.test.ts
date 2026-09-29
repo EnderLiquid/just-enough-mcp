@@ -1,28 +1,30 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import type { McpTuiRenderMode } from "../extensions/artifacts/types.js";
-import { installCurrentPluginConfig } from "../extensions/config/current-config.js";
 import {
+  DEFAULT_TUI_RESULT_RENDER_SETTINGS,
+  type McpTuiRenderMode,
+  type TuiResultRenderSettings,
+} from "../extensions/artifacts/types.js";
+import {
+  createMcpResultRenderer,
   formatMcpToolResultLines,
-  renderMcpServerCall,
-  renderMcpServerResult,
-  renderMcpToolCall,
-  renderMcpToolResult,
 } from "../extensions/rendering/result-renderer.js";
-import { makePluginConfig } from "./support/model-fixtures.js";
 
 const testTheme = {
   fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
   bold: (text: string) => `<b>${text}</b>`,
 } as Theme;
 
-let disposeConfig: (() => void) | undefined;
+let renderSettings: TuiResultRenderSettings = DEFAULT_TUI_RESULT_RENDER_SETTINGS;
+const {
+  renderMcpServerCall,
+  renderMcpServerResult,
+  renderMcpToolCall,
+  renderMcpToolResult,
+} = createMcpResultRenderer(() => renderSettings);
 
 function setRenderMode(renderMode: McpTuiRenderMode, expandedModeCollapsedLines = 4): void {
-  disposeConfig?.();
-  disposeConfig = installCurrentPluginConfig(makePluginConfig({
-    tui: { renderMode, expandedModeCollapsedLines },
-  }));
+  renderSettings = { renderMode, expandedModeCollapsedLines };
 }
 
 function renderFirstLine(component: { render(width: number): string[] }): string | undefined {
@@ -30,8 +32,7 @@ function renderFirstLine(component: { render(width: number): string[] }): string
 }
 
 afterEach(() => {
-  disposeConfig?.();
-  disposeConfig = undefined;
+  renderSettings = DEFAULT_TUI_RESULT_RENDER_SETTINGS;
 });
 
 describe("formatMcpToolResultLines", () => {
