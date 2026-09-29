@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { AsyncReadWriteLock } from "../extensions/concurrency/async-read-write-lock.js";
+import { AsyncReadWriteLock } from "../extensions/src/core/concurrency/async-read-write-lock.js";
 
 function deferred<T = void>() {
   let resolve!: (value: T | PromiseLike<T>) => void;

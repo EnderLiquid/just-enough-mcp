@@ -1,12 +1,12 @@
 import {
   DEFAULT_MATERIALIZATION_SETTINGS,
-  DEFAULT_TUI_RESULT_RENDER_SETTINGS,
-} from "../../extensions/artifacts/types.js";
+} from "../../extensions/src/core/artifacts/types.js";
+import { DEFAULT_TUI_RESULT_RENDER_SETTINGS } from "../../extensions/src/pi/rendering/types.js";
+import type { PluginConfigLoadResult } from "../../extensions/src/pi/config/types.js";
 import type {
-  PluginConfigLoadResult,
   ResolvedServerConfig,
   ServerSnapshot,
-} from "../../extensions/modeling/types.js";
+} from "../../extensions/src/core/modeling/types.js";
 
 export function makeResolvedServerConfig(
   overrides: Partial<ResolvedServerConfig> = {},

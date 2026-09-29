@@ -13,28 +13,29 @@
 
 ## 代码结构
 
-- `extensions/just-enough-mcp.ts`：插件 session 生命周期的 composition root。
-- `extensions/config/`：宿主无关配置解析、路径适配与异步 overview bootstrap；Pi root 负责提供宿主路径。
-- 配置 loader 的核心入口接收按低优先级到高优先级排列的 `readonly string[]` 配置路径，不感知 Pi 的 `cwd` 或 project trust；root/外层适配器决定全局与受信项目路径。raw 层先合并再统一校验和填充默认值；项目层 server 的 `null` 是 tombstone，同名 object 完整替换，不做 server definition 深度合并；每层读取时立即把相对 overview 路径规范化为绝对路径。
-- `extensions/modeling/`：跨模块共享的核心类型。
-- `extensions/concurrency/`：Registry 和 SDK session 生命周期使用的异步读写锁。
-- `extensions/servers/`：宿主无关的 `McpRegistry`、稳定 Registry errors 与 MCP server runtime。
-- `extensions/servers/servers/`：transport 推断、具体 stdio/HTTP server 组装、SDK session 生命周期与工具过滤；OAuth server 只在该层注入 authenticated fetch，不自行实现 OAuth 编排。
-- `extensions/oauth/`：OAuth broker 的协议、identity、credential persistence、授权事务与 session-side adapter 依赖；broker runtime/client 按 ownership 分层组织。
-- `extensions/oauth/broker/`：broker identity/credential 内核、broker-owned credential persistence、token/status/logout/authorize/scope-challenge HTTP API、session client/launcher 与 standalone process；commit `ecc3434` 的 claim/election/endpoint publication 已由简化 Phase 2 取代。已包含基于 SDK 低层函数的 discovery/DCR/refresh/authorize/code-exchange 协议 adapter、内存 authorize 事务与 callback 路由、平台 browser opener，以及 session 侧 authenticated fetch 与 `OauthHttpServer`；真实浏览器与真实 AS 的端到端授权仍未手工验证。
-- `extensions/tools/`：暴露给 Pi 的 `mcp_server` 与 `mcp_tool` 工具入口。
-- `extensions/artifacts/`：工具调用结果物化、payload 提取/归一化、artifact 存储、manifest 与模型 summary 生成。
-- `extensions/rendering/`：TUI 工具调用/结果渲染、footer status 与用户可见通知。
-- `extensions/formatting/`：跨模块共享的宿主无关文本格式化工具，如英文单复数 `pluralize()` 和 MCP result line formatter。
-- `extensions/prompting/`：系统提示词中 server overview 的生成逻辑。
-- `__tests__/`：按模块边界覆盖配置、生命周期、server、工具、物化和渲染行为。
+- `extensions/just-enough-mcp.ts`：保持稳定的 Pi loader 兼容入口，仅转发到 `extensions/src/pi/index.ts`。
+- `extensions/src/core/`：宿主无关的 MCP runtime、配置解析、overview、artifact、OAuth broker、并发和领域类型；未来 Core npm 包的候选源码根。
+- `extensions/src/core/config/`：Core 配置 raw layer 读取、合并、校验和 resolved server/materialization snapshot。
+- `extensions/src/core/modeling/`：跨模块共享的核心类型。
+- `extensions/src/core/concurrency/`：Registry 和 SDK session 生命周期使用的异步读写锁。
+- `extensions/src/core/servers/`：宿主无关的 `McpRegistry`、稳定 Registry errors 与 MCP server runtime。
+- `extensions/src/core/servers/servers/`：transport 推断、具体 stdio/HTTP server 组装、SDK session 生命周期与工具过滤；OAuth server 只在该层注入 authenticated fetch，不自行实现 OAuth 编排。
+- `extensions/src/core/oauth/`：OAuth capability contract 以及 broker 的协议、identity、credential persistence、授权事务与 session-side adapter 依赖；broker runtime/client 按 ownership 分层组织。
+- `extensions/src/core/oauth/broker/`：broker identity/credential 内核、broker-owned credential persistence、token/status/logout/authorize/scope-challenge HTTP API、session client/launcher 与 standalone process；commit `ecc3434` 的 claim/election/endpoint publication 已由简化 Phase 2 取代。已包含基于 SDK 低层函数的 discovery/DCR/refresh/authorize/code-exchange 协议 adapter、内存 authorize 事务与 callback 路由、平台 browser opener，以及 session 侧 authenticated fetch；真实浏览器与真实 AS 的端到端授权仍未手工验证。
+- `extensions/src/core/artifacts/`：工具调用结果物化、payload 提取/归一化、artifact 存储、manifest 与模型 summary 生成。
+- `extensions/src/core/formatting/`：宿主无关文本格式化工具，如英文单复数 `pluralize()`。
+- `extensions/src/pi/`：Pi adapter；路径、配置的 TUI 层、Pi tools、rendering、prompting 和生命周期均在此目录。
+- `extensions/src/pi/tools/`：暴露给 Pi 的 `mcp_server` 与 `mcp_tool` 工具入口。
+- `extensions/src/pi/rendering/`：TUI 工具调用/结果渲染、footer status、用户可见通知和 TUI result settings。
+- `extensions/src/pi/prompting/`：系统 prompt 注入和 Pi-specific 用户文案。
+- `__tests__/`：按 Core、Pi adapter、OAuth broker、artifact 和 lifecycle 边界覆盖行为。
 
 ## 架构约定
 
-- `extensions/just-enough-mcp.ts` 是插件 session 生命周期的唯一 composition root：config 是由有序全局/项目 raw 配置层解析出的整体替换 value snapshot；root 创建 session-scoped OAuth broker client/launcher、`McpRegistry`、Notifier 和 FooterStatusController。`McpRegistry` 自己拥有 OverviewBootstrapper 和 MCP server runtime，并在 `close()` 中排空它们；Registry、具体 server 与 OAuth server 只借用 root 注入的 OAuth broker capability。
+- `extensions/src/pi/index.ts` 是 Pi session 生命周期的 composition root，`extensions/just-enough-mcp.ts` 只作为稳定 loader shim：config 是由有序全局/项目 raw 配置层解析出的整体替换 value snapshot；root 创建 session-scoped OAuth broker client/launcher、`McpRegistry`、Notifier 和 FooterStatusController。`McpRegistry` 自己拥有 OverviewBootstrapper 和 MCP server runtime，并在 `close()` 中排空它们；Registry、具体 server 与 OAuth server 只借用 root 注入的 OAuth broker capability。
 
 - 不使用 module-level `currentXxx` 作为运行时依赖查找机制；Registry、配置和 UI capability 必须由 Pi root 通过 session-bound closure 或显式 runtime 注入，资源销毁由 root 持有的实例负责。
-- standalone OAuth broker 直接由 Node 执行 `extensions/oauth/broker/broker-process.ts`；其传递依赖必须保持 Node 原生 type stripping 可执行，只使用 erasable TypeScript syntax，并在 broker 子树内部使用显式 `.ts` import。`tsconfig.broker-native.json` 是该边界的额外类型门禁。
+- standalone OAuth broker 直接由 Node 执行 `extensions/src/core/oauth/broker/broker-process.ts`；其传递依赖必须保持 Node 原生 type stripping 可执行，只使用 erasable TypeScript syntax，并在 broker 子树内部使用显式 `.ts` import。`tsconfig.broker-native.json` 是该边界的额外类型门禁。
 - broker process control plane 使用 broker-lifetime file lock、固定配置端口和可原子覆盖但允许残留的 access file；不引入 endpoint publication、claim election、旧实际端口发现/复用或 PID stale cleanup。session 侧 lock/port probe 只用于诊断，子进程自身的 lock acquisition 与固定端口 bind 才是最终启动判定。
 - `broker-credentials.json` v1 只能由 broker 写入；credential mutation 在 broker 内串行化，通过同目录临时文件加原子 rename 持久化，只有持久化成功后才能发布新的内存 snapshot。token/status/logout API 必须校验 control secret、当前 presence incarnation 和 identity namespace。
 - 仅当 session 配置了 OAuth server 时，插件 root 才创建一个 session-scoped broker client 和非阻塞 launcher，并共享给该 session 的 OAuth server；client 断连时可以重读 access file 并重连，但不自动 spawn broker。presence 使用 incarnation fence，断连或关闭时 best-effort release，TTL 只作兜底。
@@ -52,7 +53,7 @@
 - `disconnecting` 表示显式关闭已撤销当前 Client 的可用性，正在等待 `Client.close()` 完成；完成后才进入 `disconnected`。
 - 插件配置顶层按职责拆分为 `materialization` 与 `tui`；`materialization` 控制 artifact 落盘、payload/JSON 归一化和给模型的 summary 预算，`tui` 只控制 TUI 渲染模式与展开模式折叠行数。
 - TUI 渲染模式为 `hidden` / `minimal` / `expanded`，默认 `expanded`；不要把 TUI 展示配置混入 materialization 或模型 summary 配置。
-- 用户可见英文数量文案应使用 `extensions/formatting/english.ts` 的 `pluralize()` 处理单复数，避免写出 `1 tools`、`1 payload items` 等文本。
+- 用户可见英文数量文案应使用 `extensions/src/core/formatting/english.ts` 的 `pluralize()` 处理单复数，避免写出 `1 tools`、`1 payload items` 等文本。
 
 ## 开发注意事项
 

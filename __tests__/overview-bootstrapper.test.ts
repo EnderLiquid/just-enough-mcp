@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { OverviewBootstrapper } from "../extensions/config/overview-bootstrapper.js";
+import { OverviewBootstrapper } from "../extensions/src/core/overview/overview-bootstrapper.js";
 import { makeResolvedServerConfig } from "./support/model-fixtures.js";
 
 function createDeferred<T = void>() {

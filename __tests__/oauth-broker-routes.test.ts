@@ -1,15 +1,15 @@
 import { createServer, type Server } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { OAuthBrokerClient, requestOAuthBrokerJson } from "../extensions/oauth/broker/client.js";
-import { createOAuthCredentialState } from "../extensions/oauth/broker/credential-state.js";
-import { InMemoryOAuthCredentialRepository } from "../extensions/oauth/broker/credential-repository.js";
-import { createOAuthIdentity } from "../extensions/oauth/broker/identity.js";
-import { runOAuthBrokerProcess } from "../extensions/oauth/broker/broker-process.js";
-import { OAUTH_BROKER_ROUTES } from "../extensions/oauth/broker/protocol.js";
-import { readOAuthBrokerAccess } from "../extensions/oauth/broker/runtime-files.js";
-import type { OAuthRefreshOperation } from "../extensions/oauth/broker/token-coordinator.js";
-import type { OAuthDiscoveryOperation } from "../extensions/oauth/broker/oauth-protocol-types.js";
-import { OAuthTemporaryProtocolError } from "../extensions/oauth/broker/token-coordinator.js";
+import { OAuthBrokerClient, requestOAuthBrokerJson } from "../extensions/src/core/oauth/broker/client.js";
+import { createOAuthCredentialState } from "../extensions/src/core/oauth/broker/credential-state.js";
+import { InMemoryOAuthCredentialRepository } from "../extensions/src/core/oauth/broker/credential-repository.js";
+import { createOAuthIdentity } from "../extensions/src/core/oauth/broker/identity.js";
+import { runOAuthBrokerProcess } from "../extensions/src/core/oauth/broker/broker-process.js";
+import { OAUTH_BROKER_ROUTES } from "../extensions/src/core/oauth/broker/protocol.js";
+import { readOAuthBrokerAccess } from "../extensions/src/core/oauth/broker/runtime-files.js";
+import type { OAuthRefreshOperation } from "../extensions/src/core/oauth/broker/token-coordinator.js";
+import type { OAuthDiscoveryOperation } from "../extensions/src/core/oauth/broker/oauth-protocol-types.js";
+import { OAuthTemporaryProtocolError } from "../extensions/src/core/oauth/broker/token-coordinator.js";
 import { createTempDirFixture } from "./support/temp-dir.js";
 
 const tempDirs = createTempDirFixture("just-enough-mcp-oauth-broker-routes");

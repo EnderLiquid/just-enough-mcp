@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { OAuthAuthenticationError } from "../extensions/oauth/broker/authenticated-fetch.js";
-import { OAuthBrokerClientError } from "../extensions/oauth/broker/client.js";
-import type { ResolvedServerConfig, ServerDefinition } from "../extensions/modeling/types.js";
-import { OauthHttpServer } from "../extensions/servers/servers/oauth-http-server.js";
+import { OAuthAuthenticationError } from "../extensions/src/core/oauth/broker/authenticated-fetch.js";
+import { OAuthBrokerClientError } from "../extensions/src/core/oauth/broker/client.js";
+import type { ResolvedServerConfig, ServerDefinition } from "../extensions/src/core/modeling/types.js";
+import { OauthHttpServer } from "../extensions/src/core/servers/servers/oauth-http-server.js";
 
 const mocks = vi.hoisted(() => ({
   clientConnect: vi.fn(),
@@ -103,7 +103,7 @@ function makeServer(broker: BrokerStub, definition: ServerDefinition = {}, depen
     makeConfig(definition),
     dependencies
       ? {
-          brokerClient: broker as never,
+          oauthCapability: broker as never,
           namespaceId,
           probeTimeoutMs: 50,
         }
@@ -135,7 +135,7 @@ describe("OauthHttpServer", () => {
     expect(server.snapshot()).toMatchObject({ oauthState: "authorized" });
   });
 
-  it("缺少 broker dependency 时降为 unknown 并拒绝 OAuth 操作", async () => {
+  it("缺少 OAuth capability 时降为 unknown 并拒绝 OAuth 操作", async () => {
     const server = makeServer(makeBroker(), {}, false);
 
     expect(server.snapshot()).toMatchObject({ oauthState: "unknown" });

@@ -36,7 +36,7 @@ vi.mock("@earendil-works/pi-coding-agent", async importOriginal => ({
   getAgentDir: mocks.getAgentDir,
 }));
 
-vi.mock("../extensions/config/paths.js", () => ({
+vi.mock("../extensions/src/pi/paths.js", () => ({
   getOAuthBrokerDirectoryPath: mocks.getOAuthBrokerDirectoryPath,
   getArtifactsDirectoryPath: mocks.getArtifactsDirectoryPath,
   getOverviewDirectoryPath: mocks.getOverviewDirectoryPath,
@@ -44,11 +44,11 @@ vi.mock("../extensions/config/paths.js", () => ({
   getProjectPluginConfigPath: mocks.getProjectPluginConfigPath,
 }));
 
-vi.mock("../extensions/oauth/broker/namespace.js", () => ({
+vi.mock("../extensions/src/core/oauth/broker/namespace.js", () => ({
   createOAuthBrokerNamespace: mocks.createOAuthBrokerNamespace,
 }));
 
-vi.mock("../extensions/oauth/broker/client.js", () => ({
+vi.mock("../extensions/src/core/oauth/broker/client.js", () => ({
   OAuthBrokerClient: class MockOAuthBrokerClient {
     constructor(options: unknown) {
       mocks.oauthBrokerClientConstructor(options);
@@ -60,35 +60,35 @@ vi.mock("../extensions/oauth/broker/client.js", () => ({
   },
 }));
 
-vi.mock("../extensions/oauth/broker/bootstrapper.js", () => ({
+vi.mock("../extensions/src/core/oauth/broker/bootstrapper.js", () => ({
   createOAuthBrokerBootstrapper: mocks.createOAuthBrokerBootstrapper,
 }));
 
-vi.mock("../extensions/config/plugin-config.js", () => ({
+vi.mock("../extensions/src/pi/config/plugin-config.js", () => ({
   loadPluginConfigFromPaths: mocks.loadPluginConfig,
 }));
 
-vi.mock("../extensions/rendering/notifier.js", () => ({
+vi.mock("../extensions/src/pi/rendering/notifier.js", () => ({
   createNotifier: mocks.createNotifier,
 }));
 
-vi.mock("../extensions/rendering/footer-status.js", () => ({
+vi.mock("../extensions/src/pi/rendering/footer-status.js", () => ({
   createFooterStatusController: mocks.createFooterStatusController,
 }));
 
-vi.mock("../extensions/servers/registry.js", () => ({
+vi.mock("../extensions/src/core/servers/registry.js", () => ({
   createMcpRegistry: mocks.createMcpRegistry,
 }));
 
-vi.mock("../extensions/tools/mcp-server-tool.js", () => ({
+vi.mock("../extensions/src/pi/tools/mcp-server-tool.js", () => ({
   registerMcpServerTool: mocks.registerMcpServerTool,
 }));
 
-vi.mock("../extensions/tools/mcp-tool.js", () => ({
+vi.mock("../extensions/src/pi/tools/mcp-tool.js", () => ({
   registerMcpTool: mocks.registerMcpTool,
 }));
 
-vi.mock("../extensions/prompting/system-prompt.js", () => ({
+vi.mock("../extensions/src/pi/prompting/system-prompt.js", () => ({
   createServerOverviewPrompt: mocks.createServerOverviewPrompt,
 }));
 
@@ -322,7 +322,7 @@ describe("justEnoughMcp root 生命周期", () => {
         onCreated: expect.any(Function),
       },
       oauth: {
-        brokerClient: bootstrapOptions.client,
+        oauthCapability: bootstrapOptions.client,
         namespaceId: `agent-dir:v1:${"d".repeat(64)}`,
       },
     });

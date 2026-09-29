@@ -1,11 +1,11 @@
 import { createServer } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
-import { OAuthBrokerClient } from "../extensions/oauth/broker/client.js";
-import { runOAuthBrokerProcess } from "../extensions/oauth/broker/broker-process.js";
-import { FileOAuthCredentialRepository } from "../extensions/oauth/broker/credential-repository.js";
-import { createOAuthIdentity, type OAuthIdentity } from "../extensions/oauth/broker/identity.js";
-import { OauthHttpServer } from "../extensions/servers/servers/oauth-http-server.js";
-import type { ResolvedServerConfig } from "../extensions/modeling/types.js";
+import { OAuthBrokerClient } from "../extensions/src/core/oauth/broker/client.js";
+import { runOAuthBrokerProcess } from "../extensions/src/core/oauth/broker/broker-process.js";
+import { FileOAuthCredentialRepository } from "../extensions/src/core/oauth/broker/credential-repository.js";
+import { createOAuthIdentity, type OAuthIdentity } from "../extensions/src/core/oauth/broker/identity.js";
+import { OauthHttpServer } from "../extensions/src/core/servers/servers/oauth-http-server.js";
+import type { ResolvedServerConfig } from "../extensions/src/core/modeling/types.js";
 import { FakeOAuthAuthorizationServer } from "./support/fake-oauth-as.js";
 import { bearerTokenOf, startFakeMcpServer, type FakeMcpServer } from "./support/fake-mcp-server.js";
 import { createTempDirFixture } from "./support/temp-dir.js";
@@ -133,7 +133,7 @@ async function startHarness(
   const server = new OauthHttpServer(makeConfig(mcp.url, {
     ...(options.oauthScope === undefined ? {} : { scope: options.oauthScope }),
   }), {
-    brokerClient: broker,
+    oauthCapability: broker,
     namespaceId,
     probeTimeoutMs: 2_000,
   });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { PluginConfigLoadResult, ResolvedServerConfig } from "../extensions/modeling/types.js";
-import { createServerOverviewPrompt } from "../extensions/prompting/system-prompt.js";
+import type { PluginConfigLoadResult } from "../extensions/src/pi/config/types.js";
+import type { ResolvedServerConfig } from "../extensions/src/core/modeling/types.js";
+import { createServerOverviewPrompt } from "../extensions/src/pi/prompting/system-prompt.js";
 import { makePluginConfig, makeResolvedServerConfig } from "./support/model-fixtures.js";
 
 function makeServer(overrides: Partial<ResolvedServerConfig> = {}): ResolvedServerConfig {
