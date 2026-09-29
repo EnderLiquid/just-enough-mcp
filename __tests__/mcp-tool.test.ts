@@ -39,7 +39,7 @@ let disposeConfig: (() => void) | undefined;
 function useRuntime(overrides: RegistryStubOverrides = {}): ServerRegistry {
   const emptyStatus = { connectedCount: 0, totalCount: 0, servers: [] };
   const registry: ServerRegistry = {
-    initialize: async () => {},
+    initialize: async () => ({ eagerFailures: [] }),
     getStatus: async () => emptyStatus,
     getServerSnapshot: async () => undefined,
     connectServer: async () => { throw new Error("Unexpected connectServer call."); },
@@ -48,7 +48,7 @@ function useRuntime(overrides: RegistryStubOverrides = {}): ServerRegistry {
     logoutServer: async () => { throw new Error("Unexpected logoutServer call."); },
     getServerCatalog: async () => { throw new Error("Unexpected getServerCatalog call."); },
     callTool: async () => { throw new Error("Unexpected callTool call."); },
-    closeAll: async () => {},
+    close: async () => {},
     ...overrides.registry,
   };
 

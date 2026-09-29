@@ -3,13 +3,11 @@ import type {
   ExtractedPayloadDrafts,
   MaterializationSettings,
   PayloadDraft,
+  PreparedToolCallResult,
   SuppressedStructuredContent,
 } from "./types.js";
 
-export interface NormalizedPayloadDrafts {
-  items: PayloadDraft[];
-  suppressedStructuredContent?: SuppressedStructuredContent;
-}
+export type NormalizedPayloadDrafts = PreparedToolCallResult;
 
 function normalizeJsonText(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}`;
@@ -123,6 +121,7 @@ export function normalizePayloadDrafts(
 
   return {
     items,
-    suppressedStructuredContent,
+    ...(extracted.structuredContent ? { structuredContent: extracted.structuredContent } : {}),
+    ...(suppressedStructuredContent ? { suppressedStructuredContent } : {}),
   };
 }

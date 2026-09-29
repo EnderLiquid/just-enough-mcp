@@ -5,8 +5,6 @@ import type {
   ToolCallExecutionResult,
 } from "../modeling/types.js";
 import { AsyncReadWriteLock } from "../concurrency/async-read-write-lock.js";
-import { pluralize } from "../formatting/english.js";
-import { notifyWarning } from "../rendering/notifier.js";
 import {
   createMcpServer,
   type McpServerFactoryDependencies,
@@ -19,8 +17,12 @@ export interface ServerRegistryStatus {
   totalCount: number;
 }
 
+export interface ServerRegistryInitializationReport {
+  eagerFailures: string[];
+}
+
 export interface ServerRegistry {
-  initialize(): Promise<void>;
+  initialize(): Promise<ServerRegistryInitializationReport>;
   getStatus(): Promise<ServerRegistryStatus>;
   getServerSnapshot(name: string): Promise<ServerSnapshot | undefined>;
   connectServer(name: string, signal?: AbortSignal): Promise<ServerSnapshot>;
@@ -34,7 +36,7 @@ export interface ServerRegistry {
     args: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<ToolCallExecutionResult>;
-  closeAll(): Promise<void>;
+  close(): Promise<void>;
 }
 
 function isConnectedSnapshot(snapshot: ServerSnapshot): boolean {
@@ -50,9 +52,18 @@ export function createServerRegistry(
     createMcpServer(config, dependencies),
   ]));
   const lifecycleLock = new AsyncReadWriteLock();
-  let initializationPromise: Promise<void> | undefined;
+  let initializationPromise: Promise<ServerRegistryInitializationReport> | undefined;
+  let closePromise: Promise<void> | undefined;
+  let closed = false;
+
+  function assertOpen(): void {
+    if (closed) {
+      throw new Error("MCP server registry is closed.");
+    }
+  }
 
   function requireServer(name: string): McpServer {
+    assertOpen();
     const server = servers.get(name);
     if (!server) {
       throw new Error(`Unknown MCP server: ${name}`);
@@ -62,8 +73,10 @@ export function createServerRegistry(
 
   return {
     initialize() {
+      assertOpen();
       initializationPromise ??= lifecycleLock.withWrite(async () => {
-        const failedServerNames: string[] = [];
+        assertOpen();
+        const eagerFailures: string[] = [];
 
         for (const server of servers.values()) {
           if (server.config.connectionMode !== "eager") {
@@ -73,22 +86,18 @@ export function createServerRegistry(
           try {
             await server.connect();
           } catch {
-            failedServerNames.push(server.name);
+            eagerFailures.push(server.name);
           }
         }
 
-        if (failedServerNames.length > 0) {
-          notifyWarning(
-            `${failedServerNames.length} ${pluralize(failedServerNames.length, "eager MCP server")} could not be initialized: ` +
-            `${failedServerNames.join(", ")}. Use mcp_server or mcp_tool to retry on demand.`,
-          );
-        }
+        return { eagerFailures };
       });
       return initializationPromise;
     },
 
     async getStatus() {
       return lifecycleLock.withRead(async () => {
+        assertOpen();
         const snapshots = await Promise.all(
           [...servers.values()].map(server => server.status?.() ?? server.snapshot()),
         );
@@ -103,6 +112,7 @@ export function createServerRegistry(
 
     async getServerSnapshot(name) {
       return lifecycleLock.withRead(async () => {
+        assertOpen();
         const server = servers.get(name);
         return server ? await (server.status?.() ?? server.snapshot()) : undefined;
       });
@@ -152,12 +162,17 @@ export function createServerRegistry(
       });
     },
 
-    async closeAll() {
-      await lifecycleLock.withWrite(async () => {
+    close() {
+      closePromise ??= lifecycleLock.withWrite(async () => {
+        if (closed) {
+          return;
+        }
+        closed = true;
         const active = [...servers.values()];
         servers.clear();
         await Promise.all(active.map(server => server.close().catch(() => undefined)));
       });
+      return closePromise;
     },
   };
 }

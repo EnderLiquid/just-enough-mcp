@@ -1,12 +1,15 @@
-import { StringEnum, Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { StringEnum } from "./schema.js";
 import { materializeToolCallResult, type MaterializeCallToolResultInput } from "../artifacts/materializer.js";
-import { getCurrentPluginConfig } from "../config/current-config.js";
 import { getArtifactsDirectoryPath } from "../config/paths.js";
+import { getCurrentPluginConfig } from "../config/current-config.js";
+import type { MaterializationSettings } from "../artifacts/types.js";
 import type { McpToolResultDetails, ServerCatalogResult } from "../modeling/types.js";
-import { refreshFooterStatus } from "../rendering/footer-status.js";
+import { refreshFooterStatus as defaultRefreshFooterStatus } from "../rendering/footer-status.js";
 import { renderMcpToolCall, renderMcpToolResult } from "../rendering/result-renderer.js";
-import { requireCurrentServerRegistry } from "../servers/current-registry.js";
+import type { ServerRegistry, ServerRegistryStatus } from "../servers/registry.js";
+import { getCurrentServerRegistry } from "../servers/current-registry.js";
 import { pluralize } from "../formatting/english.js";
 
 export const mcpToolArgumentsSchema = Type.Unsafe<Record<string, unknown>>({
@@ -28,6 +31,15 @@ export const mcpToolParametersSchema = Type.Object({
   tool: Type.Optional(Type.String({ description: "Tool name; required for the call action" })),
   args: Type.Optional(mcpToolArgumentsSchema),
 });
+
+export interface McpToolRuntime {
+  getRegistry(): ServerRegistry | undefined;
+  getArtifactDir(): string;
+  getMaterializationSettings(): Partial<MaterializationSettings> | undefined;
+  refreshFooterStatus: (
+    status?: ServerRegistryStatus,
+  ) => void | Promise<void>;
+}
 
 function stringifyJson(value: unknown): string {
   return JSON.stringify(value, null, 2);
@@ -124,72 +136,94 @@ function formatCatalogResult(catalog: ServerCatalogResult): string {
   return [`${catalog.tools.length} ${pluralize(catalog.tools.length, "tool")} available:`, ...sections].join("\n\n");
 }
 
-export const mcpTool = defineTool<typeof mcpToolParametersSchema, McpToolResultDetails>({
-  name: "mcp_tool",
-  label: "MCP Tool",
-  description: [
-    "List a selected MCP server's complete tool catalog or call a tool from that catalog.",
-    "Both actions initialize the selected server automatically when needed.",
-    "For call, pass the selected tool's native object input from list and omit args for a zero-argument tool.",
-  ].join(" "),
-  promptSnippet: "List a selected MCP server's complete tool catalog, then call a listed tool with native object arguments.",
-  renderCall: (args, theme, context) => renderMcpToolCall(args, theme, context),
-  renderResult: (result, options, theme, context) => renderMcpToolResult(result, options, theme, context),
-  parameters: mcpToolParametersSchema,
-  async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
-    validateInvocation(params);
-    const registry = requireCurrentServerRegistry();
-    const config = getCurrentPluginConfig();
+function requireRegistry(runtime: McpToolRuntime): ServerRegistry {
+  const registry = runtime.getRegistry();
+  if (!registry) {
+    throw new Error("just-enough-mcp is not initialized for the current session");
+  }
+  return registry;
+}
 
-    if (params.action === "list") {
+export function createMcpTool(runtime: McpToolRuntime) {
+  return defineTool<typeof mcpToolParametersSchema, McpToolResultDetails>({
+    name: "mcp_tool",
+    label: "MCP Tool",
+    description: [
+      "List a selected MCP server's complete tool catalog or call a tool from that catalog.",
+      "Both actions initialize the selected server automatically when needed.",
+      "For call, pass the selected tool's native object input from list and omit args for a zero-argument tool.",
+    ].join(" "),
+    promptSnippet: "List a selected MCP server's complete tool catalog, then call a listed tool with native object arguments.",
+    renderCall: (args, theme, context) => renderMcpToolCall(args, theme, context),
+    renderResult: (result, options, theme, context) => renderMcpToolResult(result, options, theme, context),
+    parameters: mcpToolParametersSchema,
+    async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
+      validateInvocation(params);
+      const registry = requireRegistry(runtime);
+
+      if (params.action === "list") {
+        try {
+          const catalog = await registry.getServerCatalog(params.server, signal);
+          return {
+            content: [{
+              type: "text",
+              text: formatCatalogResult(catalog),
+            }],
+            details: {
+              kind: "list",
+              toolCount: catalog.tools.length,
+            },
+          };
+        } finally {
+          await runtime.refreshFooterStatus(await registry.getStatus());
+        }
+      }
+
       try {
-        const catalog = await registry.getServerCatalog(params.server, signal);
+        const args = params.args ?? {};
+        const execution = await registry.callTool(params.server, params.tool!, args, signal);
+        const materialized = materializeMcpToolResult({
+          artifactDir: runtime.getArtifactDir(),
+          server: execution.server.name,
+          tool: execution.toolName,
+          result: execution.result,
+          settings: runtime.getMaterializationSettings(),
+        });
         return {
           content: [{
             type: "text",
-            text: formatCatalogResult(catalog),
+            text: materialized.summaryText,
           }],
           details: {
-            kind: "list",
-            toolCount: catalog.tools.length,
+            kind: "call",
+            payloadItemCount: materialized.payloadItems.length,
+            outcome: execution.result.isError === true ? "error" : "success",
           },
         };
       } finally {
-        await refreshFooterStatus(await registry.getStatus());
+        await runtime.refreshFooterStatus(await registry.getStatus());
       }
-    }
+    },
+  });
+}
 
-    try {
-      const args = params.args ?? {};
-      const execution = await registry.callTool(params.server, params.tool!, args, signal);
-      const materialized = materializeMcpToolResult({
-        artifactDir: config?.artifactDir ?? getArtifactsDirectoryPath(),
-        server: execution.server.name,
-        tool: execution.toolName,
-        result: execution.result,
-        settings: config?.materialization,
-      });
-      return {
-        content: [{
-          type: "text",
-          text: materialized.summaryText,
-        }],
-        details: {
-          kind: "call",
-          payloadItemCount: materialized.payloadItems.length,
-          outcome: execution.result.isError === true ? "error" : "success",
-        },
-      };
-    } finally {
-      await refreshFooterStatus(await registry.getStatus());
-    }
-  },
-});
+const legacyRuntime: McpToolRuntime = {
+  getRegistry: getCurrentServerRegistry,
+  getArtifactDir: () => getCurrentPluginConfig()?.artifactDir ?? getArtifactsDirectoryPath(),
+  getMaterializationSettings: () => getCurrentPluginConfig()?.materialization,
+  refreshFooterStatus: defaultRefreshFooterStatus,
+};
 
-export function registerMcpTool(pi: ExtensionAPI): void {
-  pi.registerTool(mcpTool);
+export const mcpTool = createMcpTool(legacyRuntime);
+
+export function registerMcpTool(
+  pi: ExtensionAPI,
+  runtime?: McpToolRuntime,
+): ReturnType<typeof createMcpTool> {
+  const tool = runtime ? createMcpTool(runtime) : mcpTool;
+  pi.registerTool(tool);
   pi.on("tool_result", (event) => {
-    if (event.toolName !== mcpTool.name) {
+    if (event.toolName !== tool.name) {
       return;
     }
 
@@ -198,4 +232,5 @@ export function registerMcpTool(pi: ExtensionAPI): void {
       return { isError: true };
     }
   });
+  return tool;
 }

@@ -14,14 +14,28 @@ import {
   DEFAULT_MATERIALIZATION_SETTINGS,
   type MaterializedToolCallResult,
   type MaterializationSettings,
+  type PreparedToolCallResult,
   type SummaryBudget,
 } from "./types.js";
+
+export interface PrepareToolCallResultInput {
+  result: CallToolResult;
+  settings?: Partial<Pick<MaterializationSettings, "prettyPrintJson">>;
+}
 
 export interface MaterializeCallToolResultInput {
   artifactDir: string;
   server: string;
   tool: string;
   result: CallToolResult;
+  settings?: Partial<MaterializationSettings>;
+}
+
+export interface MaterializePreparedToolCallResultInput {
+  artifactDir: string;
+  server: string;
+  tool: string;
+  prepared: PreparedToolCallResult;
   settings?: Partial<MaterializationSettings>;
 }
 
@@ -34,29 +48,37 @@ function toSummaryBudget(settings: MaterializationSettings): SummaryBudget {
   };
 }
 
-export function materializeToolCallResult(input: MaterializeCallToolResultInput): MaterializedToolCallResult {
+export function prepareToolCallResult(
+  input: PrepareToolCallResultInput,
+): PreparedToolCallResult {
+  const extracted = extractPayloadDrafts(input.result);
+  return normalizePayloadDrafts(extracted, {
+    prettyPrintJson: input.settings?.prettyPrintJson
+      ?? DEFAULT_MATERIALIZATION_SETTINGS.prettyPrintJson,
+  });
+}
+
+export function materializePreparedToolCallResult(
+  input: MaterializePreparedToolCallResultInput,
+): MaterializedToolCallResult {
   const settings: MaterializationSettings = {
     ...DEFAULT_MATERIALIZATION_SETTINGS,
     ...(input.settings ?? {}),
   };
-
-  const extracted = extractPayloadDrafts(input.result);
-  const normalized = normalizePayloadDrafts(extracted, settings);
   const budget = toSummaryBudget(settings);
-
   const context = createArtifactContext({
     artifactDir: input.artifactDir,
     server: input.server,
   });
 
   try {
-    const storedItems = storePayloadItems(normalized.items, context);
+    const storedItems = storePayloadItems(input.prepared.items, context);
     const manifest = writeToolCallManifest({
       server: input.server,
       tool: input.tool,
       context,
       payloadItems: storedItems,
-      suppressedStructuredContent: normalized.suppressedStructuredContent,
+      suppressedStructuredContent: input.prepared.suppressedStructuredContent,
     });
     const payloadItems = attachPayloadPreviews(storedItems, settings);
     const summaryText = buildResultSummary(payloadItems, manifest.manifestPath, budget);
@@ -81,4 +103,20 @@ export function materializeToolCallResult(input: MaterializeCallToolResultInput)
     }
     throw error;
   }
+}
+
+export function materializeToolCallResult(
+  input: MaterializeCallToolResultInput,
+): MaterializedToolCallResult {
+  const prepared = prepareToolCallResult({
+    result: input.result,
+    settings: input.settings,
+  });
+  return materializePreparedToolCallResult({
+    artifactDir: input.artifactDir,
+    server: input.server,
+    tool: input.tool,
+    prepared,
+    settings: input.settings,
+  });
 }

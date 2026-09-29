@@ -16,7 +16,7 @@ const disposers: Array<() => void> = [];
 
 function makeRegistry(): ServerRegistry {
   return {
-    initialize: async () => {},
+    initialize: async () => ({ eagerFailures: [] }),
     getStatus: async () => ({ servers: [], connectedCount: 0, totalCount: 0 }),
     getServerSnapshot: async () => undefined,
     connectServer: async () => { throw new Error("unused"); },
@@ -25,7 +25,7 @@ function makeRegistry(): ServerRegistry {
     logoutServer: async () => { throw new Error("unused"); },
     getServerCatalog: async () => { throw new Error("unused"); },
     callTool: async () => { throw new Error("unused"); },
-    closeAll: async () => {},
+    close: async () => {},
   };
 }
 

@@ -1,10 +1,11 @@
-import { StringEnum, Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { StringEnum } from "./schema.js";
 import type { McpServerResultDetails } from "../modeling/types.js";
-import { refreshFooterStatus } from "../rendering/footer-status.js";
+import { refreshFooterStatus as defaultRefreshFooterStatus } from "../rendering/footer-status.js";
 import { renderMcpServerCall, renderMcpServerResult } from "../rendering/result-renderer.js";
-import { requireCurrentServerRegistry } from "../servers/current-registry.js";
-import type { ServerRegistryStatus } from "../servers/registry.js";
+import type { ServerRegistry, ServerRegistryStatus } from "../servers/registry.js";
+import { getCurrentServerRegistry } from "../servers/current-registry.js";
 import { pluralize } from "../formatting/english.js";
 
 export const mcpServerParametersSchema = Type.Object({
@@ -15,6 +16,13 @@ export const mcpServerParametersSchema = Type.Object({
     description: "Optional server name for status; required for connect, disconnect, authorize, and logout",
   })),
 });
+
+export interface McpServerToolRuntime {
+  getRegistry(): ServerRegistry | undefined;
+  refreshFooterStatus: (
+    status?: ServerRegistryStatus,
+  ) => void | Promise<void>;
+}
 
 function requireServer(params: { action: string; server?: string }): string {
   if (params.server === undefined || !params.server.trim()) {
@@ -66,112 +74,136 @@ function formatServerStatus(status: ServerRegistryStatus): string {
   ].join("\n\n");
 }
 
-export const mcpServerTool = defineTool<typeof mcpServerParametersSchema, McpServerResultDetails>({
-  name: "mcp_server",
-  label: "MCP Server",
-  // mcp_tool 通常按需初始化，但某些 server（例如后台进程）需要显式 startup/readiness。
-  // authorize 会打开浏览器，因此工具描述中明确其用户意图边界和后续重试要求。
-  description: [
-    "Inspect configured MCP server state or explicitly control availability.",
-    "mcp_tool list and call initialize servers automatically. Use connect or disconnect only when explicit lifecycle control is useful.",
-    "For example, use connect when a server requires explicit startup or readiness, such as a background-process server.",
-    "For OAuth, authorize opens the user's browser and waits until the user finishes; call it after obtaining the user's consent or when the user has explicitly asked to access that server, then retry the operation that required authorization.",
-    "logout removes local OAuth credentials and does not revoke remote tokens.",
-  ].join(" "),
-  promptSnippet: "Inspect MCP server status, explicitly control availability when needed, and manage OAuth authorization.",
-  renderCall: (args, theme, context) => renderMcpServerCall(args, theme, context),
-  renderResult: (result, options, theme, context) => renderMcpServerResult(result, options, theme, context),
-  parameters: mcpServerParametersSchema,
-  async execute(_toolCallId, params, signal) {
-    const serverName = validateInvocation(params);
-    const registry = requireCurrentServerRegistry();
+function requireRegistry(runtime: McpServerToolRuntime): ServerRegistry {
+  const registry = runtime.getRegistry();
+  if (!registry) {
+    throw new Error("just-enough-mcp is not initialized for the current session");
+  }
+  return registry;
+}
 
-    if (params.action === "status") {
-      try {
-        if (serverName !== undefined) {
-          const server = await registry.getServerSnapshot(serverName);
-          if (!server) {
-            throw new Error(`Unknown MCP server: ${serverName}`);
+export function createMcpServerTool(
+  runtime: McpServerToolRuntime,
+) {
+  return defineTool<typeof mcpServerParametersSchema, McpServerResultDetails>({
+    name: "mcp_server",
+    label: "MCP Server",
+    // mcp_tool 通常按需初始化，但某些 server（例如后台进程）需要显式 startup/readiness。
+    // authorize 会打开浏览器，因此工具描述中明确其用户意图边界和后续重试要求。
+    description: [
+      "Inspect configured MCP server state or explicitly control availability.",
+      "mcp_tool list and call initialize servers automatically. Use connect or disconnect only when explicit lifecycle control is useful.",
+      "For example, use connect when a server requires explicit startup or readiness, such as a background-process server.",
+      "For OAuth, authorize opens the user's browser and waits until the user finishes; call it after obtaining the user's consent or when the user has explicitly asked to access that server, then retry the operation that required authorization.",
+      "logout removes local OAuth credentials and does not revoke remote tokens.",
+    ].join(" "),
+    promptSnippet: "Inspect MCP server status, explicitly control availability when needed, and manage OAuth authorization.",
+    renderCall: (args, theme, context) => renderMcpServerCall(args, theme, context),
+    renderResult: (result, options, theme, context) => renderMcpServerResult(result, options, theme, context),
+    parameters: mcpServerParametersSchema,
+    async execute(_toolCallId, params, signal) {
+      const serverName = validateInvocation(params);
+      const registry = requireRegistry(runtime);
+
+      if (params.action === "status") {
+        try {
+          if (serverName !== undefined) {
+            const server = await registry.getServerSnapshot(serverName);
+            if (!server) {
+              throw new Error(`Unknown MCP server: ${serverName}`);
+            }
+            return {
+              content: [{
+                type: "text",
+                text: [
+                  server.connectState,
+                  ...(server.oauthState ? [`oauth: ${server.oauthState}`] : []),
+                ].join("\n"),
+              }],
+              details: {
+                kind: "status",
+                serverName: server.name,
+                connectState: server.connectState,
+                ...(server.oauthState ? { oauthState: server.oauthState } : {}),
+              },
+            };
           }
+
+          const status = await registry.getStatus();
           return {
-            content: [{
-              type: "text",
-              text: [
-                server.connectState,
-                ...(server.oauthState ? [`oauth: ${server.oauthState}`] : []),
-              ].join("\n"),
-            }],
+            content: [{ type: "text", text: formatServerStatus(status) }],
             details: {
               kind: "status",
-              serverName: server.name,
-              connectState: server.connectState,
-              ...(server.oauthState ? { oauthState: server.oauthState } : {}),
+              connectedCount: status.connectedCount,
+              totalCount: status.totalCount,
             },
           };
+        } finally {
+          await runtime.refreshFooterStatus(await registry.getStatus());
         }
+      }
 
-        const status = await registry.getStatus();
+      if (params.action === "connect") {
+        try {
+          await registry.connectServer(serverName!, signal);
+        } finally {
+          await runtime.refreshFooterStatus(await registry.getStatus());
+        }
         return {
-          content: [{ type: "text", text: formatServerStatus(status) }],
-          details: {
-            kind: "status",
-            connectedCount: status.connectedCount,
-            totalCount: status.totalCount,
-          },
+          content: [{ type: "text", text: "connected" }],
+          details: { kind: "connect" },
         };
-      } finally {
-        await refreshFooterStatus(await registry.getStatus());
       }
-    }
 
-    if (params.action === "connect") {
+      if (params.action === "disconnect") {
+        try {
+          await registry.disconnectServer(serverName!);
+        } finally {
+          await runtime.refreshFooterStatus(await registry.getStatus());
+        }
+        return {
+          content: [{ type: "text", text: "disconnected" }],
+          details: { kind: "disconnect" },
+        };
+      }
+
+      if (params.action === "authorize") {
+        try {
+          await registry.authorizeServer(serverName!, signal);
+        } finally {
+          await runtime.refreshFooterStatus(await registry.getStatus());
+        }
+        return {
+          content: [{ type: "text", text: "authorized" }],
+          details: { kind: "authorize" },
+        };
+      }
+
       try {
-        await registry.connectServer(serverName!, signal);
+        await registry.logoutServer(serverName!);
       } finally {
-        await refreshFooterStatus(await registry.getStatus());
+        await runtime.refreshFooterStatus(await registry.getStatus());
       }
       return {
-        content: [{ type: "text", text: "connected" }],
-        details: { kind: "connect" },
+        content: [{ type: "text", text: "logged out" }],
+        details: { kind: "logout" },
       };
-    }
+    },
+  });
+}
 
-    if (params.action === "disconnect") {
-      try {
-        await registry.disconnectServer(serverName!);
-      } finally {
-        await refreshFooterStatus(await registry.getStatus());
-      }
-      return {
-        content: [{ type: "text", text: "disconnected" }],
-        details: { kind: "disconnect" },
-      };
-    }
+const legacyRuntime: McpServerToolRuntime = {
+  getRegistry: getCurrentServerRegistry,
+  refreshFooterStatus: defaultRefreshFooterStatus,
+};
 
-    if (params.action === "authorize") {
-      try {
-        await registry.authorizeServer(serverName!, signal);
-      } finally {
-        await refreshFooterStatus(await registry.getStatus());
-      }
-      return {
-        content: [{ type: "text", text: "authorized" }],
-        details: { kind: "authorize" },
-      };
-    }
+export const mcpServerTool = createMcpServerTool(legacyRuntime);
 
-    try {
-      await registry.logoutServer(serverName!);
-    } finally {
-      await refreshFooterStatus(await registry.getStatus());
-    }
-    return {
-      content: [{ type: "text", text: "logged out" }],
-      details: { kind: "logout" },
-    };
-  },
-});
-
-export function registerMcpServerTool(pi: ExtensionAPI): void {
-  pi.registerTool(mcpServerTool);
+export function registerMcpServerTool(
+  pi: ExtensionAPI,
+  runtime?: McpServerToolRuntime,
+): ReturnType<typeof createMcpServerTool> {
+  const tool = runtime ? createMcpServerTool(runtime) : mcpServerTool;
+  pi.registerTool(tool);
+  return tool;
 }

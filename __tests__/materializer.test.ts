@@ -6,7 +6,11 @@ import {
   createArtifactContext,
   rollbackArtifactContext,
 } from "../extensions/artifacts/artifact-store.js";
-import { materializeToolCallResult } from "../extensions/artifacts/materializer.js";
+import {
+  materializePreparedToolCallResult,
+  materializeToolCallResult,
+  prepareToolCallResult,
+} from "../extensions/artifacts/materializer.js";
 import { createTempDirFixture } from "./support/temp-dir.js";
 
 const tempDirs = createTempDirFixture("jem-materializer");
@@ -15,6 +19,46 @@ describe("materializeToolCallResult", () => {
   afterEach(() => {
     vi.useRealTimers();
     tempDirs.cleanup();
+  });
+
+  it("提供不写入文件的规范化结果", () => {
+    const prepared = prepareToolCallResult({
+      result: {
+        content: [{ type: "text", text: "{\"ok\":true}" }],
+        structuredContent: { ok: true },
+      },
+    });
+
+    expect(prepared.items).toHaveLength(1);
+    expect(prepared.items[0]).toMatchObject({
+      mimeType: "application/json",
+      text: "{\n  \"ok\": true\n}",
+      parsedJson: { ok: true },
+    });
+    expect(prepared.structuredContent).toEqual({ ok: true });
+    expect(prepared.suppressedStructuredContent).toEqual({
+      duplicateOf: 1,
+      reason: "semantic-json-equal",
+    });
+  });
+
+  it("可以把规范化结果延迟到调用者选择的时机再物化", () => {
+    const artifactRoot = tempDirs.create();
+    const prepared = prepareToolCallResult({
+      result: {
+        content: [{ type: "text", text: "hello world" }],
+      },
+    });
+
+    const materialized = materializePreparedToolCallResult({
+      artifactDir: artifactRoot,
+      server: "demo",
+      tool: "search",
+      prepared,
+    });
+
+    expect(materialized.payloadItems).toHaveLength(1);
+    expect(existsSync(materialized.manifestPath)).toBe(true);
   });
 
   it("保留合法服务器名作为调用目录前缀", () => {

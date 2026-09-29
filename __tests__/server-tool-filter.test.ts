@@ -212,12 +212,9 @@ describe("基于 SDK 的服务器工具", () => {
     const second = registry.initialize();
 
     expect(second).toBe(first);
-    await expect(first).resolves.toBeUndefined();
-    await expect(second).resolves.toBeUndefined();
-    expect(mocks.notifyWarning).toHaveBeenCalledTimes(1);
-    expect(mocks.notifyWarning).toHaveBeenCalledWith(
-      "2 eager MCP servers could not be initialized: failed, also-failed. Use mcp_server or mcp_tool to retry on demand.",
-    );
+    await expect(first).resolves.toEqual({ eagerFailures: ["failed", "also-failed"] });
+    await expect(second).resolves.toEqual({ eagerFailures: ["failed", "also-failed"] });
+    expect(mocks.notifyWarning).not.toHaveBeenCalled();
     expect(mocks.connect).toHaveBeenCalledTimes(3);
     expect((await registry.getServerSnapshot("lazy"))?.connectState).toBe("disconnected");
     expect((await registry.getServerSnapshot("failed"))?.connectState).toBe("disconnected");
@@ -236,10 +233,8 @@ describe("基于 SDK 的服务器工具", () => {
     const failure = new Error("failed eager connection");
     mocks.connect.mockRejectedValueOnce(failure);
 
-    await expect(registry.initialize()).resolves.toBeUndefined();
-    expect(mocks.notifyWarning).toHaveBeenCalledWith(
-      "1 eager MCP server could not be initialized: demo. Use mcp_server or mcp_tool to retry on demand.",
-    );
+    await expect(registry.initialize()).resolves.toEqual({ eagerFailures: ["demo"] });
+    expect(mocks.notifyWarning).not.toHaveBeenCalled();
     await expect(registry.getServerCatalog("demo")).resolves.toMatchObject({
       server: { connectState: "connected" },
     });
@@ -699,18 +694,17 @@ describe("基于 SDK 的服务器工具", () => {
     expect((await registry.getServerSnapshot("demo"))?.connectState).toBe("disconnected");
   });
 
-  it("closeAll 等待连接完成后关闭并移除服务器", async () => {
+  it("close 等待连接完成后关闭并移除服务器", async () => {
     const registry = createRegistry();
     const connectGate = createDeferred();
     mocks.connect.mockImplementationOnce(() => connectGate.promise);
-
     const connecting = registry.connectServer("demo");
     await vi.waitFor(async () => {
       expect((await registry.getServerSnapshot("demo"))?.connectState).toBe("connecting");
     });
 
     let closeSettled = false;
-    const closing = registry.closeAll().finally(() => {
+    const closing = registry.close().finally(() => {
       closeSettled = true;
     });
     await Promise.resolve();
@@ -721,25 +715,26 @@ describe("基于 SDK 的服务器工具", () => {
     await expect(connecting).resolves.toMatchObject({ connectState: "connected" });
     await closing;
 
-    expect(await registry.getServerSnapshot("demo")).toBeUndefined();
+    await expect(registry.getServerSnapshot("demo")).rejects.toThrow(
+      "MCP server registry is closed.",
+    );
     expect(mocks.close).toHaveBeenCalledTimes(1);
     expect(mocks.transportClose).toHaveBeenCalledTimes(1);
   });
 
-  it("closeAll 等待并发工具调用自然完成", async () => {
+  it("close 等待并发工具调用自然完成", async () => {
     const registry = createRegistry();
     await registry.getServerCatalog("demo");
     const callGate = createDeferred();
     mocks.callTool.mockImplementation(() => callGate.promise.then(() => ({
       content: [{ type: "text", text: "ok" }],
     })));
-
     const firstCall = registry.callTool("demo", "search", { request: 1 });
     const secondCall = registry.callTool("demo", "search", { request: 2 });
     await vi.waitFor(() => expect(mocks.callTool).toHaveBeenCalledTimes(2));
 
     let closeSettled = false;
-    const closing = registry.closeAll().finally(() => {
+    const closing = registry.close().finally(() => {
       closeSettled = true;
     });
     await Promise.resolve();
@@ -750,7 +745,9 @@ describe("基于 SDK 的服务器工具", () => {
     await Promise.all([firstCall, secondCall]);
     await closing;
 
-    expect(await registry.getServerSnapshot("demo")).toBeUndefined();
+    await expect(registry.getServerSnapshot("demo")).rejects.toThrow(
+      "MCP server registry is closed.",
+    );
     expect(mocks.close).toHaveBeenCalledTimes(1);
   });
 

@@ -55,6 +55,12 @@ export interface ExtractedPayloadDrafts {
   structuredContent?: Record<string, unknown>;
 }
 
+export interface PreparedToolCallResult {
+  items: PayloadDraft[];
+  structuredContent?: Record<string, unknown>;
+  suppressedStructuredContent?: SuppressedStructuredContent;
+}
+
 export interface StoredPayloadItem {
   index: number;
   source: string;
