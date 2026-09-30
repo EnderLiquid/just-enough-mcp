@@ -1,11 +1,11 @@
 import { createServer } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
-import { OAuthBrokerClient } from "../extensions/src/core/oauth/broker/client.js";
-import { runOAuthBrokerProcess } from "../extensions/src/core/oauth/broker/broker-process.js";
-import { FileOAuthCredentialRepository } from "../extensions/src/core/oauth/broker/credential-repository.js";
-import { createOAuthIdentity, type OAuthIdentity } from "../extensions/src/core/oauth/broker/identity.js";
-import { OauthHttpServer } from "../extensions/src/core/servers/servers/oauth-http-server.js";
-import type { ResolvedServerConfig } from "../extensions/src/core/modeling/types.js";
+import { OAuthBrokerClient } from "../src/core/oauth/broker/client.js";
+import { runOAuthBrokerProcess } from "../src/core/oauth/broker/broker-process.js";
+import { FileOAuthCredentialRepository } from "../src/core/oauth/broker/credential-repository.js";
+import { createOAuthIdentity, type OAuthIdentity } from "../src/core/oauth/broker/identity.js";
+import { OauthHttpServer } from "../src/core/servers/servers/oauth-http-server.js";
+import type { ResolvedServerConfig } from "../src/core/modeling/types.js";
 import { FakeOAuthAuthorizationServer } from "./support/fake-oauth-as.js";
 import { bearerTokenOf, startFakeMcpServer, type FakeMcpServer } from "./support/fake-mcp-server.js";
 import { createTempDirFixture } from "./support/temp-dir.js";

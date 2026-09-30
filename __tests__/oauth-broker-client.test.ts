@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   OAuthBrokerClient,
-} from "../extensions/src/core/oauth/broker/client.js";
+} from "../src/core/oauth/broker/client.js";
 import {
   createOAuthBrokerSuccessEnvelope,
   OAUTH_BROKER_ACCESS_FORMAT,
@@ -12,8 +12,8 @@ import {
   OAUTH_BROKER_SESSION_ID_HEADER,
   type OAuthBrokerAccessDescriptor,
   type OAuthBrokerHealth,
-} from "../extensions/src/core/oauth/broker/protocol.js";
-import { writeOAuthBrokerAccess } from "../extensions/src/core/oauth/broker/runtime-files.js";
+} from "../src/core/oauth/broker/protocol.js";
+import { writeOAuthBrokerAccess } from "../src/core/oauth/broker/runtime-files.js";
 import { createTempDirFixture } from "./support/temp-dir.js";
 
 const tempDirs = createTempDirFixture("just-enough-mcp-oauth-broker-client");

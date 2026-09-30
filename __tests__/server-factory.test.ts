@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import type { OAuthBrokerClient } from "../extensions/src/core/oauth/broker/client.js";
-import type { ResolvedServerConfig, ServerDefinition } from "../extensions/src/core/modeling/types.js";
-import { createMcpServer } from "../extensions/src/core/servers/servers/factory.js";
-import { HttpPublicServer } from "../extensions/src/core/servers/servers/http-public-server.js";
-import { HttpTokenServer } from "../extensions/src/core/servers/servers/http-token-server.js";
-import { StdioPragmaticServer } from "../extensions/src/core/servers/servers/stdio-pragmatic-server.js";
-import { OauthHttpServer } from "../extensions/src/core/servers/servers/oauth-http-server.js";
+import type { OAuthBrokerClient } from "../src/core/oauth/broker/client.js";
+import type { ResolvedServerConfig, ServerDefinition } from "../src/core/modeling/types.js";
+import { createMcpServer } from "../src/core/servers/servers/factory.js";
+import { HttpPublicServer } from "../src/core/servers/servers/http-public-server.js";
+import { HttpTokenServer } from "../src/core/servers/servers/http-token-server.js";
+import { StdioPragmaticServer } from "../src/core/servers/servers/stdio-pragmatic-server.js";
+import { OauthHttpServer } from "../src/core/servers/servers/oauth-http-server.js";
 
 function makeConfig(definition: ServerDefinition, overrides: Partial<ResolvedServerConfig> = {}): ResolvedServerConfig {
   return {

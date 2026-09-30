@@ -4,11 +4,11 @@ import {
   DEFAULT_TUI_RESULT_RENDER_SETTINGS,
   type McpTuiRenderMode,
   type TuiResultRenderSettings,
-} from "../extensions/src/pi/rendering/types.js";
+} from "../src/pi/rendering/types.js";
 import {
   createMcpResultRenderer,
   formatMcpToolResultLines,
-} from "../extensions/src/pi/rendering/result-renderer.js";
+} from "../src/pi/rendering/result-renderer.js";
 
 const testTheme = {
   fg: (color: string, text: string) => `<${color}>${text}</${color}>`,

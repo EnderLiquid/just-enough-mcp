@@ -5,7 +5,7 @@ import {
   RegistryClosedError,
   UnknownServerError,
   type McpRegistry,
-} from "../extensions/src/core/index.js";
+} from "../src/core/index.js";
 
 function createRegistry(): McpRegistry {
   return createMcpRegistry([

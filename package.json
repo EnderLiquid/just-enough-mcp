@@ -16,20 +16,19 @@
     "model-context-protocol"
   ],
   "files": [
-    "extensions",
-    "skills",
+    "src",
     "README.md",
     "LICENSE"
   ],
   "exports": {
-    ".": "./extensions/src/pi/index.ts"
+    ".": "./src/pi/index.ts"
   },
   "pi": {
     "extensions": [
-      "./extensions/src/pi/index.ts"
+      "./src/pi/index.ts"
     ],
     "skills": [
-      "./skills"
+      "./src/pi/skills"
     ]
   },
   "peerDependencies": {

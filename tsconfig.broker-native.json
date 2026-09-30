@@ -3,5 +3,7 @@
   "compilerOptions": {
     "erasableSyntaxOnly": true
   },
-  "include": ["extensions/src/core/oauth/broker/**/*.ts"]
+  "include": [
+    "src/core/oauth/broker/**/*.ts"
+  ]
 }

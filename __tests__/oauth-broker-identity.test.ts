@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createOAuthIdentity,
   createRequestHeadersDigest,
-} from "../extensions/src/core/oauth/broker/identity.js";
+} from "../src/core/oauth/broker/identity.js";
 
 describe("OAuth identity v1", () => {
   it("以稳定的 canonical 字段生成 identity，并默认 profile", () => {

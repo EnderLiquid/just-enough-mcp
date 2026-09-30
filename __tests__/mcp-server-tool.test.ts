@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { McpRegistry } from "../extensions/src/core/servers/registry.js";
-import { UnknownServerError } from "../extensions/src/core/servers/errors.js";
+import type { McpRegistry } from "../src/core/servers/registry.js";
+import { UnknownServerError } from "../src/core/servers/errors.js";
 import { makeServerSnapshot } from "./support/model-fixtures.js";
 
 const mocks = vi.hoisted(() => ({}));
@@ -10,7 +10,7 @@ import {
   createMcpServerTool,
   registerMcpServerTool,
   type McpServerToolRuntime,
-} from "../extensions/src/pi/tools/mcp-server-tool.js";
+} from "../src/pi/tools/mcp-server-tool.js";
 
 let currentRegistry: McpRegistry | undefined;
 let refreshFooter: McpServerToolRuntime["refreshFooterStatus"] = () => {};
