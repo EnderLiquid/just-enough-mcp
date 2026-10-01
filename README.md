@@ -129,6 +129,8 @@ mcp_tool({
 })
 ```
 
+在支持 Pi `0.99.2` codemode 结构化结果的宿主中，`mcp_tool` 还会声明 `outputSchema`：codemode 的脚本可以从 `list` 结果读取 `tools`，从 `call` 结果读取 `payloadItems`、`manifestPath` 和 `isError`。`payloadItems` 保留文本、JSON、媒体和 artifact 路径等程序化字段，但不包含面向展示的逐项 `preview` 或预先拼接的 `summaryText`；脚本可以根据任务自行截断和组合结果。JSON payload 会在 `payloadItems[].parsedJson` 中保留解析后的值，普通模型仍然只接收文本摘要。该适配继续使用单一 `mcp_tool` 代理，不会在脚本执行期间动态注册远程工具。
+
 OAuth server 首次使用前执行：
 
 ```ts

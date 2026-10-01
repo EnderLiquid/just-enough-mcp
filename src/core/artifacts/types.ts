@@ -69,6 +69,7 @@ export interface StoredPayloadItem {
   description?: string;
   text?: string;
   binaryBase64?: string;
+  parsedJson?: unknown;
   path: string;
   fileName: string;
   preview?: string[];

@@ -16,6 +16,7 @@ vi.mock("../src/core/artifacts/materializer.js", () => ({
 
 import {
   createMcpTool,
+  mcpToolOutputSchema,
   mcpToolParametersSchema,
   registerMcpTool,
   type McpToolRuntime,
@@ -86,7 +87,7 @@ afterEach(() => {
   refreshFooter = () => {};
 });
 
-function makeMaterialized(summaryText = "ok"): MaterializedToolCallResult {
+function makeMaterialized(summaryText = "ok", parsedJson?: unknown): MaterializedToolCallResult {
   const callDir = "D:/project/.pi/agent/just-enough-mcp/artifacts/demo-call";
   const payloadPath = `${callDir}/01-text.txt`;
   const manifestPath = `${callDir}/manifest.json`;
@@ -101,6 +102,8 @@ function makeMaterialized(summaryText = "ok"): MaterializedToolCallResult {
       path: payloadPath,
       fileName: "01-text.txt",
       text: summaryText,
+      preview: ["display-only preview"],
+      ...(parsedJson !== undefined ? { parsedJson } : {}),
     }],
     manifestPayloadItems: [{
       index: 1,
@@ -144,6 +147,43 @@ describe("mcp_tool 参数 schema", () => {
       properties: {},
       additionalProperties: true,
     });
+  });
+
+  it("声明 catalog 与 call 的结构化输出 schema，不包含展示摘要", () => {
+    const validator = Compile(mcpToolOutputSchema);
+    expect(validator.Check({
+      kind: "catalog",
+      server: "demo",
+      tools: [{ name: "search", inputSchema: { type: "object" } }],
+    })).toBe(true);
+
+    const call = {
+      kind: "call",
+      server: "demo",
+      tool: "search",
+      payloadItems: [{
+        index: 1,
+        source: "content[0]",
+        mimeType: "application/json",
+        parsedJson: { ok: true },
+        path: "D:/artifacts/01-json.json",
+        fileName: "01-json.json",
+      }],
+      manifestPath: "D:/artifacts/manifest.json",
+      isError: false,
+    };
+
+    expect(validator.Check(call)).toBe(true);
+    expect(validator.Check({ ...call, summaryText: "display summary" })).toBe(false);
+    expect(validator.Check({
+      ...call,
+      payloadItems: [{ ...call.payloadItems[0], preview: ["display-only preview"] }],
+    })).toBe(false);
+
+    const serialized = JSON.stringify(mcpToolOutputSchema);
+    expect(serialized).not.toMatch(/anyOf|oneOf|\\$ref/);
+    expect(serialized).not.toContain("summaryText");
+    expect(serialized).not.toContain("preview");
   });
 });
 
@@ -212,6 +252,11 @@ describe("mcpTool.execute", () => {
       type: "text",
       text: expect.stringContaining("1 tool available:\n\n[1] search"),
     });
+    expect(result.structuredContent).toEqual({
+      kind: "catalog",
+      server: "codegraph",
+      tools: [{ name: "search", description: "Search", inputSchema: { type: "object" } }],
+    });
     expect(result.details).toEqual({ kind: "list", toolCount: 1 });
   });
 
@@ -237,7 +282,7 @@ describe("mcpTool.execute", () => {
       args,
       result: { content: [{ type: "text", text: "ok" }] },
     });
-    mocks.materializeToolCallResult.mockReturnValue(makeMaterialized());
+    mocks.materializeToolCallResult.mockReturnValue(makeMaterialized("ok", { matches: 1 }));
     useRuntime({ refreshFooter, registry: { callTool } });
 
     const result = await executeMcpTool({
@@ -249,6 +294,18 @@ describe("mcpTool.execute", () => {
 
     expect(callTool).toHaveBeenCalledWith("demo", "search", args, signal);
     expect(refreshFooter).toHaveBeenCalledTimes(1);
+    expect(result.content).toEqual([{ type: "text", text: "ok" }]);
+    expect(result.structuredContent).toEqual({
+      kind: "call",
+      server: "demo",
+      tool: "search",
+      payloadItems: expect.arrayContaining([expect.objectContaining({ text: "ok", parsedJson: { matches: 1 } })]),
+      manifestPath: "D:/project/.pi/agent/just-enough-mcp/artifacts/demo-call/manifest.json",
+      isError: false,
+    });
+    expect(result.structuredContent).not.toHaveProperty("summaryText");
+    const structuredContent = result.structuredContent as { payloadItems: unknown[] };
+    expect(structuredContent.payloadItems[0]).not.toHaveProperty("preview");
     expect(result.details).toEqual({ kind: "call", payloadItemCount: 1, outcome: "success" });
   });
 
@@ -322,7 +379,17 @@ describe("mcpTool.execute", () => {
 
     const result = await executeMcpTool({ action: "call", server: "demo", tool: "search" });
 
-    expect(result).not.toHaveProperty("isError");
+    expect(result).toMatchObject({
+      isError: true,
+      structuredContent: {
+        kind: "call",
+        server: "demo",
+        tool: "search",
+        isError: true,
+      },
+    });
+    expect(result.structuredContent).not.toHaveProperty("summaryText");
+    expect(result.structuredContent).not.toHaveProperty("payloadItems.0.preview");
     expect(result.details).toEqual({ kind: "call", payloadItemCount: 1, outcome: "error" });
   });
 });

@@ -159,6 +159,7 @@ function toStoredPayloadItem(item: NormalizedPayloadItem & { index: number; path
     ...(item.description ? { description: item.description } : {}),
     ...(item.text !== undefined ? { text: item.text } : {}),
     ...(item.binaryBase64 !== undefined ? { binaryBase64: item.binaryBase64 } : {}),
+    ...(item.parsedJson !== undefined ? { parsedJson: item.parsedJson } : {}),
     path: item.path,
     fileName: item.fileName,
   };

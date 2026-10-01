@@ -189,8 +189,36 @@ describe("materializeToolCallResult", () => {
     expect(materialized.payloadItems).toHaveLength(1);
     expect(materialized.payloadItems[0]?.mimeType).toBe("application/json");
     expect(materialized.payloadItems[0]?.rawMimeType).toBe("text/plain");
+    expect(materialized.payloadItems[0]?.parsedJson).toEqual({ ok: true, count: 2 });
     expect(materialized.payloadItems[0]?.fileName).toBe("01-json.json");
     expect(materialized.summaryText).toContain('"ok": true');
+  });
+
+  it("保留 JSON payload 的合法假值 parsedJson", () => {
+    const artifactRoot = tempDirs.create();
+    const result: CallToolResult = {
+      content: [
+        { type: "text", text: "null" },
+        { type: "text", text: "false" },
+        { type: "text", text: "0" },
+        { type: "text", text: "\"\"" },
+      ],
+      isError: false,
+    };
+
+    const materialized = materializeToolCallResult({
+      artifactDir: artifactRoot,
+      server: "demo",
+      tool: "json-values",
+      result,
+    });
+
+    expect(materialized.payloadItems.map(item => item.parsedJson)).toEqual([
+      null,
+      false,
+      0,
+      "",
+    ]);
   });
 
   it("标记行内截断，报告剩余字符数和行数", () => {

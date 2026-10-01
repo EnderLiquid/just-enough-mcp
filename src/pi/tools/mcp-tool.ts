@@ -1,10 +1,11 @@
 import { Type } from "typebox";
+import type { JsonValue } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "./schema.js";
 import { materializeToolCallResult, type MaterializeCallToolResultInput } from "../../core/artifacts/materializer.js";
-import type { MaterializationSettings } from "../../core/artifacts/types.js";
+import type { MaterializationSettings, StoredPayloadItem } from "../../core/artifacts/types.js";
 import type { TuiResultRenderSettings } from "../rendering/types.js";
-import type { McpToolResultDetails } from "./types.js";
+import type { McpToolResultDetails, McpToolStructuredContent, McpToolStructuredPayloadItem } from "./types.js";
 import type { ServerCatalogResult } from "../../core/modeling/types.js";
 import { createMcpResultRenderer } from "../rendering/result-renderer.js";
 import type { McpRegistry, McpRegistryStatus } from "../../core/servers/registry.js";
@@ -29,6 +30,60 @@ export const mcpToolParametersSchema = Type.Object({
   tool: Type.Optional(Type.String({ description: "Tool name; required for the call action" })),
   args: Type.Optional(mcpToolArgumentsSchema),
 });
+
+export const mcpToolOutputSchema = Type.Unsafe({
+  type: "object",
+  properties: {
+    kind: {
+      type: "string",
+      enum: ["catalog", "call"],
+    },
+    server: { type: "string" },
+    tools: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: true,
+      },
+    },
+    tool: { type: "string" },
+    payloadItems: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          index: { type: "integer" },
+          source: { type: "string" },
+          contentType: { type: "string" },
+          mimeType: { type: "string" },
+          rawMimeType: { type: "string" },
+          uri: { type: "string" },
+          description: { type: "string" },
+          text: { type: "string" },
+          binaryBase64: { type: "string" },
+          parsedJson: {},
+          path: { type: "string" },
+          fileName: { type: "string" },
+        },
+        required: ["index", "source", "mimeType", "path", "fileName"],
+        additionalProperties: false,
+      },
+    },
+    manifestPath: { type: "string" },
+    isError: { type: "boolean" },
+  },
+  required: ["kind", "server"],
+  additionalProperties: false,
+});
+
+function toStructuredPayloadItem(item: StoredPayloadItem): McpToolStructuredPayloadItem {
+  const { preview: _preview, ...structuredItem } = item;
+  return structuredItem;
+}
+
+function asStructuredContent(value: McpToolStructuredContent): JsonValue {
+  return value as unknown as JsonValue;
+}
 
 export interface McpToolRuntime {
   getRegistry(): McpRegistry | undefined;
@@ -157,6 +212,7 @@ export function createMcpTool(runtime: McpToolRuntime) {
     renderCall: (args, theme, context) => renderer.renderMcpToolCall(args, theme, context),
     renderResult: (result, options, theme, context) => renderer.renderMcpToolResult(result, options, theme, context),
     parameters: mcpToolParametersSchema,
+    outputSchema: mcpToolOutputSchema,
     async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
       validateInvocation(params);
       const registry = requireRegistry(runtime);
@@ -164,11 +220,17 @@ export function createMcpTool(runtime: McpToolRuntime) {
       if (params.action === "list") {
         try {
           const catalog = await registry.getServerCatalog(params.server, signal);
+          const structuredContent: McpToolStructuredContent = {
+            kind: "catalog",
+            server: catalog.server.name,
+            tools: catalog.tools,
+          };
           return {
             content: [{
               type: "text",
               text: formatCatalogResult(catalog),
             }],
+            structuredContent: asStructuredContent(structuredContent),
             details: {
               kind: "list",
               toolCount: catalog.tools.length,
@@ -189,15 +251,26 @@ export function createMcpTool(runtime: McpToolRuntime) {
           result: execution.result,
           settings: runtime.getMaterializationSettings(),
         });
+        const isError = execution.result.isError === true;
+        const structuredContent: McpToolStructuredContent = {
+          kind: "call",
+          server: execution.server.name,
+          tool: execution.toolName,
+          payloadItems: materialized.payloadItems.map(toStructuredPayloadItem),
+          manifestPath: materialized.manifestPath,
+          isError,
+        };
         return {
           content: [{
             type: "text",
             text: materialized.summaryText,
           }],
+          structuredContent: asStructuredContent(structuredContent),
+          ...(isError ? { isError: true } : {}),
           details: {
             kind: "call",
             payloadItemCount: materialized.payloadItems.length,
-            outcome: execution.result.isError === true ? "error" : "success",
+            outcome: isError ? "error" : "success",
           },
         };
       } finally {
