@@ -1,48 +1,17 @@
 {
-  "name": "just-enough-mcp",
+  "name": "just-enough-mcp-workspace",
   "version": "0.1.0",
-  "description": "A Pi plugin that exposes a minimal multi-server MCP runtime with server-level progressive disclosure.",
+  "private": true,
+  "description": "Workspace for the Just Enough MCP Core and Pi adapter packages.",
   "type": "module",
   "license": "MIT",
   "engines": {
     "node": ">=22.19.0"
   },
-  "author": "EnderLiquid",
-  "keywords": [
-    "pi-package",
-    "pi-extension",
-    "pi-coding-agent",
-    "mcp",
-    "model-context-protocol"
+  "workspaces": [
+    "packages/core",
+    "packages/pi-adapter"
   ],
-  "files": [
-    "src",
-    "README.md",
-    "LICENSE"
-  ],
-  "exports": {
-    ".": "./src/pi/index.ts"
-  },
-  "pi": {
-    "extensions": [
-      "./src/pi/index.ts"
-    ],
-    "skills": [
-      "./src/pi/skills"
-    ]
-  },
-  "peerDependencies": {
-    "@earendil-works/pi-agent-core": "*",
-    "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-coding-agent": "*",
-    "@earendil-works/pi-tui": "*",
-    "typebox": "*"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "1.29.0",
-    "mime-types": "^3.0.2",
-    "proper-lockfile": "^4.1.2"
-  },
   "scripts": {
     "test": "vitest --run",
     "test:types": "tsc --noEmit && tsc -p tsconfig.broker-native.json"
@@ -52,8 +21,11 @@
     "@earendil-works/pi-ai": "0.99.2",
     "@earendil-works/pi-coding-agent": "0.99.2",
     "@earendil-works/pi-tui": "0.99.2",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@types/mime-types": "^3.0.1",
     "@types/node": "^24.10.0",
+    "mime-types": "^3.0.2",
+    "proper-lockfile": "^4.1.2",
     "typebox": "1.3.27",
     "typescript": "^5.9.3",
     "vitest": "^4.1.9"

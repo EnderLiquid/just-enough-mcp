@@ -1,6 +1,6 @@
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ResolvedServerConfig } from "../src/core/modeling/types.js";
+import type { ResolvedServerConfig } from "../packages/core/src/modeling/types.js";
 import { makePluginConfig, makeResolvedServerConfig } from "./support/model-fixtures.js";
 
 const mocks = vi.hoisted(() => ({
@@ -89,7 +89,7 @@ vi.mock("@modelcontextprotocol/sdk/client/streamableHttp.js", () => ({
   },
 }));
 
-import { createMcpRegistry } from "../src/core/servers/registry.js";
+import { createMcpRegistry } from "../packages/core/src/servers/registry.js";
 
 function makeServer(definition: Record<string, unknown>): ResolvedServerConfig {
   return makeResolvedServerConfig({

@@ -5,7 +5,7 @@ import {
   formatMcpToolResultLines,
   type McpToolResultDisplay,
 } from "./mcp-result.js";
-import { pluralize } from "../../core/formatting/english.js";
+import { pluralize } from "@enderliquid/just-enough-mcp";
 import type { McpServerResultDetails, McpToolResultDetails } from "../tools/types.js";
 
 export { formatMcpToolResultLines, type McpToolResultDisplay } from "./mcp-result.js";

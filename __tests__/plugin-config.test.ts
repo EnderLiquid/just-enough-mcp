@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { loadPluginConfigFromPaths } from "../src/pi/config/plugin-config.js";
+import { loadPluginConfigFromPaths } from "../packages/pi-adapter/src/config/plugin-config.js";
 import { createTempDirFixture } from "./support/temp-dir.js";
 
 const tempDirs = createTempDirFixture("jem-config");

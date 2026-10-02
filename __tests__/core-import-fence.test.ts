@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const coreRoot = "src/core";
+const coreRoot = "packages/core/src";
 
 function collectTypeScriptFiles(path: string): string[] {
   if (statSync(path).isFile()) {

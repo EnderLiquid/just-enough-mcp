@@ -11,5 +11,5 @@
     "noEmit": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["src/**/*.ts", "__tests__/**/*.ts"]
+  "include": ["packages/**/*.ts", "__tests__/**/*.ts"]
 }

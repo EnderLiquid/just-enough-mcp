@@ -1,8 +1,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { loadServerOverview } from "../src/core/overview/server-overviews.js";
-import type { BaseServerConfig } from "../src/core/modeling/types.js";
+import { loadServerOverview } from "../packages/core/src/overview/server-overviews.js";
+import type { BaseServerConfig } from "../packages/core/src/modeling/types.js";
 import { createTempDirFixture } from "./support/temp-dir.js";
 
 const tempDirs = createTempDirFixture("jem-overview");

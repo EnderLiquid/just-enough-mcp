@@ -1,15 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
-import { createOAuthIdentity, type OAuthIdentity } from "../src/core/oauth/broker/identity.js";
+import { createOAuthIdentity, type OAuthIdentity } from "../packages/core/src/oauth/broker/identity.js";
 import {
   createOAuthCredentialState,
   type OAuthCredentialState,
   type OAuthTokenUpdate,
-} from "../src/core/oauth/broker/credential-state.js";
+} from "../packages/core/src/oauth/broker/credential-state.js";
 import {
   createOAuthCredentialRecord,
   type OAuthClientRegistration,
   type OAuthCredentialRecord,
-} from "../src/core/oauth/broker/credential-record.js";
+} from "../packages/core/src/oauth/broker/credential-record.js";
 import {
   OAuthAuthorizationRequiredError,
   OAuthClientRejectedError,
@@ -20,8 +20,8 @@ import {
   OAuthTokenCoordinator,
   type OAuthRefreshOperation,
   type OAuthRefreshRequest,
-} from "../src/core/oauth/broker/token-coordinator.js";
-import { InMemoryOAuthCredentialRepository } from "../src/core/oauth/broker/credential-repository.js";
+} from "../packages/core/src/oauth/broker/token-coordinator.js";
+import { InMemoryOAuthCredentialRepository } from "../packages/core/src/oauth/broker/credential-repository.js";
 
 function makeIdentity(name = "demo"): OAuthIdentity {
   return createOAuthIdentity({

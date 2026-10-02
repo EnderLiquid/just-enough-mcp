@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createFooterStatusController,
   type FooterStatusSink,
-} from "../src/pi/rendering/footer-status.js";
+} from "../packages/pi-adapter/src/rendering/footer-status.js";
 
 function createTheme(): FooterStatusSink["theme"] {
   return {

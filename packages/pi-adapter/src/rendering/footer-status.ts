@@ -1,5 +1,5 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import type { McpRegistryStatus } from "../../core/servers/registry.js";
+import type { McpRegistryStatus } from "@enderliquid/just-enough-mcp";
 
 const STATUS_KEY = "just-enough-mcp";
 

@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createCodemodeExtension, type ExtensionAPI, type ExtensionToolContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentTool, AgentToolCallOutcome } from "@earendil-works/pi-agent-core";
-import type { McpRegistry } from "../src/core/servers/registry.js";
-import { createMcpTool, type McpToolRuntime } from "../src/pi/tools/mcp-tool.js";
+import type { McpRegistry } from "../packages/core/src/servers/registry.js";
+import { createMcpTool, type McpToolRuntime } from "../packages/pi-adapter/src/tools/mcp-tool.js";
 import { makeServerSnapshot } from "./support/model-fixtures.js";
 import { createTempDirFixture } from "./support/temp-dir.js";
 

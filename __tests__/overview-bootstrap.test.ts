@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { tryBootstrapOverviewFromDescription } from "../src/core/overview/overview-bootstrap.js";
-import type { ResolvedServerConfig } from "../src/core/modeling/types.js";
+import { tryBootstrapOverviewFromDescription } from "../packages/core/src/overview/overview-bootstrap.js";
+import type { ResolvedServerConfig } from "../packages/core/src/modeling/types.js";
 import { makeResolvedServerConfig } from "./support/model-fixtures.js";
 import { createTempDirFixture } from "./support/temp-dir.js";
 

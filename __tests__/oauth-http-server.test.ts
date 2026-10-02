@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { OAuthAuthenticationError } from "../src/core/oauth/broker/authenticated-fetch.js";
-import { OAuthBrokerClientError } from "../src/core/oauth/broker/client.js";
-import type { ResolvedServerConfig, ServerDefinition } from "../src/core/modeling/types.js";
-import { OauthHttpServer } from "../src/core/servers/servers/oauth-http-server.js";
+import { OAuthAuthenticationError } from "../packages/core/src/oauth/broker/authenticated-fetch.js";
+import { OAuthBrokerClientError } from "../packages/core/src/oauth/broker/client.js";
+import type { ResolvedServerConfig, ServerDefinition } from "../packages/core/src/modeling/types.js";
+import { OauthHttpServer } from "../packages/core/src/servers/servers/oauth-http-server.js";
 
 const mocks = vi.hoisted(() => ({
   clientConnect: vi.fn(),

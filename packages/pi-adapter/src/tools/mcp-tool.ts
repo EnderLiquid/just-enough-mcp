@@ -2,14 +2,19 @@ import { Type } from "typebox";
 import type { JsonValue } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "./schema.js";
-import { materializeToolCallResult, type MaterializeCallToolResultInput } from "../../core/artifacts/materializer.js";
-import type { MaterializationSettings, StoredPayloadItem } from "../../core/artifacts/types.js";
+import {
+  materializeToolCallResult,
+  pluralize,
+  type MaterializeCallToolResultInput,
+  type MaterializationSettings,
+  type McpRegistry,
+  type McpRegistryStatus,
+  type ServerCatalogResult,
+  type StoredPayloadItem,
+} from "@enderliquid/just-enough-mcp";
 import type { TuiResultRenderSettings } from "../rendering/types.js";
 import type { McpToolResultDetails, McpToolStructuredContent, McpToolStructuredPayloadItem } from "./types.js";
-import type { ServerCatalogResult } from "../../core/modeling/types.js";
 import { createMcpResultRenderer } from "../rendering/result-renderer.js";
-import type { McpRegistry, McpRegistryStatus } from "../../core/servers/registry.js";
-import { pluralize } from "../../core/formatting/english.js";
 
 export const mcpToolArgumentsSchema = Type.Unsafe<Record<string, unknown>>({
   type: "object",

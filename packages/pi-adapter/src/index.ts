@@ -6,20 +6,23 @@ import {
   getPluginConfigPath,
   getProjectPluginConfigPath,
 } from "./paths.js";
-import { pluralize } from "../core/formatting/english.js";
+import {
+  createMcpRegistry,
+  pluralize,
+  type McpRegistry,
+} from "@enderliquid/just-enough-mcp";
 import { loadPluginConfigFromPaths } from "./config/plugin-config.js";
 import type { PluginConfigLoadResult } from "./config/types.js";
 import { createServerOverviewPrompt } from "./prompting/system-prompt.js";
 import { createFooterStatusController, type FooterStatusController } from "./rendering/footer-status.js";
 import { createNotifier } from "./rendering/notifier.js";
-import { OAuthBrokerClient } from "../core/oauth/broker/client.js";
 import {
+  OAuthBrokerClient,
   createOAuthBrokerBootstrapper,
+  createOAuthBrokerNamespace,
+  DEFAULT_OAUTH_BROKER_PORT,
   type OAuthBrokerBootstrapper,
-} from "../core/oauth/broker/bootstrapper.js";
-import { createOAuthBrokerNamespace } from "../core/oauth/broker/namespace.js";
-import { DEFAULT_OAUTH_BROKER_PORT } from "../core/oauth/broker/protocol.js";
-import { createMcpRegistry, type McpRegistry } from "../core/servers/registry.js";
+} from "@enderliquid/just-enough-mcp/oauth";
 import {
   registerMcpServerTool,
   type McpServerToolRuntime,

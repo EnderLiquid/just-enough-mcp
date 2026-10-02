@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ResolvedServerConfig } from "../src/core/modeling/types.js";
-import { createMcpRegistry, type McpRegistry } from "../src/core/servers/registry.js";
+import type { ResolvedServerConfig } from "../packages/core/src/modeling/types.js";
+import { createMcpRegistry, type McpRegistry } from "../packages/core/src/servers/registry.js";
 import { makePluginConfig, makeResolvedServerConfig } from "./support/model-fixtures.js";
 
 const mocks = vi.hoisted(() => ({

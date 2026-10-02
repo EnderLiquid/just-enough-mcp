@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createPlatformBrowserOpener } from "../src/core/oauth/broker/browser-opener.js";
+import { createPlatformBrowserOpener } from "../packages/core/src/oauth/broker/browser-opener.js";
 
 vi.mock("node:child_process", () => ({
   spawn: vi.fn(),

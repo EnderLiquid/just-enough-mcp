@@ -1,0 +1,51 @@
+{
+  "name": "@enderliquid/pi-just-enough-mcp",
+  "version": "0.1.0",
+  "description": "Pi adapter for the Just Enough MCP runtime.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "pi-coding-agent",
+    "mcp",
+    "model-context-protocol"
+  ],
+  "dependencies": {
+    "@enderliquid/just-enough-mcp": "0.1.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-agent-core": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ],
+    "skills": [
+      "./src/skills"
+    ]
+  },
+  "homepage": "https://github.com/EnderLiquid/just-enough-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/EnderLiquid/just-enough-mcp/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EnderLiquid/just-enough-mcp.git"
+  }
+}

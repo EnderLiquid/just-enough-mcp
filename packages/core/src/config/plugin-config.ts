@@ -1,5 +1,3 @@
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, isAbsolute, resolve } from "node:path";
 import { loadServerOverview } from "../overview/server-overviews.js";
 import {
   DEFAULT_CONNECTION_MODE,
@@ -11,21 +9,21 @@ import {
   type MaterializationSettings,
 } from "../artifacts/types.js";
 
-export interface RawPluginConfig {
+export interface RawCorePluginConfig {
   materialization?: unknown;
-  /** Host-specific settings remain opaque to Core configuration resolution. */
-  tui?: unknown;
   servers?: Record<string, unknown | null>;
 }
 
-export interface RawPluginConfigSnapshot {
-  configPaths: string[];
-  raw: RawPluginConfig;
-  resolutionConfigPath: string;
+export interface CorePluginConfigResolveOptions {
+  readonly overviewDir: string;
+  /**
+   * Base config path used for a relative explicit overview path.
+   * Host adapters are responsible for deciding how configuration paths are resolved.
+   */
+  readonly configPath?: string;
 }
 
 export interface CorePluginConfigLoadResult {
-  configPaths: string[];
   overviewDir: string;
   materialization: MaterializationSettings;
   servers: ResolvedServerConfig[];
@@ -47,14 +45,6 @@ function ensureBoolean(value: unknown, fieldPath: string): boolean | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== "boolean") {
     throw new Error(`just-enough-mcp config field "${fieldPath}" must be a boolean.`);
-  }
-  return value;
-}
-
-function ensureNonEmptyString(value: unknown, fieldPath: string): string | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== "string" || value.length === 0) {
-    throw new Error(`just-enough-mcp config field "${fieldPath}" must be a non-empty string.`);
   }
   return value;
 }
@@ -157,84 +147,11 @@ function parseResolvedServerConfig(
   };
 }
 
-function normalizeOverviewPaths(configPath: string, raw: RawPluginConfig): RawPluginConfig {
-  if (raw.servers === undefined) {
-    return raw;
-  }
-
-  const servers: Record<string, unknown | null> = {};
-  for (const [serverName, rawServer] of Object.entries(raw.servers)) {
-    if (
-      !isObject(rawServer)
-      || typeof rawServer.overview !== "string"
-      || rawServer.overview.length === 0
-      || isAbsolute(rawServer.overview)
-    ) {
-      servers[serverName] = rawServer;
-      continue;
-    }
-
-    servers[serverName] = {
-      ...rawServer,
-      overview: resolve(dirname(configPath), rawServer.overview),
-    };
-  }
-
-  return { ...raw, servers };
-}
-
-function parseRawConfig(configPath: string): RawPluginConfig {
-  if (!existsSync(configPath)) {
-    return {};
-  }
-
-  const rawText = readFileSync(configPath, "utf8");
-  const parsed: unknown = JSON.parse(rawText);
-  if (!isObject(parsed)) {
-    throw new Error(`just-enough-mcp config "${configPath}" must be a JSON object.`);
-  }
-
-  if (parsed.servers !== undefined && !isObject(parsed.servers)) {
-    throw new Error(`just-enough-mcp config field "servers" in "${configPath}" must be an object.`);
-  }
-
-  return normalizeOverviewPaths(configPath, parsed as RawPluginConfig);
-}
-
-function mergeConfigField(previous: unknown, next: unknown): unknown {
-  if (isObject(previous) && isObject(next)) {
-    return { ...previous, ...next };
-  }
-  return next;
-}
-
-function mergeRawConfigs(layers: readonly RawPluginConfig[]): RawPluginConfig {
-  const merged: RawPluginConfig = {};
-
-  for (const layer of layers) {
-    if (layer.materialization !== undefined) {
-      merged.materialization = mergeConfigField(merged.materialization, layer.materialization);
-    }
-    if (layer.tui !== undefined) {
-      merged.tui = mergeConfigField(merged.tui, layer.tui);
-    }
-    if (layer.servers !== undefined) {
-      const servers = { ...(merged.servers ?? {}) };
-      for (const [serverName, rawServer] of Object.entries(layer.servers)) {
-        if (rawServer === null) {
-          delete servers[serverName];
-        } else {
-          servers[serverName] = rawServer;
-        }
-      }
-      merged.servers = servers;
-    }
-  }
-
-  return merged;
-}
-
-function resolveServers(configPath: string, overviewDir: string, raw: RawPluginConfig): ResolvedServerConfig[] {
+function resolveServers(
+  configPath: string,
+  overviewDir: string,
+  raw: RawCorePluginConfig,
+): ResolvedServerConfig[] {
   const entries = Object.entries(raw.servers ?? {});
   return entries.map(([serverName, rawServer]) => {
     assertValidServerName(serverName);
@@ -242,35 +159,13 @@ function resolveServers(configPath: string, overviewDir: string, raw: RawPluginC
   });
 }
 
-export function loadRawPluginConfigFromPaths(
-  configPaths: readonly string[],
-): RawPluginConfigSnapshot {
-  const normalizedConfigPaths = configPaths.map(configPath => resolve(configPath));
-  return {
-    configPaths: normalizedConfigPaths,
-    raw: mergeRawConfigs(normalizedConfigPaths.map(parseRawConfig)),
-    resolutionConfigPath: normalizedConfigPaths.at(-1) ?? "",
-  };
-}
-
 export function resolveCorePluginConfig(
-  snapshot: RawPluginConfigSnapshot,
-  overviewDir: string,
+  raw: RawCorePluginConfig,
+  options: CorePluginConfigResolveOptions,
 ): CorePluginConfigLoadResult {
   return {
-    configPaths: snapshot.configPaths,
-    overviewDir,
-    materialization: parseMaterialization(snapshot.raw.materialization),
-    servers: resolveServers(snapshot.resolutionConfigPath, overviewDir, snapshot.raw),
+    overviewDir: options.overviewDir,
+    materialization: parseMaterialization(raw.materialization),
+    servers: resolveServers(options.configPath ?? "", options.overviewDir, raw),
   };
-}
-
-export function loadPluginConfigFromPaths(
-  configPaths: readonly string[],
-  overviewDir: string,
-): CorePluginConfigLoadResult {
-  return resolveCorePluginConfig(
-    loadRawPluginConfigFromPaths(configPaths),
-    overviewDir,
-  );
 }

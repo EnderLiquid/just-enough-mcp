@@ -1,6 +1,8 @@
 export {
-  loadPluginConfigFromPaths,
+  resolveCorePluginConfig,
   type CorePluginConfigLoadResult,
+  type CorePluginConfigResolveOptions,
+  type RawCorePluginConfig,
 } from "./config/plugin-config.js";
 export {
   materializePreparedToolCallResult,
@@ -16,6 +18,7 @@ export type {
   MaterializedToolCallResult,
   MaterializationSettings,
   NormalizedPayloadItem,
+  PayloadContentType,
   PreparedToolCallResult,
   StoredPayloadItem,
 } from "./artifacts/types.js";
@@ -30,6 +33,8 @@ export type {
   ServerSnapshot,
   ToolCallExecutionResult,
 } from "./modeling/types.js";
+export type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
+export { pluralize } from "./formatting/english.js";
 export {
   createMcpRegistry,
   type McpRegistry,

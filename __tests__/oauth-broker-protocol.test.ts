@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { createOAuthIdentity } from "../src/core/oauth/broker/identity.js";
+import { createOAuthIdentity } from "../packages/core/src/oauth/broker/identity.js";
 import {
   createOAuthProtocolAdapter,
   createOAuthRefreshOperation,
-} from "../src/core/oauth/broker/oauth-protocol.js";
+} from "../packages/core/src/oauth/broker/oauth-protocol.js";
 import {
   OAuthClientRejectedError,
   OAuthPermanentRefreshError,
   OAuthTemporaryProtocolError,
-} from "../src/core/oauth/broker/token-coordinator.js";
+} from "../packages/core/src/oauth/broker/token-coordinator.js";
 import {
   FakeOAuthAuthorizationServer,
   type FakeOAuthAuthorizationServerOptions,

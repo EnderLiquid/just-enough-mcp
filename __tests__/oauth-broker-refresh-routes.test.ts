@@ -1,10 +1,10 @@
 import { createServer, type Server } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
-import { runOAuthBrokerProcess } from "../src/core/oauth/broker/broker-process.js";
-import { OAuthBrokerClient } from "../src/core/oauth/broker/client.js";
-import { FileOAuthCredentialRepository } from "../src/core/oauth/broker/credential-repository.js";
-import { createOAuthCredentialState } from "../src/core/oauth/broker/credential-state.js";
-import { createOAuthIdentity, type OAuthIdentity } from "../src/core/oauth/broker/identity.js";
+import { runOAuthBrokerProcess } from "../packages/core/src/oauth/broker/broker-process.js";
+import { OAuthBrokerClient } from "../packages/core/src/oauth/broker/client.js";
+import { FileOAuthCredentialRepository } from "../packages/core/src/oauth/broker/credential-repository.js";
+import { createOAuthCredentialState } from "../packages/core/src/oauth/broker/credential-state.js";
+import { createOAuthIdentity, type OAuthIdentity } from "../packages/core/src/oauth/broker/identity.js";
 import { FakeOAuthAuthorizationServer } from "./support/fake-oauth-as.js";
 import { createTempDirFixture } from "./support/temp-dir.js";
 

@@ -1,15 +1,15 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createOAuthCredentialState } from "../src/core/oauth/broker/credential-state.js";
-import { createOAuthCredentialRecord } from "../src/core/oauth/broker/credential-record.js";
+import { createOAuthCredentialState } from "../packages/core/src/oauth/broker/credential-state.js";
+import { createOAuthCredentialRecord } from "../packages/core/src/oauth/broker/credential-record.js";
 import {
   FileOAuthCredentialRepository,
   OAUTH_BROKER_CREDENTIAL_FORMAT,
   OAUTH_BROKER_CREDENTIAL_VERSION,
-} from "../src/core/oauth/broker/credential-repository.js";
-import { createOAuthIdentity } from "../src/core/oauth/broker/identity.js";
-import { getOAuthBrokerRuntimePaths } from "../src/core/oauth/broker/runtime-files.js";
-import { OAuthTokenCoordinator } from "../src/core/oauth/broker/token-coordinator.js";
+} from "../packages/core/src/oauth/broker/credential-repository.js";
+import { createOAuthIdentity } from "../packages/core/src/oauth/broker/identity.js";
+import { getOAuthBrokerRuntimePaths } from "../packages/core/src/oauth/broker/runtime-files.js";
+import { OAuthTokenCoordinator } from "../packages/core/src/oauth/broker/token-coordinator.js";
 import { createTempDirFixture } from "./support/temp-dir.js";
 
 const tempDirs = createTempDirFixture("just-enough-mcp-oauth-credentials");

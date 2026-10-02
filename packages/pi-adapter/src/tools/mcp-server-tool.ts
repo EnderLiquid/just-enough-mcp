@@ -4,8 +4,11 @@ import { StringEnum } from "./schema.js";
 import type { McpServerResultDetails } from "./types.js";
 import type { TuiResultRenderSettings } from "../rendering/types.js";
 import { createMcpResultRenderer } from "../rendering/result-renderer.js";
-import type { McpRegistry, McpRegistryStatus } from "../../core/servers/registry.js";
-import { pluralize } from "../../core/formatting/english.js";
+import {
+  pluralize,
+  type McpRegistry,
+  type McpRegistryStatus,
+} from "@enderliquid/just-enough-mcp";
 
 export const mcpServerParametersSchema = Type.Object({
   action: StringEnum(["status", "connect", "disconnect", "authorize", "logout"] as const, {

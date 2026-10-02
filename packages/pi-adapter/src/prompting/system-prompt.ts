@@ -1,5 +1,8 @@
 import type { PluginConfigLoadResult } from "../config/types.js";
-import type { ResolvedServerConfig, ServerOverview } from "../../core/modeling/types.js";
+import {
+  type ResolvedServerConfig,
+  type ServerOverview,
+} from "@enderliquid/just-enough-mcp";
 
 function normalizePathSlashes(value: string): string {
   return value.replace(/\\/g, "/");

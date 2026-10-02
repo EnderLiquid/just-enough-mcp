@@ -1,5 +1,9 @@
-import type { PayloadContentType } from "../../core/artifacts/types.js";
-import type { ServerCatalogResult, ServerConnectState, ServerOauthState } from "../../core/modeling/types.js";
+import {
+  type PayloadContentType,
+  type ServerCatalogResult,
+  type ServerConnectState,
+  type ServerOauthState,
+} from "@enderliquid/just-enough-mcp";
 
 export type McpServerResultDetails =
   | { kind: "status"; connectedCount: number; totalCount: number }

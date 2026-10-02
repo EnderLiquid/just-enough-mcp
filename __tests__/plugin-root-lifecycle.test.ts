@@ -36,7 +36,7 @@ vi.mock("@earendil-works/pi-coding-agent", async importOriginal => ({
   getAgentDir: mocks.getAgentDir,
 }));
 
-vi.mock("../src/pi/paths.js", () => ({
+vi.mock("../packages/pi-adapter/src/paths.js", () => ({
   getOAuthBrokerDirectoryPath: mocks.getOAuthBrokerDirectoryPath,
   getArtifactsDirectoryPath: mocks.getArtifactsDirectoryPath,
   getOverviewDirectoryPath: mocks.getOverviewDirectoryPath,
@@ -44,11 +44,8 @@ vi.mock("../src/pi/paths.js", () => ({
   getProjectPluginConfigPath: mocks.getProjectPluginConfigPath,
 }));
 
-vi.mock("../src/core/oauth/broker/namespace.js", () => ({
+vi.mock("@enderliquid/just-enough-mcp/oauth", () => ({
   createOAuthBrokerNamespace: mocks.createOAuthBrokerNamespace,
-}));
-
-vi.mock("../src/core/oauth/broker/client.js", () => ({
   OAuthBrokerClient: class MockOAuthBrokerClient {
     constructor(options: unknown) {
       mocks.oauthBrokerClientConstructor(options);
@@ -58,41 +55,40 @@ vi.mock("../src/core/oauth/broker/client.js", () => ({
       return mocks.oauthBrokerClientClose();
     }
   },
-}));
-
-vi.mock("../src/core/oauth/broker/bootstrapper.js", () => ({
   createOAuthBrokerBootstrapper: mocks.createOAuthBrokerBootstrapper,
+  DEFAULT_OAUTH_BROKER_PORT: 33_418,
 }));
 
-vi.mock("../src/pi/config/plugin-config.js", () => ({
+vi.mock("../packages/pi-adapter/src/config/plugin-config.js", () => ({
   loadPluginConfigFromPaths: mocks.loadPluginConfig,
 }));
 
-vi.mock("../src/pi/rendering/notifier.js", () => ({
+vi.mock("../packages/pi-adapter/src/rendering/notifier.js", () => ({
   createNotifier: mocks.createNotifier,
 }));
 
-vi.mock("../src/pi/rendering/footer-status.js", () => ({
+vi.mock("../packages/pi-adapter/src/rendering/footer-status.js", () => ({
   createFooterStatusController: mocks.createFooterStatusController,
 }));
 
-vi.mock("../src/core/servers/registry.js", () => ({
+vi.mock("@enderliquid/just-enough-mcp", () => ({
   createMcpRegistry: mocks.createMcpRegistry,
+  pluralize: (count: number, singular: string, plural = `${singular}s`) => count === 1 ? singular : plural,
 }));
 
-vi.mock("../src/pi/tools/mcp-server-tool.js", () => ({
+vi.mock("../packages/pi-adapter/src/tools/mcp-server-tool.js", () => ({
   registerMcpServerTool: mocks.registerMcpServerTool,
 }));
 
-vi.mock("../src/pi/tools/mcp-tool.js", () => ({
+vi.mock("../packages/pi-adapter/src/tools/mcp-tool.js", () => ({
   registerMcpTool: mocks.registerMcpTool,
 }));
 
-vi.mock("../src/pi/prompting/system-prompt.js", () => ({
+vi.mock("../packages/pi-adapter/src/prompting/system-prompt.js", () => ({
   createServerOverviewPrompt: mocks.createServerOverviewPrompt,
 }));
 
-import justEnoughMcp from "../src/pi/index.js";
+import justEnoughMcp from "../packages/pi-adapter/src/index.js";
 
 interface FakePi {
   pi: ExtensionAPI;

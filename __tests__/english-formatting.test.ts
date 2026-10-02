@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pluralize } from "../src/core/formatting/english.js";
+import { pluralize } from "../packages/core/src/formatting/english.js";
 
 describe("pluralize", () => {
   it("只在数量为 1 时使用单数形式", () => {

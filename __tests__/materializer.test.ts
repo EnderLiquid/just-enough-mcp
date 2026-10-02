@@ -5,12 +5,12 @@ import {
   ArtifactTransactionCleanupError,
   createArtifactContext,
   rollbackArtifactContext,
-} from "../src/core/artifacts/artifact-store.js";
+} from "../packages/core/src/artifacts/artifact-store.js";
 import {
   materializePreparedToolCallResult,
   materializeToolCallResult,
   prepareToolCallResult,
-} from "../src/core/index.js";
+} from "../packages/core/src/index.js";
 import { createTempDirFixture } from "./support/temp-dir.js";
 
 const tempDirs = createTempDirFixture("jem-materializer");

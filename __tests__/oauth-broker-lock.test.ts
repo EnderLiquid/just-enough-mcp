@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   acquireOAuthBrokerLock,
   isOAuthBrokerLockHeld,
-} from "../src/core/oauth/broker/lock.js";
+} from "../packages/core/src/oauth/broker/lock.js";
 import { createTempDirFixture } from "./support/temp-dir.js";
 
 const tempDirs = createTempDirFixture("just-enough-mcp-oauth-broker-lock");

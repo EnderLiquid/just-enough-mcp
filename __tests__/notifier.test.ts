@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createNotifier } from "../src/pi/rendering/notifier.js";
+import { createNotifier } from "../packages/pi-adapter/src/rendering/notifier.js";
 
 describe("notifier capability", () => {
   it("向显式 sink 发布通知", () => {

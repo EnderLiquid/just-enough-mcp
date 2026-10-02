@@ -7,7 +7,7 @@ import {
   bootstrapOAuthBroker,
   diagnoseOAuthBroker,
   type OAuthBrokerBootstrapOptions,
-} from "../src/core/oauth/broker/bootstrapper.js";
+} from "../packages/core/src/oauth/broker/bootstrapper.js";
 import {
   createOAuthBrokerRequestEnvelope,
   getOAuthBrokerUrl,
@@ -17,8 +17,8 @@ import {
   OAUTH_BROKER_REQUEST_ID_HEADER,
   OAUTH_BROKER_ROUTES,
   OAUTH_BROKER_SESSION_ID_HEADER,
-} from "../src/core/oauth/broker/protocol.js";
-import { readOAuthBrokerAccess } from "../src/core/oauth/broker/runtime-files.js";
+} from "../packages/core/src/oauth/broker/protocol.js";
+import { readOAuthBrokerAccess } from "../packages/core/src/oauth/broker/runtime-files.js";
 import { createTempDirFixture } from "./support/temp-dir.js";
 
 const WORKER_PATH = fileURLToPath(

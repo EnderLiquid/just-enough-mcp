@@ -1,4 +1,4 @@
-import { bootstrapOAuthBroker } from "../../src/core/oauth/broker/bootstrapper.ts";
+import { bootstrapOAuthBroker } from "../../packages/core/src/oauth/broker/bootstrapper.ts";
 
 interface WorkerOptions {
   rootDir: string;

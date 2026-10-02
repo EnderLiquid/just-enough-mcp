@@ -1,0 +1,37 @@
+{
+  "name": "@enderliquid/just-enough-mcp",
+  "version": "0.1.0",
+  "description": "A Pi-independent Node.js MCP runtime with server-level progressive disclosure.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./oauth": "./src/oauth/index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "mime-types": "^3.0.2",
+    "proper-lockfile": "^4.1.2"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "mcp-runtime"
+  ],
+  "homepage": "https://github.com/EnderLiquid/just-enough-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/EnderLiquid/just-enough-mcp/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EnderLiquid/just-enough-mcp.git"
+  }
+}

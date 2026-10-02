@@ -1,16 +1,16 @@
 import { Compile } from "typebox/compile";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { MaterializedToolCallResult, MaterializationSettings } from "../src/core/artifacts/types.js";
-import type { TuiResultRenderSettings } from "../src/pi/rendering/types.js";
-import type { McpRegistry } from "../src/core/servers/registry.js";
+import type { MaterializedToolCallResult, MaterializationSettings } from "../packages/core/src/artifacts/types.js";
+import type { TuiResultRenderSettings } from "../packages/pi-adapter/src/rendering/types.js";
+import type { McpRegistry } from "../packages/core/src/servers/registry.js";
 import { makePluginConfig, makeServerSnapshot } from "./support/model-fixtures.js";
 
 const mocks = vi.hoisted(() => ({
   materializeToolCallResult: vi.fn(),
 }));
 
-vi.mock("../src/core/artifacts/materializer.js", () => ({
+vi.mock("../packages/core/src/artifacts/materializer.js", () => ({
   materializeToolCallResult: mocks.materializeToolCallResult,
 }));
 
@@ -20,7 +20,7 @@ import {
   mcpToolParametersSchema,
   registerMcpTool,
   type McpToolRuntime,
-} from "../src/pi/tools/mcp-tool.js";
+} from "../packages/pi-adapter/src/tools/mcp-tool.js";
 
 type RegistryStubOverrides = {
   registry?: Partial<McpRegistry>;

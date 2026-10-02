@@ -1,4 +1,4 @@
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { CallToolResult } from "@enderliquid/just-enough-mcp";
 import { DEFAULT_TUI_RESULT_RENDER_SETTINGS } from "./types.js";
 
 export interface McpToolResultDisplay {
