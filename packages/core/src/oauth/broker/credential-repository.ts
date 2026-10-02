@@ -74,7 +74,7 @@ interface StoredCredentialDocumentJson {
   readonly records: readonly StoredCredentialRecordJson[];
 }
 
-/** Lightweight repository used by coordinator-only tests and protocol experiments. */
+/** 轻量 repository，供只测 coordinator 的用例与协议实验使用。 */
 export class InMemoryOAuthCredentialRepository implements OAuthCredentialRepository {
   private readonly records = new Map<string, StoredCredentialRecord>();
   private mutationTail: Promise<void> = Promise.resolve();
@@ -130,11 +130,10 @@ export class InMemoryOAuthCredentialRepository implements OAuthCredentialReposit
 }
 
 /**
- * Broker-owned whole-document repository.
+ * Broker 自有的整文档 repository。
  *
- * Mutations are serialized, written to a temporary file, and atomically renamed before
- * the new in-memory snapshot becomes visible. A failed write therefore cannot publish a
- * credential state that would be lost after broker restart.
+ * mutation 会串行化，先写入临时文件，原子 rename 之后新的内存快照才可见。
+ * 因此写入失败不会发布一份在 broker 重启后就会丢失的 credential 状态。
  */
 export class FileOAuthCredentialRepository implements OAuthCredentialRepository {
   private readonly rootDir: string;

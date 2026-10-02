@@ -17,7 +17,7 @@ export interface OAuthBrokerRuntimePaths {
   readonly rootDir: string;
   readonly accessPath: string;
   readonly credentialPath: string;
-  /** proper-lockfile locks this existing directory with the explicit lockfilePath. */
+  /** proper-lockfile 会以显式 lockfilePath 锁定这个已存在的目录。 */
   readonly lockTargetPath: string;
   readonly lockPath: string;
 }
@@ -42,8 +42,8 @@ export async function ensureOAuthBrokerRuntimeDirectories(rootDir: string): Prom
 }
 
 /**
- * Reads the last published access snapshot. Its existence is deliberately not a
- * liveness signal: callers must authenticate against health before reusing it.
+ * 读取最近发布的 access 快照。它的存在刻意不作为 liveness 信号：
+ * 调用方必须先用 health 完成认证，才能复用它。
  */
 export async function readOAuthBrokerAccess(
   rootDir: string,
@@ -62,8 +62,8 @@ export async function readOAuthBrokerAccess(
 }
 
 /**
- * Publishes one complete access snapshot. The old file is intentionally kept
- * until the rename succeeds, so a crashed broker leaves a readable stale file.
+ * 发布一份完整的 access 快照。旧文件会刻意保留到 rename 成功，
+ * 因此崩溃的 broker 只会留下一个可读的陈旧文件。
  */
 export async function writeOAuthBrokerAccess(
   rootDir: string,

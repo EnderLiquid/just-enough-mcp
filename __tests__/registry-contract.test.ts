@@ -16,7 +16,7 @@ function createRegistry(): McpRegistry {
   ]);
 }
 
-describe("McpRegistry public contract", () => {
+describe("McpRegistry 公共契约", () => {
   it("对不存在的 server 返回稳定 UnknownServerError", async () => {
     const registry = createRegistry();
 

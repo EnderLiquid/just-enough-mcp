@@ -80,8 +80,8 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
   return { promise, resolve };
 }
 
-describe("OAuthBrokerClient lifecycle concurrency", () => {
-  it("starts disconnected and supports demand-driven connection", async () => {
+describe("OAuthBrokerClient 生命周期并发", () => {
+  it("初始为 disconnected，并支持按需连接", async () => {
     const { rootDir, access, health } = createFixture();
     await writeOAuthBrokerAccess(rootDir, access);
     const fetch = async (_input: string | URL | globalThis.Request, init?: RequestInit): Promise<Response> => {
@@ -104,7 +104,7 @@ describe("OAuthBrokerClient lifecycle concurrency", () => {
     await client.close();
   });
 
-  it("shares one connection flight and caller abort does not cancel other waiters", async () => {
+  it("共享同一个 connection flight，caller 取消不会取消其他等待者", async () => {
     const { rootDir, access, health } = createFixture();
     await writeOAuthBrokerAccess(rootDir, access);
     const registerGate = deferred();
@@ -141,7 +141,7 @@ describe("OAuthBrokerClient lifecycle concurrency", () => {
     await client.close();
   });
 
-  it("schedules an idle pulse directly at the activity deadline", async () => {
+  it("直接在活动期限处调度一次 idle pulse", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-09T00:00:00.000Z"));
     const { rootDir, access, health } = createFixture();
@@ -181,7 +181,7 @@ describe("OAuthBrokerClient lifecycle concurrency", () => {
     await client.close();
   });
 
-  it("successful ordinary RPC postpones the pulse and carries its presence incarnation", async () => {
+  it("成功的普通 RPC 会推迟 pulse，并携带其 presence incarnation", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-09T00:00:00.000Z"));
     const { rootDir, access, health } = createFixture();
@@ -229,7 +229,7 @@ describe("OAuthBrokerClient lifecycle concurrency", () => {
     await client.close();
   });
 
-  it("a newer successful RPC supersedes a concurrent pulse failure", async () => {
+  it("更新的成功 RPC 会取代并发的 pulse 失败", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-09T00:00:00.000Z"));
     const { rootDir, access, health } = createFixture();
@@ -271,7 +271,7 @@ describe("OAuthBrokerClient lifecycle concurrency", () => {
     await client.close();
   });
 
-  it("heartbeat timeout publishes disconnected and reconnects on the next interval", async () => {
+  it("heartbeat 超时发布 disconnected，并在下个间隔重连", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-09T00:00:00.000Z"));
     const { rootDir, access, health } = createFixture();
@@ -323,7 +323,7 @@ describe("OAuthBrokerClient lifecycle concurrency", () => {
     await client.close();
   });
 
-  it("close is idempotent and releases active presence once", async () => {
+  it("close 幂等，且只释放一次 active presence", async () => {
     const { rootDir, access, health } = createFixture();
     await writeOAuthBrokerAccess(rootDir, access);
     let releaseCalls = 0;
@@ -355,7 +355,7 @@ describe("OAuthBrokerClient lifecycle concurrency", () => {
     expect(releaseCalls).toBe(1);
   });
 
-  it("close invalidates a late register and releases its presence incarnation", async () => {
+  it("close 使迟到的 register 失效，并释放其 presence incarnation", async () => {
     const { rootDir, access, health } = createFixture();
     await writeOAuthBrokerAccess(rootDir, access);
     const registerGate = deferred();

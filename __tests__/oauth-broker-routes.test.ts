@@ -40,7 +40,7 @@ function closeServer(server: Server): Promise<void> {
   return new Promise(resolve => server.close(() => resolve()));
 }
 
-describe("OAuth broker credential routes", () => {
+describe("OAuth broker credential 路由", () => {
   it("跨 HTTP 边界校验 presence/namespace，并完成 status、refresh 与条件 logout", async () => {
     const rootDir = tempDirs.create();
     const port = await allocatePort();

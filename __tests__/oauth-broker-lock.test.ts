@@ -7,8 +7,8 @@ import { createTempDirFixture } from "./support/temp-dir.js";
 
 const tempDirs = createTempDirFixture("just-enough-mcp-oauth-broker-lock");
 
-describe("OAuth broker runtime lock", () => {
-  it("is exclusive and release is idempotent", async () => {
+describe("OAuth broker runtime 锁", () => {
+  it("互斥，且 release 幂等", async () => {
     const rootDir = tempDirs.create();
     const first = await acquireOAuthBrokerLock(rootDir, {
       staleMs: 2_000,

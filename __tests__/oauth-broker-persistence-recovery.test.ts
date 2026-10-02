@@ -58,7 +58,7 @@ function makeAuthorizedRecord(authorization: ReturnType<typeof withTokens>) {
  * decision.md 第 8 节的持久化恢复语义只有一条：原子 rename。
  * 这些用例验证该语义的可观察结果，不模拟真实进程崩溃。
  */
-describe("OAuth broker credential persistence recovery", () => {
+describe("OAuth broker credential 持久化恢复", () => {
   it("rename 失败时不发布内存快照，并清理临时文件", async () => {
     const rootDir = tempDirs.create();
     const identity = makeIdentity();

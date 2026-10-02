@@ -217,7 +217,7 @@ async function probeHealth(port: number, secret: string): Promise<{ pid?: number
   }
 }
 
-describe("simplified standalone OAuth broker lifecycle", () => {
+describe("简化后的 standalone OAuth broker 生命周期", () => {
   it("多个独立 session 同时启动时由 lock + fixed bind 收敛到一个 owner", async () => {
     const rootDir = createRoot();
     const port = await allocatePort();

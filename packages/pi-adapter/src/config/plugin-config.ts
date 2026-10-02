@@ -12,7 +12,7 @@ import {
 import type { PluginConfigLoadResult } from "./types.js";
 
 interface RawPluginConfig extends RawCorePluginConfig {
-  /** Pi-specific settings are intentionally opaque to Core. */
+  /** Pi 专属设置对 Core 刻意保持不透明。 */
   tui?: unknown;
 }
 

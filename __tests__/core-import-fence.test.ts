@@ -39,7 +39,7 @@ function isInside(root: string, candidate: string): boolean {
   return path === "" || (!path.startsWith("..") && !path.startsWith(`..${"/"}`) && !path.startsWith(`..${"\\"}`));
 }
 
-describe("core import fence", () => {
+describe("core 导入边界", () => {
   it("核心及其本地传递依赖不导入 Pi 包或 Pi adapter", () => {
     const projectRoot = process.cwd();
     const absoluteCoreRoot = resolve(projectRoot, coreRoot);

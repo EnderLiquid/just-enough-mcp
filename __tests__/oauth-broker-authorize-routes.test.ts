@@ -114,7 +114,7 @@ async function triggerCallback(
   return { status: response.status, body: await response.text() };
 }
 
-describe("OAuth broker authorize routes", () => {
+describe("OAuth broker authorize 路由", () => {
   it("完成 discovery、DCR、浏览器授权与 code exchange", async () => {
     const rootDir = tempDirs.create();
     const as = await startFakeAs();

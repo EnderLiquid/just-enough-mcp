@@ -141,7 +141,7 @@ export function createOAuthIdentity(input: OAuthIdentityInput): OAuthIdentityV1 
   });
 }
 
-/** Parses an identity sent over the broker boundary and verifies its derived key. */
+/** 解析经由 broker 边界传入的 identity，并校验其派生的 key。 */
 export function parseOAuthIdentity(value: unknown): OAuthIdentityV1 {
   const record = requireRecord(value, "OAuth identity");
   if (record.identityVersion !== OAUTH_IDENTITY_VERSION) {

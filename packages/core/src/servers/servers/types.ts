@@ -10,7 +10,7 @@ export interface McpServer {
   readonly config: ResolvedServerConfig;
 
   snapshot(): ServerSnapshot;
-  /** Optional async status source for runtimes whose authoritative state is external. */
+  /** 可选的异步状态来源，供权威状态位于外部的 runtime 使用。 */
   status?(): Promise<ServerSnapshot>;
   connect(signal?: AbortSignal): Promise<ServerSnapshot>;
   getCatalog(signal?: AbortSignal): Promise<ServerCatalogResult>;

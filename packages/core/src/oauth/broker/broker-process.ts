@@ -81,20 +81,20 @@ export interface OAuthBrokerProcessOptions {
   readonly idleGraceMs: number;
   readonly lockStaleMs?: number;
   readonly lockUpdateMs?: number;
-  /** Test-only refresh injection; production uses the SDK-backed protocol adapter. */
+  /** 仅供测试注入 refresh；生产环境使用基于 SDK 的协议 adapter。 */
   readonly refresh?: OAuthRefreshOperation;
-  /** Test-only discovery injection; production uses the SDK-backed protocol adapter. */
+  /** 仅供测试注入 discovery；生产环境使用基于 SDK 的协议 adapter。 */
   readonly discover?: OAuthDiscoveryOperation;
-  /** Test-only registration injection; production uses the SDK-backed protocol adapter. */
+  /** 仅供测试注入 registration；生产环境使用基于 SDK 的协议 adapter。 */
   readonly register?: OAuthRegistrationOperation;
-  /** Test-only fetch injection for the SDK-backed protocol adapter. */
+  /** 仅供测试为基于 SDK 的协议 adapter 注入 fetch。 */
   readonly fetchFn?: FetchLike;
   readonly protocolTimeoutMs?: number;
-  /** Interactive authorization transaction timeout; covered by the client's own long-request timeout. */
+  /** 交互式 authorization 事务超时；由 client 自身的长请求超时兼顾。 */
   readonly authorizeTimeoutMs?: number;
-  /** Test-only browser opener injection; production uses the platform opener. */
+  /** 仅供测试注入 browser opener；生产环境使用平台 opener。 */
   readonly openBrowser?: BrowserOpener;
-  /** Test-only repository injection. Standalone brokers use the file repository. */
+  /** 仅供测试注入 repository；standalone broker 使用文件 repository。 */
   readonly credentialRepository?: OAuthCredentialRepository;
   readonly now?: () => number;
 }
@@ -415,10 +415,10 @@ export async function runOAuthBrokerProcess(
       return;
     }
 
-    // Liveness is transport-level: receiving any authenticated request from the
-    // current incarnation proves the session is alive, independent of its domain result.
-    // A successful response renews it again so long-running RPCs align the broker
-    // expiry deadline with the client's post-response heartbeat deadline.
+    // liveness 是 transport 层面的：只要收到来自当前 incarnation 的任一认证请求，
+    // 就证明 session 仍然存活，与请求的领域结果无关。
+    // 响应成功时会再次续期，使长时间运行的 RPC 把 broker 的过期期限
+    // 与 client 的响应后 heartbeat 期限对齐。
     if (requestPresence) {
       const result = renewPresence(requestPresence);
       if (!result.ok) {

@@ -51,7 +51,7 @@ export interface OAuthBrokerBootstrapOptions {
   readonly lockStaleMs?: number;
   readonly lockUpdateMs?: number;
   readonly brokerEntrypoint?: string;
-  /** Allows the composition root to own the session client while this launcher remains non-owning. */
+  /** 允许 composition root 拥有 session client，而该 launcher 保持不持有。 */
   readonly client?: OAuthBrokerClient;
   readonly signal?: AbortSignal;
   readonly onWarning?: (message: string, error?: unknown) => void;
@@ -115,8 +115,8 @@ export function createOAuthBrokerBootstrapper(
 }
 
 /**
- * Performs only best-effort launch diagnostics and starts the client. It never
- * waits for the child process to bind or for presence registration to succeed.
+ * 只做尽力而为的启动诊断并启动 client，绝不等待子进程完成 bind
+ * 或 presence registration 成功。
  */
 export async function bootstrapOAuthBroker(
   input: OAuthBrokerBootstrapOptions,

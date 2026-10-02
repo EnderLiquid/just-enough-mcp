@@ -84,7 +84,7 @@ function createClient(rootDir: string, port: number): OAuthBrokerClient {
   });
 }
 
-describe("OAuth broker refresh routes", () => {
+describe("OAuth broker refresh 路由", () => {
   it("通过真实 discovery 与 refresh 轮转 token", async () => {
     const rootDir = tempDirs.create();
     const as = await startFakeAs();

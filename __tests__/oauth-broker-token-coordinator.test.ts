@@ -101,7 +101,7 @@ function makeCoordinator(
   });
 }
 
-describe("OAuth credential state", () => {
+describe("OAuth credential 状态", () => {
   it("返回不含 refresh token 的 token snapshot", async () => {
     const identity = makeIdentity();
     const refresh = vi.fn<OAuthRefreshOperation>();

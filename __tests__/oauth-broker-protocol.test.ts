@@ -41,7 +41,7 @@ const clientInformation = {
   redirect_uris: ["http://127.0.0.1:33418/oauth/callback"],
 };
 
-describe("OAuth protocol adapter", () => {
+describe("OAuth 协议 adapter", () => {
   it("通过 PRM 与 AS metadata discovery 返回 authorization server 信息", async () => {
     const as = await startFakeAs({ scopesSupported: ["read", "write", "admin"] });
     const adapter = createOAuthProtocolAdapter();
@@ -201,7 +201,7 @@ describe("OAuth protocol adapter", () => {
   });
 });
 
-describe("OAuth refresh operation", () => {
+describe("OAuth refresh 操作", () => {
   it("把 token response 归一化为 credential update，并携带 resource indicator", async () => {
     const as = await startFakeAs();
     const adapter = createOAuthProtocolAdapter();

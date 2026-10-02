@@ -122,7 +122,7 @@ export class OAuthCredentialChangedError extends Error {
   }
 }
 
-/** Marks an OAuth token endpoint response that permanently invalidates the refresh credential. */
+/** 标记一个会永久失效 refresh credential 的 OAuth token endpoint 响应。 */
 export type OAuthPermanentRefreshReason = "invalid-grant" | "invalid-scope";
 
 export class OAuthPermanentRefreshError extends Error {
@@ -139,7 +139,7 @@ export class OAuthPermanentRefreshError extends Error {
   }
 }
 
-/** Marks an AS response that permanently invalidates the client registration. */
+/** 标记一个会永久失效 client registration 的 AS 响应。 */
 export class OAuthClientRejectedError extends Error {
   readonly code = "client-rejected" as const;
 
@@ -187,10 +187,10 @@ export interface OAuthScopeChallengeResult {
 }
 
 /**
- * Broker credential coordinator. Repository commits are durable-before-visible and
- * refresh/discovery/registration work stays outside the repository mutation queue.
- * Revision + epoch CAS prevents late refresh/authorization results from overwriting
- * logout or newer grants.
+ * Broker credential coordinator。repository commit 先持久化后可见，
+ * refresh/discovery/registration 工作不进入 repository mutation 队列。
+ * revision + epoch CAS 防止迟到的 refresh/authorization 结果覆盖
+ * logout 或更新的授权。
  */
 export class OAuthTokenCoordinator {
   private readonly refreshFlights = new Map<string, Promise<OAuthTokenSnapshot>>();
@@ -218,7 +218,7 @@ export class OAuthTokenCoordinator {
     await this.repository.mutateRecord(identity, () => ({ record: restored, result: undefined }));
   }
 
-  /** Broker-internal diagnostics/fencing only; secrets are represented as booleans. */
+  /** 仅供 broker 内部诊断/fencing 使用；secret 以布尔值表示。 */
   async getCredentialView(identity: OAuthIdentity): Promise<OAuthCredentialView> {
     return this.toCredentialView(await this.repository.read(identity));
   }
@@ -502,7 +502,7 @@ export class OAuthTokenCoordinator {
       return existing;
     }
 
-    // Publish the flight before invoking user/OAuth code so synchronous re-entry joins it.
+    // 在调用用户/OAuth 代码前先发布 flight，使同步重入能加入它。
     const flight = Promise.resolve().then(() => this.runRefresh(identity));
     this.refreshFlights.set(key, flight);
     flight.then(

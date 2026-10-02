@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createNotifier } from "../packages/pi-adapter/src/rendering/notifier.js";
 
-describe("notifier capability", () => {
+describe("notifier 能力", () => {
   it("向显式 sink 发布通知", () => {
     const notify = vi.fn();
     const notifier = createNotifier({ notify });

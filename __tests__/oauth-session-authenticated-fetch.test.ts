@@ -145,7 +145,7 @@ async function startHarness(
   return { broker, running, server, identity, rootDir };
 }
 
-describe("OAuth session authenticated fetch", () => {
+describe("OAuth session 已认证 fetch", () => {
   it("connect 成功后注入 Bearer token 并发布 tools catalog", async () => {
     const harness = await startHarness();
     const mcp = fakeMcpServers.at(-1)!;

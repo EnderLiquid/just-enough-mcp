@@ -17,8 +17,8 @@ export interface RawCorePluginConfig {
 export interface CorePluginConfigResolveOptions {
   readonly overviewDir: string;
   /**
-   * Base config path used for a relative explicit overview path.
-   * Host adapters are responsible for deciding how configuration paths are resolved.
+   * 用于解析相对显式 overview 路径的基准配置路径。
+   * 配置路径如何解析由宿主 adapter 决定。
    */
   readonly configPath?: string;
 }
