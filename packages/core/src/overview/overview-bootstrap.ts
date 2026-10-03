@@ -20,7 +20,7 @@ export async function tryBootstrapOverviewFromDescription(
   overviewDirectoryPath: string,
   description: string | undefined,
 ): Promise<OverviewBootstrapResult | undefined> {
-  if (server.hasExplicitOverviewConfig) {
+  if (server.configuredOverviewPath !== undefined) {
     return undefined;
   }
 

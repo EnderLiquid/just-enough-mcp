@@ -36,7 +36,7 @@ vi.mock("@modelcontextprotocol/sdk/client/streamableHttp.js", () => ({
   },
 }));
 
-const overviewDir = "C:/Users/Admin/.pi/agent/just-enough-mcp/overviews";
+const overviewDirectoryPath = "C:/Users/Admin/.pi/agent/just-enough-mcp/overviews";
 
 type Bootstrap = NonNullable<Parameters<typeof createMcpRegistry>[1]>["overview"] extends infer Options
   ? Options extends { bootstrap?: infer Callback }
@@ -62,7 +62,7 @@ function createRegistry(
 ): McpRegistry {
   return createMcpRegistry(serverConfigs, {
     overview: {
-      overviewDir,
+      overviewDirectoryPath,
       bootstrap,
     },
   });
@@ -100,9 +100,12 @@ describe("McpRegistry 的 overview ownership", () => {
     await registry.close();
 
     expect(bootstrap).toHaveBeenCalledWith({
-      config: expect.objectContaining({ name: "demo", hasExplicitOverviewConfig: false }),
+      config: expect.objectContaining({
+        name: "demo",
+        transport: expect.objectContaining({ kind: "stdio" }),
+      }),
       description: "Demo MCP server",
-    }, overviewDir);
+    }, overviewDirectoryPath);
   });
 
   it("eager 初始化时触发描述通知", async () => {

@@ -17,7 +17,7 @@ import {
   type OAuthAuthenticationError,
 } from "../../oauth/broker/authenticated-fetch.ts";
 import { createOAuthIdentity, type OAuthIdentity } from "../../oauth/broker/identity.ts";
-import { parseOauthHttpServerConfig, type OauthHttpServerConfig } from "./oauth-config.js";
+import { getOauthHttpServerConfig, type OauthHttpServerConfig } from "./oauth-config.js";
 import { SdkSessionManager } from "./sdk-session-manager.js";
 import type { McpServer } from "./types.js";
 
@@ -48,7 +48,7 @@ export class OauthHttpServer implements McpServer {
     overviewBootstrapper?: OverviewBootstrapper,
   ) {
     this.name = config.name;
-    this.oauthConfig = parseOauthHttpServerConfig(config);
+    this.oauthConfig = getOauthHttpServerConfig(config);
     this.oauthCapability = dependencies?.oauthCapability;
     this.identity = dependencies === undefined
       ? undefined

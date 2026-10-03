@@ -5,6 +5,7 @@ import { runOAuthBrokerProcess } from "../packages/core/src/oauth/broker/broker-
 import { FileOAuthCredentialRepository } from "../packages/core/src/oauth/broker/credential-repository.js";
 import { createOAuthIdentity, type OAuthIdentity } from "../packages/core/src/oauth/broker/identity.js";
 import { OauthHttpServer } from "../packages/core/src/servers/servers/oauth-http-server.js";
+import { resolveCorePluginConfig } from "../packages/core/src/config/plugin-config.js";
 import type { ResolvedServerConfig } from "../packages/core/src/modeling/types.js";
 import { FakeOAuthAuthorizationServer } from "./support/fake-oauth-as.js";
 import { bearerTokenOf, startFakeMcpServer, type FakeMcpServer } from "./support/fake-mcp-server.js";
@@ -53,18 +54,23 @@ async function allocatePort(): Promise<number> {
 }
 
 function makeConfig(url: string, oauth: { scope?: string } = {}): ResolvedServerConfig {
-  return {
-    name: "remote",
-    connectionMode: "lazy",
-    hasExplicitOverviewConfig: false,
-    overview: { name: "remote", content: "", source: "none" },
-    definition: {
-      transport: "http",
-      url,
-      auth: "oauth",
-      ...(oauth.scope === undefined ? {} : { oauth: { scope: oauth.scope } }),
+  const resolved = resolveCorePluginConfig(
+    {
+      servers: {
+        remote: {
+          transport: "http",
+          url,
+          auth: "oauth",
+          ...(oauth.scope === undefined ? {} : { oauth: { scope: oauth.scope } }),
+        },
+      },
     },
-  };
+    { overviewDirectoryPath: "C:/Users/Admin/.pi/agent/just-enough-mcp/overviews" },
+  );
+  if (resolved.servers.length !== 1) {
+    throw new Error(resolved.warnings[0]?.message ?? "测试 OAuth server definition 无法解析。");
+  }
+  return resolved.servers[0]!;
 }
 
 interface Harness {

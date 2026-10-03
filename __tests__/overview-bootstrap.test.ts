@@ -16,9 +16,10 @@ function makeServer(overrides: Partial<ResolvedServerConfig> = {}): ResolvedServ
       content: "No overview configured yet.",
       source: "none",
     },
-    definition: {
-      transport: "http",
-      url: "https://example.com/mcp",
+    transport: {
+      kind: "http",
+      url: new URL("https://example.com/mcp"),
+      auth: "public",
     },
     ...overrides,
   });
@@ -67,7 +68,7 @@ describe("tryBootstrapOverviewFromDescription", () => {
 
   it("服务器使用显式 overview 配置或描述为空时跳过创建", async () => {
     const root = tempDirs.create();
-    const explicitServer = makeServer({ hasExplicitOverviewConfig: true });
+    const explicitServer = makeServer({ configuredOverviewPath: join(root, "explicit.md") });
     const emptyDescriptionServer = makeServer();
 
     await expect(

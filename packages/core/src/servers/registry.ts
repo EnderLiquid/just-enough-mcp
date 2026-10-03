@@ -40,10 +40,7 @@ export interface McpRegistryInitializationReport {
   eagerFailures: McpRegistryInitializationFailure[];
 }
 
-export type McpRegistryOverviewOptions = Pick<
-  OverviewBootstrapperOptions,
-  "overviewDir" | "onCreated" | "bootstrap"
->;
+export type McpRegistryOverviewOptions = OverviewBootstrapperOptions;
 
 export interface McpRegistryDependencies {
   readonly oauth?: OauthHttpServerDependencies;

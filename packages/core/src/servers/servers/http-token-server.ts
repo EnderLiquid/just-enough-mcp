@@ -1,7 +1,6 @@
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { ResolvedServerConfig, ServerCatalogResult, ServerSnapshot, ToolCallExecutionResult } from "../../modeling/types.js";
 import type { OverviewBootstrapper } from "../../overview/overview-bootstrapper.js";
-import { expectNonEmptyString, expectOptionalString, expectOptionalStringRecord, expectOptionalTransport } from "./config-helpers.js";
 import { SdkSessionManager } from "./sdk-session-manager.js";
 import type { McpServer } from "./types.js";
 
@@ -14,20 +13,21 @@ export class HttpTokenServer implements McpServer {
     overviewBootstrapper?: OverviewBootstrapper,
   ) {
     this.name = config.name;
-    expectOptionalTransport(config.definition, config.name, "http");
-    const url = expectNonEmptyString(config.definition, "url", config.name);
-    const configuredHeaders = expectOptionalStringRecord(config.definition, "headers", config.name);
-    const bearerToken = expectOptionalString(config.definition, "bearerToken", config.name);
-    const headers = { ...(configuredHeaders ?? {}) };
-    if (bearerToken) {
-      headers.Authorization = `Bearer ${bearerToken}`;
+    if (config.transport.kind !== "http" || config.transport.auth !== "static") {
+      throw new Error(`Server "${config.name}" does not contain a resolved static HTTP configuration.`);
+    }
+
+    const transport = config.transport;
+    const headers = { ...(transport.headers ?? {}) };
+    if (transport.bearerToken !== undefined) {
+      headers.Authorization = `Bearer ${transport.bearerToken}`;
     }
 
     this.session = new SdkSessionManager({
       serverName: this.name,
       config,
       overviewBootstrapper,
-      createTransport: () => new StreamableHTTPClientTransport(new URL(url), {
+      createTransport: () => new StreamableHTTPClientTransport(transport.url, {
         requestInit: Object.keys(headers).length > 0 ? { headers } : undefined,
       }),
     });
@@ -68,5 +68,4 @@ export class HttpTokenServer implements McpServer {
     const snapshot = await this.session.close();
     return { name: this.name, ...snapshot };
   }
-
 }

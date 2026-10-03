@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { OAuthBrokerClient } from "../packages/core/src/oauth/broker/client.js";
+import { resolveCorePluginConfig } from "../packages/core/src/config/plugin-config.js";
 import type { ResolvedServerConfig, ServerDefinition } from "../packages/core/src/modeling/types.js";
 import { createMcpServer } from "../packages/core/src/servers/servers/factory.js";
 import { HttpPublicServer } from "../packages/core/src/servers/servers/http-public-server.js";
@@ -8,16 +9,16 @@ import { StdioPragmaticServer } from "../packages/core/src/servers/servers/stdio
 import { OauthHttpServer } from "../packages/core/src/servers/servers/oauth-http-server.js";
 
 function makeConfig(definition: ServerDefinition, overrides: Partial<ResolvedServerConfig> = {}): ResolvedServerConfig {
+  const resolved = resolveCorePluginConfig(
+    { servers: { demo: definition } },
+    { overviewDirectoryPath: "C:/Users/Admin/.pi/agent/just-enough-mcp/overviews" },
+  );
+  if (resolved.servers.length !== 1) {
+    throw new Error(resolved.warnings[0]?.message ?? "测试 server definition 无法解析。");
+  }
+
   return {
-    name: "demo",
-    connectionMode: "lazy",
-    hasExplicitOverviewConfig: false,
-    overview: {
-      name: "demo",
-      content: "No overview configured yet.",
-      source: "none",
-    },
-    definition,
+    ...resolved.servers[0]!,
     ...overrides,
   };
 }

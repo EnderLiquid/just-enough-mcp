@@ -1,7 +1,6 @@
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { ResolvedServerConfig, ServerCatalogResult, ServerSnapshot, ToolCallExecutionResult } from "../../modeling/types.js";
 import type { OverviewBootstrapper } from "../../overview/overview-bootstrapper.js";
-import { expectNonEmptyString, expectOptionalString, expectOptionalStringArray, expectOptionalStringRecord, expectOptionalTransport } from "./config-helpers.js";
 import { SdkSessionManager } from "./sdk-session-manager.js";
 import type { McpServer } from "./types.js";
 
@@ -14,21 +13,20 @@ export class StdioPragmaticServer implements McpServer {
     overviewBootstrapper?: OverviewBootstrapper,
   ) {
     this.name = config.name;
-    expectOptionalTransport(config.definition, config.name, "stdio");
-    const command = expectNonEmptyString(config.definition, "command", config.name);
-    const args = expectOptionalStringArray(config.definition, "args", config.name);
-    const cwd = expectOptionalString(config.definition, "cwd", config.name);
-    const env = expectOptionalStringRecord(config.definition, "env", config.name);
+    if (config.transport.kind !== "stdio") {
+      throw new Error(`Server "${config.name}" does not contain a resolved stdio configuration.`);
+    }
 
+    const transport = config.transport;
     this.session = new SdkSessionManager({
       serverName: this.name,
       config,
       overviewBootstrapper,
       createTransport: () => new StdioClientTransport({
-        command,
-        args,
-        cwd,
-        env,
+        command: transport.command,
+        args: transport.args,
+        cwd: transport.cwd,
+        env: transport.env,
         stderr: "ignore",
       }),
     });
@@ -69,5 +67,4 @@ export class StdioPragmaticServer implements McpServer {
     const snapshot = await this.session.close();
     return { name: this.name, ...snapshot };
   }
-
 }

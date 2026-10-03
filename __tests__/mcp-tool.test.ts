@@ -26,7 +26,7 @@ type RegistryStubOverrides = {
   registry?: Partial<McpRegistry>;
   refreshFooter?: McpToolRuntime["refreshFooterStatus"];
   config?: () => {
-    artifactDir: string;
+    artifactDirectoryPath: string;
     materialization: MaterializationSettings;
     tui: TuiResultRenderSettings;
   } | undefined;
@@ -64,7 +64,7 @@ function useRuntime(overrides: RegistryStubOverrides = {}): McpRegistry {
 
   currentRegistry = registry;
   const config = overrides.config?.();
-  artifactDir = config?.artifactDir ?? "D:/project/.pi/agent/just-enough-mcp/artifacts";
+  artifactDir = config?.artifactDirectoryPath ?? "D:/project/.pi/agent/just-enough-mcp/artifacts";
   materializationSettings = config?.materialization;
   tuiSettings = config?.tui;
   refreshFooter = overrides.refreshFooter ?? (() => {});

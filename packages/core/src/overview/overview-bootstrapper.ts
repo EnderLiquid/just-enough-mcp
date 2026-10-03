@@ -2,11 +2,11 @@ import { tryBootstrapOverviewFromDescription, type OverviewBootstrapResult } fro
 import type { ServerDescriptionReadyEvent } from "../servers/servers/types.js";
 
 export interface OverviewBootstrapperOptions {
-  overviewDir: string;
+  overviewDirectoryPath: string;
   onCreated?: (serverName: string) => void;
   bootstrap?: (
     event: ServerDescriptionReadyEvent,
-    overviewDir: string,
+    overviewDirectoryPath: string,
   ) => Promise<OverviewBootstrapResult | undefined>;
 }
 
@@ -17,8 +17,8 @@ export class OverviewBootstrapper {
   private readonly bootstrap: NonNullable<OverviewBootstrapperOptions["bootstrap"]>;
 
   constructor(private readonly options: OverviewBootstrapperOptions) {
-    this.bootstrap = options.bootstrap ?? ((event, overviewDir) =>
-      tryBootstrapOverviewFromDescription(event.config, overviewDir, event.description));
+    this.bootstrap = options.bootstrap ?? ((event, overviewDirectoryPath) =>
+      tryBootstrapOverviewFromDescription(event.config, overviewDirectoryPath, event.description));
   }
 
   notify(event: ServerDescriptionReadyEvent): void {
@@ -27,7 +27,7 @@ export class OverviewBootstrapper {
     }
 
     const task = Promise.resolve()
-      .then(() => this.bootstrap(event, this.options.overviewDir))
+      .then(() => this.bootstrap(event, this.options.overviewDirectoryPath))
       .then((result) => {
         if (result?.created) {
           this.options.onCreated?.(event.config.name);

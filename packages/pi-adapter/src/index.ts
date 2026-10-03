@@ -67,6 +67,21 @@ function loadSessionPluginConfig(
   );
 }
 
+function formatConfigWarnings(
+  warnings: PluginConfigLoadResult["warnings"],
+  validServerCount: number,
+): string {
+  const details = warnings.map(warning => {
+    const action = warning.action === "skipped" ? "skipped" : "fallback";
+    return `${warning.serverName} (${action}: ${warning.message})`;
+  });
+  const availability = validServerCount > 0
+    ? "Other valid MCP servers remain available."
+    : "No valid MCP server configuration remains available.";
+
+  return `Skipped or degraded ${warnings.length} ${pluralize(warnings.length, "MCP server configuration")}: ${details.join(", ")}. ${availability}`;
+}
+
 export default function justEnoughMcp(pi: ExtensionAPI): void {
   let activeSession: ActivePluginSession | undefined;
 
@@ -77,7 +92,7 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
   };
   const toolRuntime: McpToolRuntime = {
     getRegistry: () => activeSession?.registry,
-    getArtifactDir: () => activeSession?.config.artifactDir ?? getArtifactsDirectoryPath(),
+    getArtifactDir: () => activeSession?.config.artifactDirectoryPath ?? getArtifactsDirectoryPath(),
     getMaterializationSettings: () => activeSession?.config.materialization,
     getTuiSettings: () => activeSession?.config.tui,
     refreshFooterStatus: status => activeSession?.footerStatus.refresh(status),
@@ -98,7 +113,12 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
 
     try {
       config = loadSessionPluginConfig(ctx);
-      if (config.servers.some(server => server.definition.auth === "oauth")) {
+      if (config.warnings.length > 0) {
+        notifier.notifyWarning(formatConfigWarnings(config.warnings, config.servers.length));
+      }
+      if (config.servers.some(server =>
+        server.transport.kind === "http" && server.transport.auth === "oauth",
+      )) {
         const namespace = await createOAuthBrokerNamespace(getAgentDir());
         const launchAbortController = new AbortController();
         const client = new OAuthBrokerClient({
@@ -132,7 +152,7 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
 
       registry = createMcpRegistry(config.servers, {
         overview: {
-          overviewDir: config.overviewDir,
+          overviewDirectoryPath: config.overviewDirectoryPath,
           onCreated: serverName => notifier.notifyInfo(`Created MCP overview stub: ${serverName}`),
         },
         ...(oauthBroker

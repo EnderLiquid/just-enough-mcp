@@ -1,36 +1,64 @@
 import {
   DEFAULT_MATERIALIZATION_SETTINGS,
 } from "../../packages/core/src/artifacts/types.js";
+import { resolveCorePluginConfig } from "../../packages/core/src/config/plugin-config.js";
 import { DEFAULT_TUI_RESULT_RENDER_SETTINGS } from "../../packages/pi-adapter/src/rendering/types.js";
 import type { PluginConfigLoadResult } from "../../packages/pi-adapter/src/config/types.js";
 import type {
   ResolvedServerConfig,
+  ServerDefinition,
   ServerSnapshot,
 } from "../../packages/core/src/modeling/types.js";
 
+type ResolvedServerConfigOverrides = Partial<ResolvedServerConfig> & {
+  /** 测试中允许使用 raw definition 快速构造 resolved model。 */
+  definition?: ServerDefinition;
+};
+
 export function makeResolvedServerConfig(
-  overrides: Partial<ResolvedServerConfig> = {},
+  overrides: ResolvedServerConfigOverrides = {},
 ): ResolvedServerConfig {
   const name = overrides.name ?? "demo";
-  const defaults: ResolvedServerConfig = {
+  let parsed: ResolvedServerConfig | undefined;
+  let parseWarning: string | undefined;
+  if (overrides.definition !== undefined) {
+    const resolved = resolveCorePluginConfig(
+      { servers: { [name]: overrides.definition } },
+      { overviewDirectoryPath: "C:/Users/Admin/.pi/agent/just-enough-mcp/overviews" },
+    );
+    parsed = resolved.servers[0];
+    parseWarning = resolved.warnings[0]?.message;
+  }
+
+  if (overrides.definition !== undefined && parsed === undefined) {
+    throw new Error(parseWarning ?? `测试 server "${name}" 的 definition 无法解析。`);
+  }
+
+  const defaults: ResolvedServerConfig = parsed ?? {
     name,
     connectionMode: "lazy",
-    hasExplicitOverviewConfig: false,
     overview: {
       name,
       content: "No overview configured yet.",
       source: "none",
     },
-    definition: {
+    transport: {
+      kind: "stdio",
       command: "npx",
     },
+    toolFilter: {
+      include: [],
+      exclude: [],
+    },
   };
+  const { definition: _definition, ...resolvedOverrides } = overrides;
 
   return {
     ...defaults,
-    ...overrides,
-    overview: { ...(overrides.overview ?? defaults.overview) },
-    definition: { ...(overrides.definition ?? defaults.definition) },
+    ...resolvedOverrides,
+    overview: { ...(resolvedOverrides.overview ?? defaults.overview) },
+    transport: resolvedOverrides.transport ?? defaults.transport,
+    toolFilter: resolvedOverrides.toolFilter ?? defaults.toolFilter,
   };
 }
 
@@ -41,8 +69,9 @@ export function makePluginConfig(
 
   return {
     configPaths: ["C:/Users/Admin/.pi/agent/just-enough-mcp/config.json"],
-    overviewDir: "C:/Users/Admin/.pi/agent/just-enough-mcp/overviews",
-    artifactDir: "C:/Users/Admin/.pi/agent/just-enough-mcp/artifacts",
+    overviewDirectoryPath: "C:/Users/Admin/.pi/agent/just-enough-mcp/overviews",
+    artifactDirectoryPath: "C:/Users/Admin/.pi/agent/just-enough-mcp/artifacts",
+    warnings: [],
     ...overrides,
     materialization: { ...(overrides.materialization ?? DEFAULT_MATERIALIZATION_SETTINGS) },
     tui: { ...(overrides.tui ?? DEFAULT_TUI_RESULT_RENDER_SETTINGS) },

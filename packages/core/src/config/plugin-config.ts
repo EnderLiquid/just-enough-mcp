@@ -1,13 +1,18 @@
-import { loadServerOverview } from "../overview/server-overviews.js";
 import {
-  DEFAULT_CONNECTION_MODE,
-  type ResolvedServerConfig,
-  type ServerConnectionMode,
-} from "../modeling/types.js";
+  assertAbsoluteConfiguredOverviewPath,
+  resolveServerOverview
+} from "../overview/server-overviews.js";
+import {
+  InvalidServerConfigError,
+  assertValidServerName,
+  parseServerConfig,
+  toResolvedServerConfig,
+} from "./server-config.js";
 import {
   DEFAULT_MATERIALIZATION_SETTINGS,
   type MaterializationSettings,
 } from "../artifacts/types.js";
+import type { ResolvedServerConfig } from "../modeling/types.js";
 
 export interface RawCorePluginConfig {
   materialization?: unknown;
@@ -15,18 +20,27 @@ export interface RawCorePluginConfig {
 }
 
 export interface CorePluginConfigResolveOptions {
-  readonly overviewDir: string;
-  /**
-   * 用于解析相对显式 overview 路径的基准配置路径。
-   * 配置路径如何解析由宿主 adapter 决定。
-   */
-  readonly configPath?: string;
+  /** 默认 overview 文件所在的目录。显式 overview 路径必须已由宿主 loader 规范化。 */
+  readonly overviewDirectoryPath: string;
+}
+
+export type CorePluginConfigWarningCode =
+  | "invalid-server-name"
+  | "invalid-server-definition"
+  | "overview-unavailable";
+
+export interface CorePluginConfigWarning {
+  readonly code: CorePluginConfigWarningCode;
+  readonly serverName: string;
+  readonly fieldPath?: string;
+  readonly message: string;
+  readonly action: "skipped" | "fallback";
 }
 
 export interface CorePluginConfigLoadResult {
-  overviewDir: string;
   materialization: MaterializationSettings;
   servers: ResolvedServerConfig[];
+  warnings: CorePluginConfigWarning[];
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -76,96 +90,71 @@ function parseMaterialization(raw: unknown): MaterializationSettings {
   };
 }
 
-const SERVER_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]{0,31}$/;
-const WINDOWS_RESERVED_DEVICE_NAMES = new Set([
-  "con",
-  "prn",
-  "aux",
-  "nul",
-  ...Array.from({ length: 9 }, (_, index) => `com${index + 1}`),
-  ...Array.from({ length: 9 }, (_, index) => `lpt${index + 1}`),
-]);
-
-function assertValidServerName(serverName: string): void {
-  if (!SERVER_NAME_PATTERN.test(serverName)) {
-    throw new Error(
-      `MCP server name "${serverName}" must be 1 to 32 lowercase ASCII letters, digits, ".", "_" or "-", beginning with a letter or digit.`,
-    );
-  }
-
-  const firstSegment = serverName.split(".", 1)[0]!;
-  if (WINDOWS_RESERVED_DEVICE_NAMES.has(firstSegment)) {
-    throw new Error(`MCP server name "${serverName}" uses the Windows-reserved device name "${firstSegment}".`);
-  }
-}
-
-function parseConnectionMode(value: unknown, serverName: string): ServerConnectionMode {
-  if (value === undefined) {
-    return DEFAULT_CONNECTION_MODE;
-  }
-
-  if (value !== "lazy" && value !== "eager") {
-    throw new Error(`Server "${serverName}" connectionMode must be "lazy" or "eager".`);
-  }
-
-  return value;
-}
-
-function parseOverviewPath(value: unknown, serverName: string): string | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (typeof value !== "string") {
-    throw new Error(`Server "${serverName}" overview must be a string path.`);
-  }
-
-  return value;
-}
-
-function parseResolvedServerConfig(
-  serverName: string,
-  raw: unknown,
-  configPath: string,
-  overviewDir: string,
-): ResolvedServerConfig {
-  if (!isObject(raw)) {
-    throw new Error(`Server "${serverName}" config must be an object.`);
-  }
-
-  const connectionMode = parseConnectionMode(raw.connectionMode, serverName);
-  const overview = parseOverviewPath(raw.overview, serverName);
-  const definition = { ...raw };
-  const resolvedOverview = loadServerOverview(serverName, { connectionMode, overview }, configPath, overviewDir);
-
-  return {
-    name: serverName,
-    connectionMode,
-    hasExplicitOverviewConfig: typeof overview === "string",
-    overview: resolvedOverview,
-    definition,
-  };
-}
-
 function resolveServers(
-  configPath: string,
-  overviewDir: string,
+  overviewDirectoryPath: string,
   raw: RawCorePluginConfig,
-): ResolvedServerConfig[] {
-  const entries = Object.entries(raw.servers ?? {});
-  return entries.map(([serverName, rawServer]) => {
-    assertValidServerName(serverName);
-    return parseResolvedServerConfig(serverName, rawServer, configPath, overviewDir);
-  });
+): { servers: CorePluginConfigLoadResult["servers"]; warnings: CorePluginConfigWarning[] } {
+  const servers: CorePluginConfigLoadResult["servers"] = [];
+  const warnings: CorePluginConfigWarning[] = [];
+
+  for (const [serverName, rawServer] of Object.entries(raw.servers ?? {})) {
+    try {
+      assertValidServerName(serverName);
+      const parsed = parseServerConfig(serverName, rawServer);
+      if (parsed.configuredOverviewPath !== undefined) {
+        assertAbsoluteConfiguredOverviewPath(parsed.configuredOverviewPath);
+      }
+      const overviewResolution = resolveServerOverview(
+        serverName,
+        { overview: parsed.configuredOverviewPath },
+        overviewDirectoryPath,
+      );
+
+      servers.push(toResolvedServerConfig(serverName, parsed, overviewResolution.overview));
+
+      if (overviewResolution.warning !== undefined) {
+        warnings.push({
+          code: "overview-unavailable",
+          serverName,
+          fieldPath: "overview",
+          message: overviewResolution.warning,
+          action: "fallback",
+        });
+      }
+    } catch (error) {
+      if (!(error instanceof InvalidServerConfigError)) {
+        throw error;
+      }
+
+      warnings.push({
+        code: error.code,
+        serverName,
+        ...(error.fieldPath === undefined ? {} : { fieldPath: error.fieldPath }),
+        message: error.message,
+        action: "skipped",
+      });
+    }
+  }
+
+  return { servers, warnings };
 }
 
 export function resolveCorePluginConfig(
   raw: RawCorePluginConfig,
   options: CorePluginConfigResolveOptions,
 ): CorePluginConfigLoadResult {
+  if (!isObject(raw)) {
+    throw new Error("just-enough-mcp core config must be an object.");
+  }
+  if (raw.servers !== undefined && !isObject(raw.servers)) {
+    throw new Error("just-enough-mcp config field \"servers\" must be an object.");
+  }
+
+  const materialization = parseMaterialization(raw.materialization);
+  const resolvedServers = resolveServers(options.overviewDirectoryPath, raw);
   return {
-    overviewDir: options.overviewDir,
-    materialization: parseMaterialization(raw.materialization),
-    servers: resolveServers(options.configPath ?? "", options.overviewDir, raw),
+    materialization,
+    servers: resolvedServers.servers,
+    warnings: resolvedServers.warnings,
   };
 }

@@ -8,12 +8,14 @@ export type ServerOauthState =
   | "authorized"
   | "unknown";
 
+/** 配置文件中的未解析 server definition。 */
 export type ServerDefinition = Record<string, unknown>;
 
 export interface ServerOverview {
   name: string;
   content: string;
   source: "config" | "auto" | "none";
+  /** 实际读取到 overview 内容的文件路径。 */
   path?: string;
 }
 
@@ -26,16 +28,47 @@ export interface McpRuntimeCapabilities {
 }
 
 export interface BaseServerConfig {
-  connectionMode?: ServerConnectionMode;
   overview?: string;
+}
+
+export interface ResolvedStdioTransport {
+  kind: "stdio";
+  command: string;
+  args?: string[];
+  cwd?: string;
+  env?: Record<string, string>;
+}
+
+export interface ResolvedOauthConfig {
+  clientMetadataUrl?: string;
+  scope?: string;
+  profile: string;
+}
+
+export interface ResolvedHttpTransport {
+  kind: "http";
+  url: URL;
+  auth: "public" | "static" | "oauth";
+  headers?: Record<string, string>;
+  bearerToken?: string;
+  oauth?: ResolvedOauthConfig;
+}
+
+export type ResolvedServerTransport = ResolvedStdioTransport | ResolvedHttpTransport;
+
+export interface ResolvedToolFilter {
+  include: string[];
+  exclude: string[];
 }
 
 export interface ResolvedServerConfig {
   name: string;
   connectionMode: ServerConnectionMode;
-  hasExplicitOverviewConfig: boolean;
+  /** 用户声明的显式 overview 路径，即使该文件暂时不可用也保留。 */
+  configuredOverviewPath?: string;
   overview: ServerOverview;
-  definition: ServerDefinition;
+  transport: ResolvedServerTransport;
+  toolFilter: ResolvedToolFilter;
 }
 
 export interface ServerSnapshot {

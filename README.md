@@ -34,6 +34,8 @@ Resources、Prompts、Sampling、Elicitation，以及将每个 MCP tool 直接�
 
 项目层与全局层的 `materialization`、`tui` 字段按字段覆盖，server definition 不做递归合并。每个配置文件中的相对 `overview` 路径都相对于该文件所在目录解析；运行时会先将其规范化为绝对路径。
 
+配置解析阶段会集中校验每个 server 的 transport、认证、OAuth、启动参数和工具过滤配置。单个 server 配置无效时会跳过该 server，并将同一阶段的配置 warning 合并为一条通知；其他有效 server 仍然可以启动。JSON、顶层结构、materialization 或 TUI 等全局配置错误仍会使本次配置加载失败。
+
 下面的配置同时展示一个 stdio server、一个静态 token HTTP server 和一个 OAuth HTTP server：
 
 ```json

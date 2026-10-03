@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { OAuthAuthenticationError } from "../packages/core/src/oauth/broker/authenticated-fetch.js";
 import { OAuthBrokerClientError } from "../packages/core/src/oauth/broker/client.js";
+import { resolveCorePluginConfig } from "../packages/core/src/config/plugin-config.js";
 import type { ResolvedServerConfig, ServerDefinition } from "../packages/core/src/modeling/types.js";
 import { OauthHttpServer } from "../packages/core/src/servers/servers/oauth-http-server.js";
 
@@ -59,18 +60,23 @@ vi.mock("@modelcontextprotocol/sdk/client/streamableHttp.js", () => ({
 const namespaceId = `agent-dir:v1:${"c".repeat(64)}`;
 
 function makeConfig(definition: ServerDefinition = {}): ResolvedServerConfig {
-  return {
-    name: "remote",
-    connectionMode: "lazy",
-    hasExplicitOverviewConfig: false,
-    overview: { name: "remote", content: "", source: "none" },
-    definition: {
-      transport: "http",
-      url: "https://mcp.example.test/mcp",
-      auth: "oauth",
-      ...definition,
+  const resolved = resolveCorePluginConfig(
+    {
+      servers: {
+        remote: {
+          transport: "http",
+          url: "https://mcp.example.test/mcp",
+          auth: "oauth",
+          ...definition,
+        },
+      },
     },
-  };
+    { overviewDirectoryPath: "C:/Users/Admin/.pi/agent/just-enough-mcp/overviews" },
+  );
+  if (resolved.servers.length !== 1) {
+    throw new Error(resolved.warnings[0]?.message ?? "测试 OAuth server definition 无法解析。");
+  }
+  return resolved.servers[0]!;
 }
 
 interface BrokerStub {

@@ -19,7 +19,6 @@ interface RawPluginConfig extends RawCorePluginConfig {
 export interface RawPluginConfigSnapshot {
   configPaths: string[];
   raw: RawPluginConfig;
-  resolutionConfigPath: string;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -58,7 +57,7 @@ function parseTui(raw: unknown): TuiResultRenderSettings {
   };
 }
 
-function normalizeOverviewPaths(configPath: string, raw: RawPluginConfig): RawPluginConfig {
+function normalizeOverviewPaths(baseDir: string, raw: RawPluginConfig): RawPluginConfig {
   if (raw.servers === undefined) {
     return raw;
   }
@@ -68,7 +67,7 @@ function normalizeOverviewPaths(configPath: string, raw: RawPluginConfig): RawPl
     if (
       !isObject(rawServer)
       || typeof rawServer.overview !== "string"
-      || rawServer.overview.length === 0
+      || rawServer.overview.trim().length === 0
       || isAbsolute(rawServer.overview)
     ) {
       servers[serverName] = rawServer;
@@ -77,7 +76,7 @@ function normalizeOverviewPaths(configPath: string, raw: RawPluginConfig): RawPl
 
     servers[serverName] = {
       ...rawServer,
-      overview: resolve(dirname(configPath), rawServer.overview),
+      overview: resolve(baseDir, rawServer.overview),
     };
   }
 
@@ -89,8 +88,14 @@ function parseRawConfig(configPath: string): RawPluginConfig {
     return {};
   }
 
-  const rawText = readFileSync(configPath, "utf8");
-  const parsed: unknown = JSON.parse(rawText);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(configPath, "utf8"));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`just-enough-mcp config "${configPath}" could not be parsed: ${message}`);
+  }
+
   if (!isObject(parsed)) {
     throw new Error(`just-enough-mcp config "${configPath}" must be a JSON object.`);
   }
@@ -99,7 +104,8 @@ function parseRawConfig(configPath: string): RawPluginConfig {
     throw new Error(`just-enough-mcp config field "servers" in "${configPath}" must be an object.`);
   }
 
-  return normalizeOverviewPaths(configPath, parsed as RawPluginConfig);
+  // 约定：overview 相对路径的 baseDir 系配置文件所在目录。
+  return normalizeOverviewPaths(dirname(configPath), parsed as RawPluginConfig);
 }
 
 function mergeConfigField(previous: unknown, next: unknown): unknown {
@@ -142,23 +148,22 @@ export function loadRawPluginConfigFromPaths(
   return {
     configPaths: normalizedConfigPaths,
     raw: mergeRawConfigs(normalizedConfigPaths.map(parseRawConfig)),
-    resolutionConfigPath: normalizedConfigPaths.at(-1) ?? "",
   };
 }
 
 export function loadPluginConfigFromPaths(
   configPaths: readonly string[],
-  overviewDir: string,
-  artifactDir: string,
+  overviewDirectoryPath: string,
+  artifactDirectoryPath: string,
 ): PluginConfigLoadResult {
+  // 约定：合并配置前必须先将所配置的 overview 相对路径转换为绝对路径
   const snapshot = loadRawPluginConfigFromPaths(configPaths);
+
   return {
-    ...resolveCorePluginConfig(snapshot.raw, {
-      overviewDir,
-      configPath: snapshot.resolutionConfigPath,
-    }),
+    ...resolveCorePluginConfig(snapshot.raw, { overviewDirectoryPath }),
     configPaths: snapshot.configPaths,
-    artifactDir,
+    overviewDirectoryPath,
+    artifactDirectoryPath,
     tui: parseTui(snapshot.raw.tui),
   };
 }

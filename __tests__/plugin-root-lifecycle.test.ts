@@ -258,6 +258,41 @@ describe("justEnoughMcp root 生命周期", () => {
     await handler("session_shutdown")();
   });
 
+  it("将同一配置阶段的 server warning 合并为一条通知", async () => {
+    const config = makePluginConfig({
+      servers: [],
+      warnings: [
+        {
+          code: "invalid-server-definition",
+          serverName: "broken",
+          fieldPath: "url",
+          message: 'Server "broken" url must be a valid URL.',
+          action: "skipped",
+        },
+        {
+          code: "overview-unavailable",
+          serverName: "search",
+          fieldPath: "overview",
+          message: 'Server "search" overview file could not be loaded; using the default overview instead.',
+          action: "fallback",
+        },
+      ],
+    });
+    mocks.loadPluginConfig.mockReturnValue(config);
+    const { pi, handler } = createFakePi();
+    justEnoughMcp(pi);
+
+    await handler("session_start")({}, createContext());
+
+    expect(mocks.notifyWarning).toHaveBeenCalledTimes(1);
+    expect(mocks.notifyWarning).toHaveBeenCalledWith(expect.stringContaining("2 MCP server configurations"));
+    expect(mocks.notifyWarning).toHaveBeenCalledWith(expect.stringContaining("broken"));
+    expect(mocks.notifyWarning).toHaveBeenCalledWith(expect.stringContaining("search"));
+    expectCalledBefore(mocks.notifyWarning, mocks.createMcpRegistry);
+
+    await handler("session_shutdown")();
+  });
+
   it("session start 创建带 overview capability 的 Registry 并完成初始化", async () => {
     const config = makePluginConfig();
     mocks.loadPluginConfig.mockReturnValue(config);
@@ -269,7 +304,7 @@ describe("justEnoughMcp root 生命周期", () => {
 
     expect(mocks.createMcpRegistry).toHaveBeenCalledWith(config.servers, {
       overview: {
-        overviewDir: config.overviewDir,
+        overviewDirectoryPath: config.overviewDirectoryPath,
         onCreated: expect.any(Function),
       },
     });
@@ -314,7 +349,7 @@ describe("justEnoughMcp root 生命周期", () => {
     expect(mocks.oauthBrokerLauncherStart).toHaveBeenCalledTimes(1);
     expect(mocks.createMcpRegistry).toHaveBeenCalledWith(config.servers, {
       overview: {
-        overviewDir: config.overviewDir,
+        overviewDirectoryPath: config.overviewDirectoryPath,
         onCreated: expect.any(Function),
       },
       oauth: {

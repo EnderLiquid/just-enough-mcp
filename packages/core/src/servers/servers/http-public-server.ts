@@ -1,7 +1,6 @@
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { ResolvedServerConfig, ServerCatalogResult, ServerSnapshot, ToolCallExecutionResult } from "../../modeling/types.js";
 import type { OverviewBootstrapper } from "../../overview/overview-bootstrapper.js";
-import { expectNonEmptyString, expectOptionalTransport } from "./config-helpers.js";
 import { SdkSessionManager } from "./sdk-session-manager.js";
 import type { McpServer } from "./types.js";
 
@@ -14,14 +13,16 @@ export class HttpPublicServer implements McpServer {
     overviewBootstrapper?: OverviewBootstrapper,
   ) {
     this.name = config.name;
-    expectOptionalTransport(config.definition, config.name, "http");
-    const url = expectNonEmptyString(config.definition, "url", config.name);
+    if (config.transport.kind !== "http" || config.transport.auth !== "public") {
+      throw new Error(`Server "${config.name}" does not contain a resolved public HTTP configuration.`);
+    }
 
+    const transport = config.transport;
     this.session = new SdkSessionManager({
       serverName: this.name,
       config,
       overviewBootstrapper,
-      createTransport: () => new StreamableHTTPClientTransport(new URL(url)),
+      createTransport: () => new StreamableHTTPClientTransport(transport.url),
     });
   }
 
@@ -60,5 +61,4 @@ export class HttpPublicServer implements McpServer {
     const snapshot = await this.session.close();
     return { name: this.name, ...snapshot };
   }
-
 }

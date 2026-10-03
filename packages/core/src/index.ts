@@ -1,6 +1,8 @@
 export {
   resolveCorePluginConfig,
   type CorePluginConfigLoadResult,
+  type CorePluginConfigWarning,
+  type CorePluginConfigWarningCode,
   type CorePluginConfigResolveOptions,
   type RawCorePluginConfig,
 } from "./config/plugin-config.js";
@@ -24,6 +26,11 @@ export type {
 } from "./artifacts/types.js";
 export type {
   ResolvedServerConfig,
+  ResolvedServerTransport,
+  ResolvedStdioTransport,
+  ResolvedHttpTransport,
+  ResolvedOauthConfig,
+  ResolvedToolFilter,
   ServerCatalogResult,
   ServerConnectState,
   ServerConnectionMode,

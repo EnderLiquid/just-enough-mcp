@@ -1,13 +1,11 @@
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import {isAbsolute, join} from "node:path";
 import type { BaseServerConfig, ServerOverview } from "../modeling/types.js";
 
-function resolveConfiguredOverviewPath(configPath: string, overviewPath: string): string {
-  if (isAbsolute(overviewPath)) {
-    return overviewPath;
-  }
-
-  return resolve(dirname(configPath), overviewPath);
+export interface ServerOverviewResolution {
+  overview: ServerOverview;
+  configuredPath?: string;
+  warning?: string;
 }
 
 function normalizeOverviewContent(markdown: string): string {
@@ -19,39 +17,79 @@ function normalizeOverviewContent(markdown: string): string {
   return "Overview file exists but is empty.";
 }
 
-export function loadServerOverview(
+function tryReadOverview(path: string): string | undefined {
+  try {
+    return normalizeOverviewContent(readFileSync(path, "utf8"));
+  } catch {
+    return undefined;
+  }
+}
+
+export function assertAbsoluteConfiguredOverviewPath(configuredOverviewPath: string): void {
+  if (!isAbsolute(configuredOverviewPath)) {
+    throw new Error("configuredOverviewPath must be converted to an absolute path before being passed to core.")
+  }
+}
+
+export function resolveServerOverview(
   serverName: string,
   config: BaseServerConfig,
-  configPath: string,
   overviewDirectoryPath: string,
-): ServerOverview {
-  if (config.overview) {
-    const explicitPath = resolveConfiguredOverviewPath(configPath, config.overview);
-    if (existsSync(explicitPath)) {
-      const content = normalizeOverviewContent(readFileSync(explicitPath, "utf8"));
+): ServerOverviewResolution {
+  const configuredPath = config.overview;
+  if (configuredPath !== undefined) {
+    const content = tryReadOverview(configuredPath);
+    if (content !== undefined) {
       return {
-        name: serverName,
-        content,
-        source: "config",
-        path: explicitPath,
+        configuredPath,
+        overview: {
+          name: serverName,
+          content,
+          source: "config",
+          path: configuredPath,
+        },
       };
     }
   }
 
   const autoPath = join(overviewDirectoryPath, `${serverName}.md`);
-  if (existsSync(autoPath)) {
-    const content = normalizeOverviewContent(readFileSync(autoPath, "utf8"));
+  const autoContent = tryReadOverview(autoPath);
+  if (autoContent !== undefined) {
     return {
-      name: serverName,
-      content,
-      source: "auto",
-      path: autoPath,
+      ...(configuredPath === undefined ? {} : { configuredPath }),
+      overview: {
+        name: serverName,
+        content: autoContent,
+        source: "auto",
+        path: autoPath,
+      },
+      ...(configuredPath === undefined
+        ? {}
+        : {
+            warning: `Server "${serverName}" overview file "${configuredPath}" could not be loaded; using the default overview instead.`,
+          }),
     };
   }
 
   return {
-    name: serverName,
-    content: "No overview is available for this server yet.",
-    source: "none",
+    ...(configuredPath === undefined ? {} : { configuredPath }),
+    overview: {
+      name: serverName,
+      content: "No overview is available for this server yet.",
+      source: "none",
+    },
+    ...(configuredPath === undefined
+      ? {}
+      : {
+          warning: `Server "${serverName}" overview file "${configuredPath}" could not be loaded; using the default overview location instead.`,
+        }),
   };
+}
+
+export function loadServerOverview(
+  serverName: string,
+  config: BaseServerConfig,
+  overviewDirectoryPath: string,
+): ServerOverview {
+  return resolveServerOverview(serverName, config, overviewDirectoryPath).overview;
 }
