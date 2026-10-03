@@ -1,10 +1,14 @@
-export type PayloadContentType =
-  | "text"
-  | "image"
-  | "audio"
-  | "resource"
-  | "resource_link"
-  | "unknown";
+/** payload item 的规范化内容类型；同时作为类型与运行时值的事实来源。 */
+export const PAYLOAD_CONTENT_TYPES = [
+  "text",
+  "image",
+  "audio",
+  "resource",
+  "resource_link",
+  "unknown",
+] as const;
+
+export type PayloadContentType = typeof PAYLOAD_CONTENT_TYPES[number];
 
 export interface PayloadNormalizationSettings {
   prettyPrintJson: boolean;

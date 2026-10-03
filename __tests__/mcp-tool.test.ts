@@ -1,7 +1,7 @@
 import { Compile } from "typebox/compile";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { MaterializedToolCallResult, MaterializationSettings } from "../packages/core/src/artifacts/types.js";
+import { PAYLOAD_CONTENT_TYPES, type MaterializedToolCallResult, type MaterializationSettings } from "../packages/core/src/artifacts/types.js";
 import type { TuiResultRenderSettings } from "../packages/pi-adapter/src/rendering/types.js";
 import type { McpRegistry } from "../packages/core/src/servers/registry.js";
 import { makePluginConfig, makeServerSnapshot } from "./support/model-fixtures.js";
@@ -175,6 +175,22 @@ describe("mcp_tool 参数 schema", () => {
 
     expect(validator.Check(call)).toBe(true);
     expect(validator.Check({ ...call, summaryText: "display summary" })).toBe(false);
+
+    // contentType 必须按 core 的 PayloadContentType 完整枚举暴露，避免模型在 codemode 下猜测取值
+    for (const contentType of PAYLOAD_CONTENT_TYPES) {
+      expect(validator.Check({
+        ...call,
+        payloadItems: [{ ...call.payloadItems[0], contentType }],
+      })).toBe(true);
+    }
+    expect(validator.Check({
+      ...call,
+      payloadItems: [{ ...call.payloadItems[0], contentType: "binary" }],
+    })).toBe(false);
+    const contentTypeEnum = (mcpToolOutputSchema as unknown as {
+      properties: { payloadItems: { items: { properties: { contentType: { enum: string[] } } } } };
+    }).properties.payloadItems.items.properties.contentType.enum;
+    expect(contentTypeEnum).toEqual([...PAYLOAD_CONTENT_TYPES]);
     expect(validator.Check({
       ...call,
       payloadItems: [{ ...call.payloadItems[0], preview: ["display-only preview"] }],

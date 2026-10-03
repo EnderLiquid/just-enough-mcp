@@ -4,6 +4,7 @@ import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "./schema.js";
 import {
   materializeToolCallResult,
+  PAYLOAD_CONTENT_TYPES,
   pluralize,
   type MaterializeCallToolResultInput,
   type MaterializationSettings,
@@ -59,7 +60,10 @@ export const mcpToolOutputSchema = Type.Unsafe({
         properties: {
           index: { type: "integer" },
           source: { type: "string" },
-          contentType: { type: "string" },
+          contentType: {
+            type: "string",
+            enum: [...PAYLOAD_CONTENT_TYPES],
+          },
           mimeType: { type: "string" },
           rawMimeType: { type: "string" },
           uri: { type: "string" },

@@ -14,6 +14,7 @@ export {
   type MaterializePreparedToolCallResultInput,
   type PrepareToolCallResultInput,
 } from "./artifacts/materializer.js";
+export { PAYLOAD_CONTENT_TYPES } from "./artifacts/types.js";
 export type {
   ExtractedPayloadItem,
   ExtractedPayloads,
