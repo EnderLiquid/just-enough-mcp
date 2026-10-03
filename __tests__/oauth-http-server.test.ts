@@ -150,6 +150,19 @@ describe("OauthHttpServer", () => {
     await expect(server.logout()).rejects.toThrow(/no OAuth broker is available/u);
   });
 
+  it("把配置的 clientName 传入 identity 与 authorize 请求", async () => {
+    const broker = makeBroker();
+    const server = makeServer(broker, { oauth: { clientName: "Custom Client" } });
+
+    await server.authorize();
+    expect(broker.authorizeOAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        identity: expect.objectContaining({ clientName: "Custom Client" }),
+      }),
+      expect.anything(),
+    );
+  });
+
   it("认证失败按类别更新状态缓存", async () => {
     const broker = makeBroker();
     mocks.clientConnect.mockRejectedValueOnce(new OAuthAuthenticationError(

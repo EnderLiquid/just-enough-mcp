@@ -76,6 +76,7 @@ export interface OAuthAuthorizationTransactionsOptions {
   readonly authorize: OAuthAuthorizationUrlOperation;
   readonly exchangeCode: OAuthCodeExchangeOperation;
   readonly redirectUri: string;
+  /** 基础 DCR metadata，不含 client_name；后者在授权时从 identity 读取。 */
   readonly clientMetadata: OAuthClientMetadata;
   readonly openBrowser: BrowserOpener;
   readonly transactionTimeoutMs: number;
@@ -270,7 +271,10 @@ export class OAuthAuthorizationTransactions {
       });
       const finalScope = await this.resolveScope(identity, request, discovery?.resourceMetadata
         ?.scopes_supported);
-      const clientMetadata = this.clientMetadata;
+      const clientMetadata: OAuthClientMetadata = {
+        ...this.clientMetadata,
+        client_name: identity.clientName,
+      };
       let registration = await this.coordinator.ensureRegistration(
         identity,
         clientMetadata,

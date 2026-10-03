@@ -3,6 +3,7 @@ import type {
   OAuthClientMetadata,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import {
+  canonicalizeAuthorizationServerUrl,
   cloneOAuthCredentialRecord,
   type OAuthClientRegistration,
   type OAuthCredentialRecord,
@@ -592,7 +593,7 @@ export class OAuthTokenCoordinator {
         ...(resourceMetadataUrl === undefined ? {} : { resourceMetadataUrl }),
       });
       const next: OAuthDiscoveryRecord = {
-        authorizationServerUrl: result.authorizationServerUrl,
+        authorizationServerUrl: canonicalizeAuthorizationServerUrl(result.authorizationServerUrl),
         fetchedAt: this.now(),
         ...(result.authorizationServerMetadata
           ? { authorizationServerMetadata: result.authorizationServerMetadata }
@@ -629,7 +630,9 @@ export class OAuthTokenCoordinator {
       );
     }
 
-    const authorizationServerUrl = discovery?.authorizationServerUrl ?? identity.resourceUrl;
+    const authorizationServerUrl = canonicalizeAuthorizationServerUrl(
+      discovery?.authorizationServerUrl ?? identity.resourceUrl,
+    );
     const clientInformation = await operation({
       identity,
       authorizationServerUrl,

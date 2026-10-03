@@ -56,6 +56,7 @@ export class OauthHttpServer implements McpServer {
           namespaceId: dependencies.namespaceId,
           resourceUrl: this.oauthConfig.url,
           clientMetadataUrl: this.oauthConfig.clientMetadataUrl,
+          clientName: this.oauthConfig.clientName,
           profile: this.oauthConfig.profile,
           requestHeaders: this.oauthConfig.headers,
         });

@@ -1,4 +1,8 @@
 import { createHash } from "node:crypto";
+import {
+  resolveOAuthClientName,
+  validateOAuthClientName,
+} from "../client-name.ts";
 
 export const OAUTH_IDENTITY_VERSION = 1 as const;
 
@@ -7,6 +11,8 @@ export interface OAuthIdentityInput {
   namespaceId: string;
   resourceUrl: string | URL;
   clientMetadataUrl?: string | URL | null;
+  /** DCR client_name；未配置时在归一化点填充默认名称。 */
+  clientName?: string;
   profile?: string;
   requestHeaders?: Readonly<Record<string, string>>;
 }
@@ -16,6 +22,8 @@ export interface OAuthIdentityV1 {
   namespaceId: string;
   resourceUrl: string;
   clientMetadataUrl: string | null;
+  /** 恒有值的 DCR client_name；未配置时为默认名称。 */
+  clientName: string;
   profile: string;
   requestHeadersDigest: string;
   key: `oauth:v1:${string}`;
@@ -107,6 +115,7 @@ function createOAuthIdentityFromCanonicalFields(input: {
   namespaceId: string;
   resourceUrl: string;
   clientMetadataUrl: string | null;
+  clientName: string;
   profile: string;
   requestHeadersDigest: string;
 }): OAuthIdentityV1 {
@@ -127,6 +136,7 @@ export function createOAuthIdentity(input: OAuthIdentityInput): OAuthIdentityV1 
   const clientMetadataUrl = input.clientMetadataUrl == null
     ? null
     : canonicalizeClientMetadataUrl(input.clientMetadataUrl);
+  const clientName = resolveOAuthClientName(input.clientName, "clientName");
   const profile = input.profile === undefined
     ? "default"
     : requireNonEmptyString(input.profile, "profile");
@@ -136,6 +146,7 @@ export function createOAuthIdentity(input: OAuthIdentityInput): OAuthIdentityV1 
     namespaceId,
     resourceUrl,
     clientMetadataUrl,
+    clientName,
     profile,
     requestHeadersDigest,
   });
@@ -157,6 +168,7 @@ export function parseOAuthIdentity(value: unknown): OAuthIdentityV1 {
     : canonicalizeClientMetadataUrl(
       requireNonEmptyString(record.clientMetadataUrl, "identity.clientMetadataUrl"),
     );
+  const clientName = validateOAuthClientName(record.clientName, "identity.clientName");
   const profile = requireNonEmptyString(record.profile, "identity.profile");
   const requestHeadersDigest = requireNonEmptyString(
     record.requestHeadersDigest,
@@ -170,6 +182,7 @@ export function parseOAuthIdentity(value: unknown): OAuthIdentityV1 {
     namespaceId,
     resourceUrl,
     clientMetadataUrl,
+    clientName,
     profile,
     requestHeadersDigest,
   });

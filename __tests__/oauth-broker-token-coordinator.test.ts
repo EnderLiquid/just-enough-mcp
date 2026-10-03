@@ -664,7 +664,8 @@ describe("OAuth credential 状态", () => {
     expect(first).toEqual(second);
     expect(first).toMatchObject({
       strategy: "dcr",
-      authorizationServerUrl: "https://as.example.test",
+      // 写入前归一化，与 credential 文件读回的 WHATWG URL 形式一致。
+      authorizationServerUrl: "https://as.example.test/",
       clientInformation: { client_id: "client-1" },
     });
     const record = await repository.readRecord(identity);

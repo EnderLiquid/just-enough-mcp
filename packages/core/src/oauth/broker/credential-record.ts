@@ -90,6 +90,26 @@ export function cloneDiscovery(discovery: OAuthDiscoveryRecord): OAuthDiscoveryR
   };
 }
 
+/**
+ * 归一化 Authorization Server URL。
+ *
+ * discovery 返回的 URL 可能省略 origin 的尾斜杠，而 credential 文件读回时
+ * 会经过 WHATWG URL 规范化。写入前统一形式，避免同一 AS 因字符串差异
+ * 被误判为变更而重复注册。
+ */
+export function canonicalizeAuthorizationServerUrl(value: string): string {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new TypeError("authorizationServerUrl must be an absolute HTTP URL.");
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new TypeError("authorizationServerUrl must use http or https.");
+  }
+  return url.toString();
+}
+
 /** RFC 6749 scope-token = 1*NQCHAR。 */
 const SCOPE_TOKEN_PATTERN = /^[\x21\x23-\x5B\x5D-\x7E]+$/;
 

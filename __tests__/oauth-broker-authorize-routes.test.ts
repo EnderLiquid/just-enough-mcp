@@ -175,6 +175,79 @@ describe("OAuth broker authorize 路由", () => {
     }
   }, 15_000);
 
+  it("使用 identity 的 clientName 进行 DCR", async () => {
+    const rootDir = tempDirs.create();
+    const as = await startFakeAs();
+    const identity = createOAuthIdentity({
+      namespaceId,
+      resourceUrl: as.resourceUrl,
+      clientName: "Custom Client",
+    });
+    const port = await allocatePort();
+    const openedUrls: string[] = [];
+    const { client, running } = startBroker(rootDir, port, { openedUrls });
+
+    try {
+      client.start();
+      await client.ensureConnected();
+
+      const pending = client.authorizeOAuth({ identity });
+      const authorizationUrl = await waitForOpenedUrl(openedUrls);
+      const state = await readStateParameter(authorizationUrl);
+      const callback = await triggerCallback(port, `code=test-code&state=${state}`);
+      expect(callback.status).toBe(200);
+      await expect(pending).resolves.toMatchObject({ oauthState: "authorized" });
+
+      expect(as.registrationRequests).toHaveLength(1);
+      expect(as.registrationRequests[0]).toMatchObject({ client_name: "Custom Client" });
+    } finally {
+      await client.close();
+      await running;
+    }
+  }, 15_000);
+
+  it("identity 已有 registration 时复用且不重复 DCR", async () => {
+    const rootDir = tempDirs.create();
+    const as = await startFakeAs();
+    const identity = makeIdentity(as);
+    const port = await allocatePort();
+    const openedUrls: string[] = [];
+
+    const repository = await FileOAuthCredentialRepository.open(rootDir, namespaceId);
+    await repository.mutateRecord(identity, record => ({
+      record: {
+        ...record,
+        registration: {
+          strategy: "dcr",
+          authorizationServerUrl: as.authorizationServerUrl,
+          clientInformation: {
+            client_id: "pre-registered-client",
+            redirect_uris: [`http://127.0.0.1:${port}/oauth/callback`],
+          },
+        },
+      },
+      result: undefined,
+    }));
+
+    const { client, running } = startBroker(rootDir, port, { openedUrls });
+    try {
+      client.start();
+      await client.ensureConnected();
+
+      const pending = client.authorizeOAuth({ identity });
+      const authorizationUrl = await waitForOpenedUrl(openedUrls);
+      const state = await readStateParameter(authorizationUrl);
+      await triggerCallback(port, `code=test-code&state=${state}`);
+      await expect(pending).resolves.toMatchObject({ oauthState: "authorized" });
+
+      // 预置 registration 的 AS URL 与 discovery 返回形式不同，但读盘后必须视为同一 AS。
+      expect(as.registrationRequests).toHaveLength(0);
+    } finally {
+      await client.close();
+      await running;
+    }
+  }, 15_000);
+
   it("显式 scope 优先于 401 challenge，并并入追加集合", async () => {
     const rootDir = tempDirs.create();
     const as = await startFakeAs();

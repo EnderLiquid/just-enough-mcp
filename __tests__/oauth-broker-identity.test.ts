@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createOAuthIdentity,
   createRequestHeadersDigest,
+  parseOAuthIdentity,
 } from "../packages/core/src/oauth/broker/identity.js";
 
 describe("OAuth identity v1", () => {
@@ -32,6 +33,7 @@ describe("OAuth identity v1", () => {
       namespaceId: "agent-dir-a",
       resourceUrl: "https://mcp.example.com/mcp",
       clientMetadataUrl: "https://auth.example.com/client",
+      clientName: "just-enough-mcp",
       profile: "default",
     });
     expect(first.requestHeadersDigest).toMatch(/^[0-9a-f]{64}$/);
@@ -54,6 +56,10 @@ describe("OAuth identity v1", () => {
     ["resourceUrl protocol", { resourceUrl: "file:///tmp/mcp" }],
     ["clientMetadataUrl", { clientMetadataUrl: "not-a-url" }],
     ["clientMetadataUrl protocol", { clientMetadataUrl: "http://example.com/client" }],
+    ["clientName type", { clientName: 42 as unknown as string }],
+    ["clientName blank", { clientName: "   " }],
+    ["clientName control character", { clientName: "bad\u0007name" }],
+    ["clientName length", { clientName: "a".repeat(257) }],
     ["profile", { profile: " " }],
   ])("拒绝无效的 %s", (_label, override) => {
     expect(() => createOAuthIdentity({
@@ -74,7 +80,33 @@ describe("OAuth identity v1", () => {
     })).toThrow(/duplicate case-insensitive header/);
   });
 
-  it("将 namespace、profile、metadata URL 和 header 值的变化隔离到不同 identity", () => {
+  it("未配置与显式默认 clientName 等价，自定义名称隔离到不同 identity", () => {
+    const base = {
+      namespaceId: "agent-dir-a",
+      resourceUrl: "https://example.com/mcp",
+    } as const;
+    const unconfigured = createOAuthIdentity(base);
+    const explicitDefault = createOAuthIdentity({ ...base, clientName: "just-enough-mcp" });
+    const custom = createOAuthIdentity({ ...base, clientName: "  Custom Client  " });
+
+    expect(explicitDefault).toEqual(unconfigured);
+    expect(custom.clientName).toBe("Custom Client");
+    expect(custom.key).not.toBe(unconfigured.key);
+  });
+
+  it("parseOAuthIdentity 接受规范 identity，并拒绝缺失或非法的 clientName", () => {
+    const identity = createOAuthIdentity({
+      namespaceId: "agent-dir-a",
+      resourceUrl: "https://example.com/mcp",
+      clientName: "Custom Client",
+    });
+
+    expect(parseOAuthIdentity(identity)).toEqual(identity);
+    expect(() => parseOAuthIdentity({ ...identity, clientName: undefined })).toThrow(TypeError);
+    expect(() => parseOAuthIdentity({ ...identity, clientName: "   " })).toThrow(TypeError);
+  });
+
+  it("将 namespace、profile、metadata URL、clientName 和 header 值的变化隔离到不同 identity", () => {
     const base = {
       namespaceId: "agent-dir-a",
       resourceUrl: "https://example.com/mcp",
@@ -87,6 +119,7 @@ describe("OAuth identity v1", () => {
     expect(createOAuthIdentity({ ...base, namespaceId: "agent-dir-b" }).key).not.toBe(identity.key);
     expect(createOAuthIdentity({ ...base, profile: "work" }).key).not.toBe(identity.key);
     expect(createOAuthIdentity({ ...base, clientMetadataUrl: null }).key).not.toBe(identity.key);
+    expect(createOAuthIdentity({ ...base, clientName: "Custom Client" }).key).not.toBe(identity.key);
     expect(createOAuthIdentity({
       ...base,
       requestHeaders: { "X-Tenant": "other" },

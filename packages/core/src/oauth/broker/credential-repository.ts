@@ -6,6 +6,7 @@ import type {
   OAuthProtectedResourceMetadata,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import {
+  canonicalizeAuthorizationServerUrl,
   cloneOAuthCredentialRecord,
   createOAuthCredentialRecord,
   normalizeChallengedScopes,
@@ -25,7 +26,13 @@ import {
 } from "./runtime-files.ts";
 
 export const OAUTH_BROKER_CREDENTIAL_FORMAT = "just-enough-mcp.oauth-broker-credentials" as const;
-export const OAUTH_BROKER_CREDENTIAL_VERSION = 1 as const;
+export const OAUTH_BROKER_CREDENTIAL_VERSION = 2 as const;
+
+/**
+ * 可自动备份并弃用的历史 document 版本。
+ * 未来迁移时在这里登记旧版本，并显式决定迁移或丢弃。
+ */
+const LEGACY_CREDENTIAL_DOCUMENT_VERSIONS: ReadonlySet<number> = new Set([1]);
 
 export interface OAuthCredentialMutation<T> {
   readonly state: OAuthCredentialState;
@@ -234,8 +241,33 @@ async function readCredentialRecords(
   } catch (error) {
     throw new TypeError("OAuth broker credential file must contain valid JSON.", { cause: error });
   }
+  if (isLegacyCredentialDocument(value, namespaceId)) {
+    await retireLegacyCredentialDocument(credentialPath);
+    return new Map();
+  }
   const records = parseCredentialRecords(value, namespaceId);
   return new Map(records.map(record => [record.identity.key, record]));
+}
+
+/**
+ * 仅当 format、namespace 与已登记的旧版本全部匹配时才视为可弃用的历史文档；
+ * 未知版本、跨 namespace 与损坏文件继续走严格解析，避免静默丢弃数据。
+ */
+function isLegacyCredentialDocument(value: unknown, namespaceId: string): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const document = value as Record<string, unknown>;
+  return document.format === OAUTH_BROKER_CREDENTIAL_FORMAT
+    && document.namespaceId === namespaceId
+    && typeof document.version === "number"
+    && LEGACY_CREDENTIAL_DOCUMENT_VERSIONS.has(document.version);
+}
+
+/** 原子重命名旧文档；失败时抛错，保留原文件与待迁移数据。 */
+async function retireLegacyCredentialDocument(credentialPath: string): Promise<void> {
+  const backupPath = `${credentialPath}.legacy-${Date.now()}-${randomBytes(4).toString("hex")}`;
+  await rename(credentialPath, backupPath);
 }
 
 async function writeCredentialRecords(
@@ -429,16 +461,11 @@ function assertIdentityMatchesNamespace(identity: OAuthIdentity, namespaceId: st
 
 function canonicalizeHttpUrl(value: unknown, fieldName: string): string {
   const raw = requireNonEmpty(value, fieldName);
-  let url: URL;
   try {
-    url = new URL(raw);
+    return canonicalizeAuthorizationServerUrl(raw);
   } catch {
     throw new TypeError(`${fieldName} must be an absolute HTTP URL.`);
   }
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new TypeError(`${fieldName} must use http or https.`);
-  }
-  return url.toString();
 }
 
 function requireRecord(value: unknown, fieldName: string): Record<string, unknown> {

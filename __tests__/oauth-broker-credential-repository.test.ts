@@ -1,4 +1,5 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createOAuthCredentialState } from "../packages/core/src/oauth/broker/credential-state.js";
 import { createOAuthCredentialRecord } from "../packages/core/src/oauth/broker/credential-record.js";
@@ -42,7 +43,7 @@ function makeAuthorizedRecord(authorization: ReturnType<typeof createOAuthCreden
 }
 
 describe("OAuth broker credential repository", () => {
-  it("以 v1 whole-document 原子格式持久化 refresh，并可由新 broker 恢复", async () => {
+  it("以 whole-document 原子格式持久化 refresh，并可由新 broker 恢复", async () => {
     const rootDir = tempDirs.create();
     const identity = makeIdentity();
     const repository = await FileOAuthCredentialRepository.open(rootDir, namespaceId);
@@ -162,7 +163,7 @@ describe("OAuth broker credential repository", () => {
       records: [],
     }), "utf8");
     await expect(FileOAuthCredentialRepository.open(rootDir, namespaceId))
-      .rejects.toThrow("credential.version must be 1");
+      .rejects.toThrow("credential.version must be 2");
 
     await writeFile(path, JSON.stringify({
       format: OAUTH_BROKER_CREDENTIAL_FORMAT,
@@ -172,6 +173,38 @@ describe("OAuth broker credential repository", () => {
     }), "utf8");
     await expect(FileOAuthCredentialRepository.open(rootDir, namespaceId))
       .rejects.toThrow("namespace does not match");
+  });
+
+  it("备份并弃用已知旧版本文档，跨 namespace 的旧版本文档仍报错", async () => {
+    const rootDir = tempDirs.create();
+    const initial = await FileOAuthCredentialRepository.open(rootDir, namespaceId);
+    await initial.mutate(makeIdentity(), state => ({ state, result: undefined }));
+    const path = getOAuthBrokerRuntimePaths(rootDir).credentialPath;
+
+    const legacyDocument = `${JSON.stringify({
+      format: OAUTH_BROKER_CREDENTIAL_FORMAT,
+      version: 1,
+      namespaceId,
+      records: [],
+    })}\n`;
+    await writeFile(path, legacyDocument, "utf8");
+
+    const reopened = await FileOAuthCredentialRepository.open(rootDir, namespaceId);
+    expect(await reopened.read(makeIdentity())).toEqual(createOAuthCredentialState());
+    await expect(readFile(path, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    const backups = (await readdir(dirname(path)))
+      .filter(entry => entry.startsWith("broker-credentials.json.legacy-"));
+    expect(backups).toHaveLength(1);
+    expect(await readFile(join(dirname(path), backups[0]!), "utf8")).toBe(legacyDocument);
+
+    await writeFile(path, JSON.stringify({
+      format: OAUTH_BROKER_CREDENTIAL_FORMAT,
+      version: 1,
+      namespaceId: "other",
+      records: [],
+    }), "utf8");
+    await expect(FileOAuthCredentialRepository.open(rootDir, namespaceId))
+      .rejects.toThrow("credential.version must be 2");
   });
 
   it("持久化 registration、discovery 与追加 scope，并在 reopen 后恢复", async () => {

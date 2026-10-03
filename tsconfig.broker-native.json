@@ -4,6 +4,7 @@
     "erasableSyntaxOnly": true
   },
   "include": [
-    "packages/core/src/oauth/broker/**/*.ts"
+    "packages/core/src/oauth/broker/**/*.ts",
+    "packages/core/src/oauth/client-name.ts"
   ]
 }

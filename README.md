@@ -78,6 +78,7 @@ HTTP server 还可设置：
 - `auth: "oauth"`：启用 OAuth。它只适用于 HTTP server，不能与 `bearerToken` 或 `headers.Authorization` 同时使用。
 - `oauth.scope`：可选的 OAuth scope。它作为 base scope 的优先来源；缺省时使用初始 401 challenge 的 scope，再缺省时使用 resource metadata 的 `scopes_supported`。
 - `oauth.clientMetadataUrl`：可选的 HTTPS Client ID Metadata Document URL。它参与 credential identity，但当前版本只使用 Dynamic Client Registration（DCR）建立 client 身份，不会把该 URL 用作 `client_id`；支持 CIMD 是后续增强。除 `oauth.profile` 外，它也会区分凭据作用域，修改它等同于换一份凭据。
+- `oauth.clientName`：可选的 DCR `client_name`，用于对客户端名称有兼容性要求的 Authorization Server；缺省为 `just-enough-mcp`。它参与 credential identity，修改它等同于换一份凭据，需要重新执行 `authorize`。
 
 OAuth callback URI 固定为 `http://127.0.0.1:33418/oauth/callback`，DCR 会自动注册它。
 

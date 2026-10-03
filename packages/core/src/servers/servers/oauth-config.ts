@@ -7,6 +7,7 @@ export interface OauthHttpServerConfig {
   url: URL;
   headers?: Record<string, string>;
   clientMetadataUrl?: string;
+  clientName?: string;
   scope?: string;
   profile: string;
 }
@@ -22,6 +23,7 @@ export function getOauthHttpServerConfig(config: ResolvedServerConfig): OauthHtt
     url: transport.url,
     ...(transport.headers === undefined ? {} : { headers: transport.headers }),
     ...(oauth.clientMetadataUrl === undefined ? {} : { clientMetadataUrl: oauth.clientMetadataUrl }),
+    ...(oauth.clientName === undefined ? {} : { clientName: oauth.clientName }),
     ...(oauth.scope === undefined ? {} : { scope: oauth.scope }),
     profile: oauth.profile,
   };

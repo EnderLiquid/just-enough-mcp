@@ -178,9 +178,9 @@ export async function runOAuthBrokerProcess(
     now: options.now,
   });
   const redirectUri = getOAuthBrokerUrl(options.configuredPort, OAUTH_BROKER_ROUTES.callback);
+  // 基础 DCR metadata；client_name 由 authorization transaction 按 identity 填充。
   const clientMetadata: OAuthClientMetadata = {
     redirect_uris: [redirectUri],
-    client_name: "just-enough-mcp",
     grant_types: ["authorization_code", "refresh_token"],
     response_types: ["code"],
     token_endpoint_auth_method: "none",

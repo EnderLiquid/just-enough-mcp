@@ -76,6 +76,57 @@ describe("loadPluginConfigFromPaths", () => {
     expect(localTools?.connectionMode).toBe("lazy");
   });
 
+  it("解析 oauth.clientName 并跳过非法值", () => {
+    const root = tempDirs.create();
+    const configPath = join(root, "config.json");
+    const overviewDirectoryPath = join(root, "overviews");
+    const artifactDirectoryPath = join(root, "artifacts");
+    mkdirSync(overviewDirectoryPath, { recursive: true });
+
+    writeFileSync(configPath, JSON.stringify({
+      servers: {
+        custom: {
+          url: "https://example.com/mcp",
+          auth: "oauth",
+          oauth: { clientName: "  Custom Client  " },
+        },
+        blank: {
+          url: "https://example.com/other",
+          auth: "oauth",
+          oauth: { clientName: "   " },
+        },
+        "wrong-type": {
+          url: "https://example.com/third",
+          auth: "oauth",
+          oauth: { clientName: 42 },
+        },
+      },
+    }, null, 2), "utf8");
+
+    const loaded = loadPluginConfigFromPaths([configPath], overviewDirectoryPath, artifactDirectoryPath);
+    const custom = loaded.servers.find(server => server.name === "custom");
+    expect(custom?.transport).toMatchObject({
+      kind: "http",
+      auth: "oauth",
+      oauth: { clientName: "Custom Client" },
+    });
+    expect(loaded.servers.map(server => server.name)).toEqual(["custom"]);
+    expect(loaded.warnings).toEqual([
+      expect.objectContaining({
+        code: "invalid-server-definition",
+        serverName: "blank",
+        fieldPath: "oauth.clientName",
+        action: "skipped",
+      }),
+      expect.objectContaining({
+        code: "invalid-server-definition",
+        serverName: "wrong-type",
+        fieldPath: "oauth.clientName",
+        action: "skipped",
+      }),
+    ]);
+  });
+
   it("省略时使用默认物化和 TUI 设置", () => {
     const root = tempDirs.create();
     const configPath = join(root, "config.json");

@@ -41,6 +41,8 @@ export interface ResolvedStdioTransport {
 
 export interface ResolvedOauthConfig {
   clientMetadataUrl?: string;
+  /** DCR client_name；未配置时由 identity 归一化填充默认名称。 */
+  clientName?: string;
   scope?: string;
   profile: string;
 }

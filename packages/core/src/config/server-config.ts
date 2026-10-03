@@ -1,4 +1,5 @@
 import { isAbsolute } from "node:path";
+import { validateOAuthClientName } from "../oauth/client-name.ts";
 import {
   DEFAULT_CONNECTION_MODE,
   type ResolvedHttpTransport,
@@ -240,6 +241,18 @@ function parseOauthConfig(
     clientMetadataUrl = clientMetadata.toString();
   }
 
+  let clientName: string | undefined;
+  if (oauth.clientName !== undefined) {
+    try {
+      clientName = validateOAuthClientName(oauth.clientName, "oauth.clientName");
+    } catch (error) {
+      invalid(
+        `Server "${serverName}" ${error instanceof Error ? error.message : String(error)}`,
+        "oauth.clientName",
+      );
+    }
+  }
+
   let scope: string | undefined;
   if (oauth.scope !== undefined) {
     if (typeof oauth.scope !== "string" || oauth.scope.trim().length === 0) {
@@ -258,6 +271,7 @@ function parseOauthConfig(
 
   return {
     ...(clientMetadataUrl === undefined ? {} : { clientMetadataUrl }),
+    ...(clientName === undefined ? {} : { clientName }),
     ...(scope === undefined ? {} : { scope }),
     profile,
   };
