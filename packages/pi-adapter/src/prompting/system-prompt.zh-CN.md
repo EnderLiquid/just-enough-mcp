@@ -4,21 +4,12 @@
 >
 > 本文件仅用于维护中英文文案的语义对照，不会注入模型。修改提示词时，以本文件作为中文维护基准，并保持与运行时英文文案相同的章节顺序和语义。
 
-## 现实
-
-MCP（Model Context Protocol）是一种将 agent 连接到外部系统的标准。
-
-该协议设计于 agent 发展早期，部分功能在今天看来存在冗余、对 agent 应用编排层侵入性强等问题。
-
-当前社区实践中，MCP 定义的 Tools 原语被广泛用作跨 agent 的外部工具注册与调用层，其他原语的使用范围则相对有限。
-
-当前会话中的 MCP 服务器接入由 Just Enough MCP 插件提供支持，不是 Pi 的原生能力。该插件有意只实现 MCP 的 Tools 原语支持；Resources、Prompts、Sampling、Elicitation 等原语的缺失不反映 MCP 本身的边界。
+当前会话中的 MCP 服务器接入由 Just Enough MCP 插件提供支持，不是 Pi 的原生能力。该插件有意只实现 MCP 的 Tools 原语支持。
 
 ## MCP 接入模型
 
-- 本插件不会把每个 MCP 服务器提供的工具注册为独立的、可直接调用的 Pi 工具，也不会生成 `mcp__<server>__<tool>` 形式的工具名。
-- 本插件通过两个 Pi 工具接入 MCP：`mcp_server` 用于查看服务器状态、控制服务器生命周期和管理 OAuth；`mcp_tool` 用于读取单个服务器的工具清单，并中继调用其中已列出的工具。
-- `mcp_tool` 是中继入口：先调用 `mcp_tool({ action: "list", server: "<name>" })`，再根据返回的工具 schema 调用 `mcp_tool({ action: "call", server: "<name>", tool: "<listed-tool>", args: { ... } })`。`mcp_tool` 会将 `args` 转发给选中的服务器工具。`tool` 参数必须来自 `list` 返回的清单；不要猜测工具名或寻找类似 `mcp__<server>__<tool>` 的可直接调用 Pi 工具。
+- MCP 服务器提供的工具不会被注册为独立的、可直接调用的 Pi 工具。
+- 使用 `mcp_server` 查看服务器状态、控制服务器生命周期和管理 OAuth；使用 `mcp_tool` 读取单个服务器的工具清单，并中继调用其中已列出的工具。
 
 ## 结果物化
 
@@ -27,19 +18,16 @@ MCP（Model Context Protocol）是一种将 agent 连接到外部系统的标准
 
 ## Overview
 
-- 传统的 MCP 集成方式通常在会话开始时连接到所有 MCP 服务器，并立即将所有服务器中的所有工具都注册为 LLM 原生工具。这不仅拖慢 agent 应用进程启动，还可能导致上下文窗口一开始就被大量低使用频率的工具定义占用。
-- Just Enough MCP 采用了不同策略：用户和 agent 为每个 MCP 服务器维护一份额外的 overview。overview 是独立于 MCP 协议的服务器发现层，用于实现服务器的懒连接与上下文的渐进式披露。
-- 具体而言，overview 用于澄清某个 MCP 服务器的功能边界。例如，一个服务器可能通过多个互相联动的工具为模型提供 computer-use 能力。
-- 最开始只有每个服务器的 overview 会注入系统提示。会话过程中，先根据 overview 判断当前情形是否要用某个 MCP 服务器；确认要用以后，再获取这个服务器的完整工具列表，从而减轻初始上下文负担。
-- overview 还可用于补充说明服务器工具清单中未能澄清的隐式使用限制。
+- overview 是独立于 MCP 协议的服务器发现层，用于实现服务器的懒连接与上下文的渐进式披露，由用户和 agent 共同维护。
+- overview 澄清某个 MCP 服务器的功能边界，并补充服务器工具清单中未能说明的隐式使用限制。
+- 最开始只有每个服务器的 overview 会注入系统提示。会话过程中，先根据 overview 判断当前情形是否要用某个 MCP 服务器；确认要用以后，再获取这个服务器的完整工具列表。
 
 ## Overview 维护
 
-- 每个 overview 是一个本地 Markdown 文件。
-- overview 可用时，会将其本地文件路径附在注入内容之前，便于直接定位和维护相应文件。
-- overview 缺失、信息不足或明显过时时，请帮助用户改进它。overview 可能根据服务器初始化响应中的 metadata description 自动生成；overview 存在不代表它已完善。
-- 在创建、修改或审查 overview 之前，阅读 `mcp-overview-writer` skill。
-- 插件配置或 overview 文件的更改只有在重新加载后才生效；需要时请让用户运行 `/reload`。
+- 每个 overview 是一个本地 Markdown 文件，路径随内容注入上下文，便于直接定位和维护。
+- overview 缺失、信息不足或明显过时时，帮助用户改进它。overview 可能根据服务器初始化响应中的元数据自动生成，它存在不代表它已完善。
+- 创建、修改或审查 overview 前，阅读 `mcp-overview-writer` skill。
+- 插件配置或 overview 文件的更改只在重新加载后生效；需要时请让用户运行 `/reload`。
 
 ## 工作流
 
