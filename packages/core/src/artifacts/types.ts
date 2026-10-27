@@ -104,8 +104,8 @@ export interface MaterializedToolCallResult {
 
 export const DEFAULT_MATERIALIZATION_SETTINGS: MaterializationSettings = {
   summaryItemCount: 6,
-  previewFullCharsPerItem: 1500,
-  previewTruncateToCharsPerItem: 600,
+  previewFullCharsPerItem: 3000,
+  previewTruncateToCharsPerItem: 1200,
   hardMaxChars: 40000,
   prettyPrintJson: true,
 };

@@ -100,8 +100,8 @@ server 名称同时用于工具调用、overview 文件名和物化目录，必�
 | 字段 | 默认值 | 用途 |
 | --- | --- | --- |
 | `materialization.summaryItemCount` | `6` | 多 payload 结果中展示在模型摘要内的最大条目数。 |
-| `materialization.previewFullCharsPerItem` | `1500` | 单个文本 payload 不截断时的最大字符数。 |
-| `materialization.previewTruncateToCharsPerItem` | `600` | 超出预览阈值时保留的字符数，不能大于前一项。 |
+| `materialization.previewFullCharsPerItem` | `3000` | 单个文本 payload 不截断时的最大字符数。 |
+| `materialization.previewTruncateToCharsPerItem` | `1200` | 超出预览阈值时保留的字符数，不能大于前一项。 |
 | `materialization.hardMaxChars` | `40000` | 最终模型摘要的硬字符上限。 |
 | `materialization.prettyPrintJson` | `true` | 是否格式化可识别的 JSON payload。 |
 
