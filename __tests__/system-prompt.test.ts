@@ -33,6 +33,7 @@ describe("createServerOverviewPrompt", () => {
     const prompt = createServerOverviewPrompt(makeConfig(), { codemodeEnabled: true });
 
     expect(prompt).toContain("Codemode:");
+    expect(prompt).toContain("**must** first run");
     expect(prompt).toContain('`return await describeTool("mcp_tool")`');
     expect(prompt).toContain("integration with Pi's native MCP support");
   });

@@ -18,7 +18,7 @@
 
 ## Codemode
 
-- 在 codemode 脚本中调用 `mcp_tool` 之前，先运行一个只把它的声明返回出来的脚本，例如 `return await describeTool("mcp_tool")`，据此了解返回结构。
+- 在 codemode 脚本中调用 `mcp_tool` 前，**必须**先用 codemode 单独运行一次 `return await describeTool("mcp_tool")`，获取 `mcp_tool()` 返回值的 schema。
 - `searchTools()` 与 `describeNamespace()` 是 codemode 与 Pi 原生 MCP 功能的集成入口；本插件的 MCP 实现与 Pi 原生不同，因此它们在本会话中无效。
 
 ## Overview
