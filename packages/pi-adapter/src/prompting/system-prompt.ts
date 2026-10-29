@@ -51,6 +51,7 @@ export function createServerOverviewPrompt(
       ? [
           "Codemode:",
           "- Before calling `mcp_tool` from a codemode script, run a script that returns its generated declaration, for example `return await describeTool(\"mcp_tool\")`, and read the result shape from it.",
+          "- `searchTools()` and `describeNamespace()` exist for codemode's integration with Pi's native MCP support; this plugin implements MCP differently, so they have no effect in this session.",
         ]
       : []),
     "Overviews:",

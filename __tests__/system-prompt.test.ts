@@ -34,6 +34,7 @@ describe("createServerOverviewPrompt", () => {
 
     expect(prompt).toContain("Codemode:");
     expect(prompt).toContain('`return await describeTool("mcp_tool")`');
+    expect(prompt).toContain("integration with Pi's native MCP support");
   });
 
   it("codemode 未启用时不注入探测提示", () => {
