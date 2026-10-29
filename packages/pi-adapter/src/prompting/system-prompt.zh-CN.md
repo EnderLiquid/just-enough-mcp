@@ -16,6 +16,10 @@
 - MCP 工具调用结果可能包括一个或多个 item，每个 item 都会分别物化为本地文件。
 - 过长文本 item 的预览会被截断，并给出其完整物化内容的路径。非文本 item 也会给出物化文件的路径；按需读取或使用这些文件。
 
+## Codemode
+
+- 在 codemode 脚本中调用 `mcp_tool` 之前，先运行一个只把它的声明返回出来的脚本，例如 `return await describeTool("mcp_tool")`，据此了解返回结构。
+
 ## Overview
 
 - overview 是独立于 MCP 协议的服务器发现层，用于实现服务器的懒连接与上下文的渐进式披露，由用户和 agent 共同维护。

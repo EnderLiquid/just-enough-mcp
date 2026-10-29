@@ -29,6 +29,19 @@ function makeConfig(overrides: Partial<PluginConfigLoadResult> = {}): PluginConf
 }
 
 describe("createServerOverviewPrompt", () => {
+  it("codemode 启用时注入 describeTool 探测提示", () => {
+    const prompt = createServerOverviewPrompt(makeConfig(), { codemodeEnabled: true });
+
+    expect(prompt).toContain("Codemode:");
+    expect(prompt).toContain('`return await describeTool("mcp_tool")`');
+  });
+
+  it("codemode 未启用时不注入探测提示", () => {
+    const prompt = createServerOverviewPrompt(makeConfig());
+
+    expect(prompt).not.toContain("Codemode:");
+  });
+
   it("overview 没有 markdown 标题时添加合成标题", () => {
     const prompt = createServerOverviewPrompt(makeConfig({
       servers: [makeServer({

@@ -1,6 +1,7 @@
 import { Compile } from "typebox/compile";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { renderToolSignature } from "@earendil-works/pi-codemode/declarations";
 import { PAYLOAD_CONTENT_TYPES, type MaterializedToolCallResult, type MaterializationSettings } from "../packages/core/src/artifacts/types.js";
 import type { TuiResultRenderSettings } from "../packages/pi-adapter/src/rendering/types.js";
 import type { McpRegistry } from "../packages/core/src/servers/registry.js";
@@ -126,6 +127,43 @@ function makeMaterialized(summaryText = "ok", parsedJson?: unknown): Materialize
 }
 
 describe("mcp_tool 参数 schema", () => {
+  it("为结构化结果的字段提供描述，供 codemode 通过 describeTool 发现", () => {
+    const schema = mcpToolOutputSchema as unknown as {
+      properties: {
+        payloadItems: {
+          description?: string;
+          items: {
+            properties: Record<string, { description?: string }>;
+            required: string[];
+          };
+        };
+        manifestPath: { description?: string };
+      };
+    };
+    const items = schema.properties.payloadItems.items;
+
+    expect(schema.properties.payloadItems.description).toBeTruthy();
+    expect(schema.properties.manifestPath.description).toBeTruthy();
+    expect(items.required).toEqual(["index", "source", "mimeType", "path", "fileName"]);
+    for (const [name, property] of Object.entries(items.properties)) {
+      expect(property.description, `${name} 缺少 description`).toBeTruthy();
+    }
+    expect(items.properties.text.description).toContain("complete text");
+  });
+
+  it("渲染成 codemode 声明时保留字段注释", () => {
+    const declaration = {
+      name: "mcp_tool",
+      inputSchema: mcpToolParametersSchema,
+      outputSchema: mcpToolOutputSchema,
+    } as unknown as Parameters<typeof renderToolSignature>[0];
+
+    const rendered = renderToolSignature(declaration);
+
+    expect(rendered).toContain("// Full text of this payload");
+    expect(rendered).toContain("path: string;");
+  });
+
   it("接受原生嵌套参数对象，无需高级 schema 关键字", () => {
     const validator = Compile(mcpToolParametersSchema);
     const valid = {

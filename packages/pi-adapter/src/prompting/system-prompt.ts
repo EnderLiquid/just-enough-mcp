@@ -27,7 +27,15 @@ function formatOverviewBlock(server: ResolvedServerConfig): string {
   return lines.join("\n");
 }
 
-export function createServerOverviewPrompt(config: PluginConfigLoadResult): string {
+export interface ServerOverviewPromptOptions {
+  /** codemode 启用时，注入在脚本中使用 mcp_tool 的探测提示。 */
+  codemodeEnabled?: boolean;
+}
+
+export function createServerOverviewPrompt(
+  config: PluginConfigLoadResult,
+  options: ServerOverviewPromptOptions = {},
+): string {
   // 中文维护基准见 ./system-prompt.zh-CN.md；该文件不会注入模型。
   // 修改英文运行时文案时，保持两个文件的章节顺序与语义同步。
 
@@ -39,6 +47,12 @@ export function createServerOverviewPrompt(config: PluginConfigLoadResult): stri
     "Result materialization:",
     "- An MCP tool call may include one or more items, each materialized as a separate local file.",
     "- Long text item previews are truncated and include a path to their full materialized content. Paths to materialized files for non-text items are also provided. Use those files as needed.",
+    ...(options.codemodeEnabled
+      ? [
+          "Codemode:",
+          "- Before calling `mcp_tool` from a codemode script, run a script that returns its generated declaration, for example `return await describeTool(\"mcp_tool\")`, and read the result shape from it.",
+        ]
+      : []),
     "Overviews:",
     "- An overview is a server-discovery layer independent of the MCP protocol, maintained by users and agents to enable lazy server connection and progressive context disclosure.",
     "- An overview clarifies a server's functional boundaries and covers implicit usage constraints that the server's tool catalog does not make clear.",

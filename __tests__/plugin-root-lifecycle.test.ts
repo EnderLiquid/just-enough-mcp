@@ -95,7 +95,7 @@ interface FakePi {
   handler(eventName: string): (...args: any[]) => any;
 }
 
-function createFakePi(): FakePi {
+function createFakePi(options: { activeTools?: string[] } = {}): FakePi {
   const handlers = new Map<string, Array<(...args: any[]) => any>>();
   const pi = {
     on: vi.fn((eventName: string, handler: (...args: any[]) => any) => {
@@ -103,6 +103,7 @@ function createFakePi(): FakePi {
       current.push(handler);
       handlers.set(eventName, current);
     }),
+    getActiveTools: vi.fn(() => options.activeTools ?? []),
   } as unknown as ExtensionAPI;
 
   return {
@@ -481,7 +482,17 @@ describe("justEnoughMcp root 生命周期", () => {
 
     expect(fallback.systemPrompt).toContain("has not loaded its configuration");
     expect(active.systemPrompt).toBe("base\n\n# MCP Servers\n\nserver overviews");
-    expect(mocks.createServerOverviewPrompt).toHaveBeenCalledWith(config);
+    expect(mocks.createServerOverviewPrompt).toHaveBeenCalledWith(config, { codemodeEnabled: false });
+  });
+
+  it("codemode 激活时把启用状态传给 overview prompt", async () => {
+    const config = makePluginConfig();
+    const { pi, handler } = createFakePi({ activeTools: ["read", "codemode"] });
+    justEnoughMcp(pi);
+    await handler("session_start")({}, createContext());
+    await handler("before_agent_start")({ systemPrompt: "base" });
+
+    expect(mocks.createServerOverviewPrompt).toHaveBeenCalledWith(config, { codemodeEnabled: true });
   });
 
   it("已有 MCP Servers 章节时跳过重复注入", async () => {

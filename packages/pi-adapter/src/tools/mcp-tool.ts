@@ -43,43 +43,91 @@ export const mcpToolOutputSchema = Type.Unsafe({
     kind: {
       type: "string",
       enum: ["catalog", "call"],
+      description: "Which action produced this result: `catalog` for `list`, `call` for `call`.",
     },
-    server: { type: "string" },
+    server: {
+      type: "string",
+      description: "Name of the MCP server.",
+    },
     tools: {
       type: "array",
+      description: "Tool catalog returned by the `list` action; each entry is the server's native tool definition, including its input schema.",
       items: {
         type: "object",
         additionalProperties: true,
       },
     },
-    tool: { type: "string" },
+    tool: {
+      type: "string",
+      description: "Name of the called tool; present for the `call` action.",
+    },
     payloadItems: {
       type: "array",
+      description: "Materialized payloads of the called tool's result; present for the `call` action. Read the fields you need from an item instead of serializing the whole item.",
       items: {
         type: "object",
         properties: {
-          index: { type: "integer" },
-          source: { type: "string" },
+          index: {
+            type: "integer",
+            description: "Index of this payload in the MCP result, in server order.",
+          },
+          source: {
+            type: "string",
+            description: "Location of the payload in the MCP result, such as `content[0]`.",
+          },
           contentType: {
             type: "string",
             enum: [...PAYLOAD_CONTENT_TYPES],
+            description: "Normalized kind of the payload.",
           },
-          mimeType: { type: "string" },
-          rawMimeType: { type: "string" },
-          uri: { type: "string" },
-          description: { type: "string" },
-          text: { type: "string" },
-          binaryBase64: { type: "string" },
-          parsedJson: {},
-          path: { type: "string" },
-          fileName: { type: "string" },
+          mimeType: {
+            type: "string",
+            description: "MIME type of the materialized file.",
+          },
+          rawMimeType: {
+            type: "string",
+            description: "MIME type reported by the server, before normalization.",
+          },
+          uri: {
+            type: "string",
+            description: "URI of the payload when it came from an MCP resource.",
+          },
+          description: {
+            type: "string",
+            description: "Description attached to the payload by the server, if any.",
+          },
+          text: {
+            type: "string",
+            description: "Full text of this payload. Unlike the truncated text summary a direct `mcp_tool` call returns, codemode gets the complete text here.",
+          },
+          binaryBase64: {
+            type: "string",
+            description: "Base64 bytes of a binary payload.\nShow an image with `image({ type: \"image\", data: item.binaryBase64, mimeType: item.mimeType })` when `contentType` is `image`.\nOther payloads, such as audio, are still available through the materialized file at `item.path`.",
+          },
+          parsedJson: {
+            description: "Payload text already parsed as JSON, when the payload is JSON.",
+          },
+          path: {
+            type: "string",
+            description: "Path of the materialized file holding this payload.",
+          },
+          fileName: {
+            type: "string",
+            description: "File name of the materialized file.",
+          },
         },
         required: ["index", "source", "mimeType", "path", "fileName"],
         additionalProperties: false,
       },
     },
-    manifestPath: { type: "string" },
-    isError: { type: "boolean" },
+    manifestPath: {
+      type: "string",
+      description: "Path of the manifest file listing every payload of this call.",
+    },
+    isError: {
+      type: "boolean",
+      description: "True when the MCP tool reported an error result; present for the `call` action.",
+    },
   },
   required: ["kind", "server"],
   additionalProperties: false,

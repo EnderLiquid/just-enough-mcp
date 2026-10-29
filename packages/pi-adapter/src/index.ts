@@ -215,7 +215,9 @@ export default function justEnoughMcp(pi: ExtensionAPI): void {
       };
     }
 
-    const injectedPrompt = createServerOverviewPrompt(config);
+    const injectedPrompt = createServerOverviewPrompt(config, {
+      codemodeEnabled: pi.getActiveTools().includes("codemode"),
+    });
     return {
       systemPrompt:
         `${event.systemPrompt}\n\n${MCP_SERVERS_SECTION_HEADING}\n\n${injectedPrompt}`,
