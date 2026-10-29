@@ -14,6 +14,8 @@
 
 Resources、Prompts、Sampling、Elicitation，以及将每个 MCP tool 直接注册为 Pi 工具，均不在当前范围内。
 
+要求 Pi `1.2.0` 及以上（`@earendil-works/pi-coding-agent` >= 1.2.0），以及 Node.js >= 22.19.0。
+
 ## 配置
 
 配置文件位于 `~/.pi/agent/just-enough-mcp/config.json`，项目配置文件位于当前项目的 `.pi/just-enough-mcp/config.json`。会话启动时按全局配置到项目配置的顺序读取；项目配置只覆盖当前项目的 effective config，不会修改全局文件。项目配置仅在当前 Pi session 受信时加入。默认 overview 目录为 `~/.pi/agent/just-enough-mcp/overviews/`，工具调用结果物化到 `~/.pi/agent/just-enough-mcp/artifacts/`。它们在会话启动时读取；修改配置或 overview 后，请在 Pi 中执行 `/reload`。
@@ -132,7 +134,7 @@ mcp_tool({
 })
 ```
 
-在支持 Pi `0.99.2` codemode 结构化结果的宿主中，`mcp_tool` 还会声明 `outputSchema`：codemode 的脚本可以从 `list` 结果读取 `tools`，从 `call` 结果读取 `payloadItems`、`manifestPath` 和 `isError`。`payloadItems` 保留文本、JSON、媒体和 artifact 路径等程序化字段，但不包含面向展示的逐项 `preview` 或预先拼接的 `summaryText`；脚本可以根据任务自行截断和组合结果。JSON payload 会在 `payloadItems[].parsedJson` 中保留解析后的值，普通模型仍然只接收文本摘要。该适配继续使用单一 `mcp_tool` 代理，不会在脚本执行期间动态注册远程工具。
+`mcp_tool` 还会声明 `outputSchema`：codemode 的脚本可以从 `list` 结果读取 `tools`，从 `call` 结果读取 `payloadItems`、`manifestPath` 和 `isError`。`payloadItems` 保留文本、JSON、媒体和 artifact 路径等程序化字段，但不包含面向展示的逐项 `preview` 或预先拼接的 `summaryText`；脚本可以根据任务自行截断和组合结果。JSON payload 会在 `payloadItems[].parsedJson` 中保留解析后的值，普通模型仍然只接收文本摘要。该适配继续使用单一 `mcp_tool` 代理，不会在脚本执行期间动态注册远程工具。
 
 OAuth server 首次使用前执行：
 
